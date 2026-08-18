@@ -714,3 +714,45 @@ Impact on Q1/Q2/Q3/Q4: **Q4, strongest entry so far.** The `@swc/helpers` failur
   durable lesson is about evidence handling rather than reasoning: an AI's observation is
   not evidence until it is written down with its raw output, because the AI's memory of
   having observed it does not survive.
+
+---
+
+[2026-08-19 09:10 KST] [IMPLEMENTATION]
+Task: Wave 1 Task 4 — one-time setup token, single-use under concurrency.
+AI/tool used: Claude Opus 5 (implementer), Claude Opus 5 (independent reviewer), real
+  PostgreSQL 17, Prisma 7.
+Human instruction/constraint: Ori's standing project rule, in `CLAUDE.md`: "Use DB
+  uniqueness/upsert, never check-then-insert. Mutations that depend on clipper count must
+  hold a row lock," and "Concurrency invariants get tests against a real Postgres, not
+  mocks."
+AI proposal/output: `AI_PROPOSAL` A concurrency test firing N simultaneous exchanges of one
+  setup token via `Promise.all` against a real database, asserting exactly one succeeds.
+Accepted: `IMPLEMENTED` `TESTED` The conditional-update implementation
+  (`UPDATE ... WHERE used_at IS NULL AND expires_at > now`, affected-row count decides the
+  winner) and the corrected test.
+Rejected/changed: `FAILED` **The first version of that test was a false positive.** The
+  implementer did not trust it and substituted the exact regression the test exists to
+  catch — a read-then-write. The test still passed.
+Why: A cold `node-postgres` pool opens connections lazily. The first caller completed its
+  entire read-then-write in ~9ms while the other callers were still completing TCP and
+  authentication handshakes at ~22ms. The callers were never actually concurrent at the
+  database, so the broken implementation never had two transactions racing to observe.
+  Warming the pool before the concurrent section makes the regression fail decisively.
+Validation/evidence: `FACT` `TESTED` The reviewer re-ran the regression substitution rather
+  than accepting the report: **10/10 decisive failures** across cold-start invocations
+  (`expected length 1 but got 8`). It then ran two controls the implementer had not:
+  (a) warm-up removed with the regression present → **5/5 false pass**, confirming the root
+  cause empirically rather than by argument; (b) callers raised to 20, past node-postgres'
+  default pool maximum of 10 → still catches, so the fix is structural rather than
+  timing-luck.
+Relevant commit/PR/screenshot/test: `7d7c386`; `tests/admin-session/service.test.ts`;
+  post-mortem in `docs/journal/journal-2026-08.md`.
+Impact on Q1/Q2/Q3/Q4: **Q3 and Q4.** The generalizable lesson is that a passing
+  concurrency test proves nothing on its own — the only evidence that it tests anything is
+  watching it fail against a deliberately broken implementation. An AI that writes both the
+  invariant and its test has every incentive to produce a test shaped like the code rather
+  than like the requirement, and here that produced a test which certified the invariant
+  falsely. What caught it was not a better model but a method: mutation-substitution as a
+  routine step, applied by the implementer to itself and then repeated by an independent
+  reviewer who added the controls that turned a plausible diagnosis into a measured one.
+  Wave 2's `§9` race invariants inherit both the trap and the method.
