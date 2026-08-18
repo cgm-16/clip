@@ -164,3 +164,20 @@ measures ssemtle burning otherwise-idle time, not genuine starvation.
    good practice to mandatory — acknowledge immediately, do the REST work in the follow-up.
 
 Corrected the README cost table, which asserted the stale 1.6/5% figures.
+
+### 2026-08-18 — DNS chain confirmed
+
+```
+clipendpoint.cc --CNAME--> clip.orioriori.duckdns.org --> 14.39.43.191
+```
+
+DuckDNS resolves wildcard subdomains to the base record, so the chain follows the home IP when
+DDNS updates. Cloudflare flattens the apex CNAME, so `dig clipendpoint.cc` externally shows only
+an A record — that is flattening, not a misconfigured record. TTL 60. Matches the existing
+`ssemtle.orioriori.duckdns.org` convention.
+
+**Decision: the Ingress declares `clipendpoint.cc` only, not both hostnames.** `ssemtle` lists three
+hosts on one Certificate, and copying that here would be a mistake on the critical path: cert-manager
+issues a single Certificate covering every SAN, so an HTTP-01 failure on *either* host yields *no*
+cert, and gate `0.3b` cannot pass without one. Add `clip.orioriori.duckdns.org` as a second SAN only
+after the first certificate issues cleanly, if a fallback hostname is wanted at all.
