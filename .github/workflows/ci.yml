@@ -42,6 +42,14 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # The Prisma client is generated into a git-ignored directory, so it does
+      # not exist on a fresh checkout. Everything after this needs it to typecheck.
+      - run: pnpm prisma generate
+
+      # Schema-invariant tests assert real Postgres constraint violations, so the
+      # tables have to exist before the suite runs.
+      - run: pnpm prisma migrate deploy
+
       - run: pnpm lint
 
       - run: pnpm test

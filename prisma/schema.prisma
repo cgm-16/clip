@@ -1,0 +1,108 @@
+// Control-plane schema. Postgres is authoritative for guild configuration,
+// clip identity, and clipper/notification/session state — never for Discord
+// message content, attachments, or embeds. See docs/01_CLIP_PRODUCT_SPEC.md
+// §8, which this file implements verbatim (model/column shapes, uniqueness).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ClipStatus {
+  PENDING
+  ACTIVE
+  DELETING
+  FAILED
+  REMOVED_BY_AUTHOR
+  REMOVED_BY_ADMIN
+
+  @@map("clip_status")
+}
+
+enum AuthorNotificationStatus {
+  PENDING
+  DELIVERED
+  UNDELIVERABLE
+
+  @@map("author_notification_status")
+}
+
+model GuildConfig {
+  guildId            String   @id @map("guild_id")
+  archiveChannelId   String   @map("archive_channel_id")
+  configuredByUserId String   @map("configured_by_user_id")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  allowedRoles GuildAllowedRole[]
+
+  @@map("guild_configs")
+}
+
+model GuildAllowedRole {
+  guildId String @map("guild_id")
+  roleId  String @map("role_id")
+
+  guildConfig GuildConfig @relation(fields: [guildId], references: [guildId])
+
+  @@id([guildId, roleId])
+  @@map("guild_allowed_roles")
+}
+
+model Clip {
+  guildId                    String                   @map("guild_id")
+  sourceMessageId            String                   @map("source_message_id")
+  sourceChannelId            String                   @map("source_channel_id")
+  // Discord rejects a forward carrying provenance content (error 160011), so
+  // one archive entry is two Discord messages. Both are nullable because a
+  // clip starts PENDING before either message exists.
+  archiveProvenanceMessageId String?                  @map("archive_provenance_message_id")
+  archiveForwardMessageId    String?                  @map("archive_forward_message_id")
+  authorUserId               String                   @map("author_user_id")
+  status                     ClipStatus               @default(PENDING)
+  authorNotificationStatus   AuthorNotificationStatus @default(PENDING) @map("author_notification_status")
+  createdAt                  DateTime                 @default(now()) @map("created_at")
+  updatedAt                  DateTime                 @updatedAt @map("updated_at")
+  removedAt                  DateTime?                @map("removed_at")
+
+  clippers Clipper[]
+
+  @@id([guildId, sourceMessageId])
+  @@map("clips")
+}
+
+model Clipper {
+  guildId         String   @map("guild_id")
+  sourceMessageId String   @map("source_message_id")
+  clipperUserId   String   @map("clipper_user_id")
+  clippedAt       DateTime @default(now()) @map("clipped_at")
+
+  clip Clip @relation(fields: [guildId, sourceMessageId], references: [guildId, sourceMessageId])
+
+  @@id([guildId, sourceMessageId, clipperUserId])
+  @@map("clippers")
+}
+
+model AdminSession {
+  tokenHash String    @id @map("token_hash")
+  guildId   String    @map("guild_id")
+  userId    String    @map("user_id")
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+
+  @@map("admin_sessions")
+}
+
+model SetupToken {
+  tokenHash String    @id @map("token_hash")
+  guildId   String    @map("guild_id")
+  userId    String    @map("user_id")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+
+  @@map("setup_tokens")
+}
