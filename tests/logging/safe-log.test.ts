@@ -18,6 +18,11 @@ describe('logClipEvent', () => {
   });
 
   test('rejects content, embeds and attachments at the type level', () => {
+    // console.log is mocked only to keep test output pristine; this test's
+    // actual assertion is the three @ts-expect-error directives below,
+    // enforced by `tsc --noEmit` — nothing about runtime output is checked.
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
     // @ts-expect-error content must never be part of a SafeClipLog call
     logClipEvent({ event: 'clip.created', content: 'the actual message text' });
     // @ts-expect-error embeds must never be part of a SafeClipLog call
