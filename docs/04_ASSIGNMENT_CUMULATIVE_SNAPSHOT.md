@@ -534,3 +534,70 @@ Do not make the project look artificially tailored to every bullet; these are us
 ## Current P0 one-liner
 
 > Configure archive + roles, context-menu Clip/Unclip/remove, canonical dedupe/concurrency-safe control state, private Discord archive, author notification/marker, and a short-session read-only admin web archive — deployed to the real Discord endpoint.
+
+---
+
+# Implementation-phase evidence log
+
+Chronological, append-only. Each entry uses the §0 template and tags which question it serves.
+Planning-phase evidence stays in the question sections above.
+
+---
+
+```text
+[2026-08-18 KST] [IMPLEMENTATION]
+```
+
+**Task:** Repository preparation — verify the plan against the real Discord API before writing code.
+
+**AI/tool used:** Claude Code (Opus 5), orchestrator session. Discord developer documentation and
+the `discord-api-docs` repository consulted directly rather than answered from model memory.
+
+**Human instruction/constraint:** Prepare the repo before implementation; ask about vague choices
+rather than assuming; do not redesign settled product semantics.
+
+**AI proposal/output:** The approved specification (§6.3, written during planning) instructed the
+implementer to forward the selected message *and* wrap it in human-readable provenance metadata —
+author, source channel, original timestamp, source link, clip timestamp — in a single archive post.
+The implementation plan carried this forward as a single `archive_message_id` on the Clip row.
+
+**Rejected/changed:** The single-post archive representation, and the schema that encoded it.
+
+**Why:** Discord rejects it. A message carrying `message_reference.type = 1` (FORWARD) cannot also
+carry `content`, `embeds` or `components`; the API returns error `160011`
+(`Forward messages cannot have additional content`). The design is not merely awkward — it is
+unbuildable. Three related constraints surfaced in the same check:
+
+- `message_snapshots` is a minimal object that **excludes `author`**, so provenance genuinely
+  cannot be recovered from the forward and must come from the control plane;
+- creating a forward requires `VIEW_CHANNEL` on the *source* channel (error `160014`), making it a
+  steady-state permission rather than the bootstrap-only concern §15 implied;
+- only `DEFAULT`, `REPLY`, `CHAT_INPUT_COMMAND` and `CONTEXT_MENU_COMMAND` messages are
+  forwardable, so polls, calls, activities and system messages need an explicit rejection path
+  that no document previously specified.
+
+**Accepted:** An archive entry became **two Discord messages** — a provenance message followed by
+the forward — with both identifiers stored on the canonical Clip. The human chose this over three
+alternatives (forward-only with provenance rendered from Postgres; a single embed copying the
+content; provenance in a thread) because it preserves both the in-Discord reading experience and
+the native snapshot payload.
+
+**Validation/evidence:** Discord Message Resource documentation and docs PR #6818. Not yet
+validated against a live guild — that is Wave 3 work, and this entry will be updated with the
+observed result rather than replaced.
+
+**Impact on Q1/Q2/Q3/Q4:** Primarily **Q4**, and it is a better example than the planning-stage
+candidates already recorded, because the failure was produced by AI planning, caught by a
+documentation check rather than by a runtime error, and corrected before it cost implementation
+time. Secondarily **Q3**: the process rule that produced the catch was "verify platform primitives
+against current documentation before accepting a plan that depends on them" — the same rule that
+earlier corrected the stale 100-pin assumption (Failure candidate B) and the always-on Gateway
+assumption (Failure candidate D). Three of four recorded failures now share one root cause:
+**AI-authored designs that assume platform behavior instead of checking it.**
+
+**Downstream changes:** `01_CLIP_PRODUCT_SPEC.md` §6.3 (two-message representation, forwardable
+types), §8.3 (`archive_provenance_message_id` + `archive_forward_message_id`), §15
+(`VIEW_CHANNEL` steady state), §17 (new failure cases 19 and 20), §5.1 (token TTL aligned to the
+final Korean copy at 15 minutes). `DESIGN_RATIONALE_APPEND.md` §10. No visual design change: the
+Screen D card hierarchy is unaffected because its source line was always going to be rendered from
+control-plane data.

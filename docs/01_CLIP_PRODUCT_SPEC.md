@@ -121,7 +121,7 @@ The web archive is admin-only in P0. Full Discord OAuth/member browsing is P1.
 1. Administrator installs Clip.
 2. Administrator runs `/setup` in Discord.
 3. Backend verifies administrator authority.
-4. Backend issues a one-time setup token valid for approximately 10 minutes.
+4. Backend issues a one-time setup token valid for approximately 15 minutes.
 5. Discord returns an ephemeral `Configure Clip` link.
 6. Browser exchanges the one-time token for a short-lived `Secure`, `HttpOnly`, `SameSite` admin session cookie.
 7. Setup token becomes invalid after exchange.
@@ -194,9 +194,9 @@ This preserves historical meaning while giving non-content-creator users a prote
 
 ### 6.3 Discord archive representation
 
-Use Discord's message-forward/snapshot capability where feasible for the message payload.
+Use Discord's message-forward/snapshot capability (`message_reference` with `type: 1`) for the message payload.
 
-Because forwarded snapshots do not fully preserve every desired piece of provenance (for example, original author attribution/reaction state), the archive post should include human-readable metadata around the snapshot:
+Because forwarded snapshots do not preserve every desired piece of provenance — the snapshot object explicitly omits `author` — the archive must also carry human-readable metadata:
 
 - original author;
 - source channel;
@@ -204,6 +204,25 @@ Because forwarded snapshots do not fully preserve every desired piece of provena
 - original message link where available;
 - clip timestamp;
 - optionally the first clipper if product copy chooses to expose it (not required in P0).
+
+#### Two-message representation (amended 2026-08-18)
+
+Discord **rejects a forward that carries any additional content**: sending `content`, `embeds` or `components` alongside a `FORWARD` message reference returns error `160011` (`Forward messages cannot have additional content`). The original single-post design is therefore not implementable.
+
+An archive entry is consequently **two messages posted in order** into the archive channel:
+
+1. a **provenance message** carrying the metadata listed above;
+2. the **forward** carrying the snapshot payload.
+
+Both identifiers are stored on the canonical Clip. Consequences:
+
+- removal must delete both messages;
+- posting the provenance message and failing to post the forward is a new recoverable partial-failure case (see §17);
+- the web archive fetches only the forward for body content and renders provenance from PostgreSQL, since the control plane already holds author, channel and both timestamps.
+
+#### Forwardable message types
+
+Discord only forwards `DEFAULT`, `REPLY`, `CHAT_INPUT_COMMAND` and `CONTEXT_MENU_COMMAND` messages. Polls, calls, activities and system messages cannot be forwarded and must be rejected as invalid targets before any state is written.
 
 P0 does not synchronize reaction counts or subsequent edits.
 
@@ -317,7 +336,8 @@ Clip
 - guild_id
 - source_message_id
 - source_channel_id
-- archive_message_id nullable
+- archive_provenance_message_id nullable
+- archive_forward_message_id nullable
 - author_user_id
 - status
 - author_notification_status
@@ -555,7 +575,7 @@ Flow:
 ```text
 Discord /setup
 -> verify admin
--> ~10 min one-time token
+-> ~15 min one-time token
 -> browser URL
 -> exchange for Secure/HttpOnly/SameSite session
 -> ~30 min short admin session
@@ -585,6 +605,10 @@ Request only permissions demonstrated necessary for:
 - command interactions.
 
 Exact minimum permission set must be validated against a fresh test guild before submission.
+
+#### `VIEW_CHANNEL` on source channels is a steady-state requirement (amended 2026-08-18)
+
+Discord refuses to create a forward of a message the application cannot read, returning error `160014`. `VIEW_CHANNEL` on every channel a member may clip from is therefore an ongoing runtime requirement, not an incidental one, and must be stated plainly to administrators during setup. A clip attempt in a channel the bot cannot see fails as an invalid target rather than silently producing an empty archive entry.
 
 ### Optional bootstrap capability
 
@@ -647,6 +671,8 @@ P0 must define/test these behaviors:
 16. Multiple clip/unclip requests -> converge according to invariants.
 17. Rate limiting -> state remains recoverable; do not fan out uncontrolled retries.
 18. Logs -> record IDs/state transitions/errors, never message content/attachments.
+19. Provenance message posted but forward creation fails -> Clip must not reach ACTIVE. Either retry the forward or delete the orphaned provenance message; never leave a provenance line pointing at a snapshot that does not exist. (Added 2026-08-18 with the two-message representation, §6.3.)
+20. Target message is not forwardable (poll, call, activity, system message) or lives in a channel the bot cannot view -> reject as an invalid target before writing any state; surface `이 메시지는 보관할 수 없습니다`.
 
 ### P1 reconciliation / WAL-style recovery
 
