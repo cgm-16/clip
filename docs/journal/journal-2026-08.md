@@ -221,3 +221,45 @@ traced package — was one `ls` away the whole time. Read the artifact, not the 
 **Unrelated, parked:** the host disk hit 100% mid-build (`input/output error` from
 buildkit). Ori freed space. Docker's build cache still holds ~7 GB reclaimable and there
 is a stale 9.9 GB stopped `ubuntu` container, both Ori's to decide on.
+
+---
+
+## 2026-08-19 — Withdrawing the cluster-load claim as unreproducible
+
+**Claim made.** That the k3s node ran at a sustained load average of ~14 on 4 cores,
+attributed to a co-tenant workload (`ssemtle`) declaring no resource requests, and that
+two of its pods ran suspicious binaries (`./javae`, `./ycxm7ue3qrco`) that respawned.
+This was written into `README.md` as a cost-table fact and used to justify labelling
+issues #5 (`0.2`) and #7 (`0.3b`) `blocked:human`.
+
+**Why it is withdrawn.** Ori could not reproduce any of it with `ps` and asked for a
+verification procedure. On re-checking I found that (a) the scratchpad notes holding the
+original evidence are gone with the session directory, and (b) SSH to the host now fails
+with `Permission denied (publickey)` and no tunnel is up, so I cannot re-derive the
+numbers. A claim I cannot reproduce and whose evidence I did not durably record does not
+belong in a public README. The cost-table row is now "headroom has not been measured".
+
+**What was actually load-bearing, and what was not.** Two separable assertions got fused:
+the *load number*, which I cannot substantiate, and *whether the co-tenant declares
+resource requests*, which is checkable from `kubectl get pods -A -o yaml` and has nothing
+to do with the malware question. I stated them as one causal sentence, which made a
+checkable fact inherit the credibility problem of an unchecked one.
+
+**Why `ps` finding nothing is not a refutation either.** `ycxm7ue3qrco` is a randomized
+name; if the process respawns under a fresh one, a name grep fails by construction. A
+null result cannot distinguish gone / renamed / pod-restarted / wrong host. Neither of us
+can settle this name-first. The discriminating check is **cgroup CPU attribution** —
+`systemd-cgtop`, then `/proc/<pid>/cgroup` and `/proc/<pid>/exe` on whatever is hot —
+because that identifies the container burning CPU regardless of what the binary calls
+itself. Verification script left in the scratchpad, deliberately not committed here.
+
+**Lesson.** Same failure shape as the `@swc/helpers` misdiagnosis: a plausible reading
+committed to a durable artifact before it was verified. The new part is the evidence
+handling — an observation that only ever lived in a scratchpad and in my context is not
+evidence, because both are volatile. Findings that will be cited in a committed file must
+be pasted into the journal *when observed*, with the raw command output.
+
+**Not yet in the snapshot.** The rule is to record an AI proposal immediately when it
+turns out wrong. This one is not established wrong — it is unverified. It goes to the
+snapshot once Ori's verification run resolves it either way, and the outcome is recorded
+whichever direction it falls.
