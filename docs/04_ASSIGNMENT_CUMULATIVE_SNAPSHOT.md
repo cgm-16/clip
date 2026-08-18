@@ -601,3 +601,65 @@ types), §8.3 (`archive_provenance_message_id` + `archive_forward_message_id`), 
 final Korean copy at 15 minutes). `DESIGN_RATIONALE_APPEND.md` §10. No visual design change: the
 Screen D card hierarchy is unaffected because its source line was always going to be rendered from
 control-plane data.
+
+---
+
+```text
+[2026-08-18 KST] [IMPLEMENTATION]
+```
+
+**Task:** Task 0.1 — make the Wave 0 container image actually serve `/api/health`.
+
+**AI/tool used:** Claude Code (Opus 5), orchestrator session, writing the Dockerfile and diagnosing
+the resulting crash.
+
+**Human instruction/constraint:** Deployment is P0 work and happens before the product is built.
+The image must run as a non-root user.
+
+**AI proposal/output:** The first image built and started, then died immediately:
+
+```
+Error: Cannot find module '/app/node_modules/.pnpm/next@16.3.1_.../node_modules/
+@swc/helpers/esm/_interop_require_default.js'
+```
+
+The AI diagnosed this as pnpm's symlinked `.pnpm` store defeating Next's standalone file tracing,
+added `--node-linker=hoisted` to the image's install step, and **wrote that diagnosis into a
+Dockerfile comment as settled fact** — before rebuilding, because the host disk had filled and the
+rebuild was blocked. The commit message did flag the container test as unverified.
+
+**Rejected/changed:** The diagnosis, and the comment asserting it.
+
+**Why:** It was wrong, and one command would have shown it. Once the rebuild ran, inspecting the
+builder stage showed `node_modules/@swc/helpers` was already a **real directory containing `esm/`**
+— the hoisted linker had done exactly what was asked — and the crash persisted anyway. The traced
+copy in `.next/standalone` contained **only `package.json`**. Tracing had not failed to *follow*
+the package; it had copied the package and dropped every file in it. Next's own `require-hook.js`
+resolves `@swc/helpers/esm/*` through the package's `exports` map at runtime, and the tracer cannot
+see subpaths reached that way.
+
+**Accepted:** `outputFileTracingIncludes: { '/**/*': ['./node_modules/@swc/helpers/**'] }` in
+`next.config.ts`. `--node-linker=hoisted` was kept, but for the honest reason — the include glob
+then resolves against real directories rather than symlinks — and the comment was corrected to say
+so instead of restating the wrong cause.
+
+**Validation/evidence:** Image rebuilt; container starts; `GET /api/health` returns `{"ok":true}`;
+process runs as `uid=1001(nextjs)`. `pnpm lint` and `pnpm test` (7/7) green. Commit `f384318`.
+Caveat carried forward: this run was on arm64 and the deployment target is x64, so the first
+GHCR/CI build in `0.1b` is the verification that counts for the shipped image.
+
+**Impact on Q1/Q2/Q3/Q4:** **Q4**, and it is a stronger answer than the forwarding finding above.
+Three of four planning-stage failures shared the root cause *AI-authored designs that assume
+platform behavior instead of checking it*. This is the same root cause a fourth time — but about
+the AI's **own toolchain**, not a third-party API, and committed as a **code comment**, which is
+the most durable place to leave a false explanation. The forwarding failure was caught before it
+cost anything; this one was written down as truth and had to be retracted.
+
+The generalizable lesson is narrower and more useful than "verify platform behavior": **the error
+message's path string was itself the misleading evidence.** It contained `.pnpm/`, which made
+"pnpm layout problem" feel self-evident and stopped the investigation at the first plausible story.
+The disconfirming check — list the traced package — was one command away the entire time. Read the
+artifact, not the error string. Secondarily **Q3**: the process rule added is *do not write a
+diagnosis into a durable comment until the fix built on it has been observed to work.*
+
+**Downstream changes:** `next.config.ts`, `Dockerfile` comment, `docs/journal/journal-2026-08.md`.
