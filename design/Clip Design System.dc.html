@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics><link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap"><style>body{margin:0;background:#08090b;font-family:"Pretendard Variable",Pretendard,system-ui,sans-serif;-webkit-font-smoothing:antialiased}a{color:#8f9fd6;text-decoration:none}a:hover{color:#aab7e4}</style></helmet>
+
+<div style="background:#08090b;min-height:100vh;padding:56px 48px 96px">
+<div style="max-width:1120px;margin:0 auto;display:flex;flex-direction:column;gap:56px">
+
+  <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:24px;padding-bottom:24px;border-bottom:1px solid #26292e">
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <span style="font:400 10px/1 'JetBrains Mono',monospace;color:#83888f;letter-spacing:0.1em;text-transform:uppercase">Design system · P0 · 2026-08</span>
+      <span style="font:600 30px/1.15 'Pretendard Variable',Pretendard,sans-serif;color:#e6e8ea;letter-spacing:-0.02em">Clip — 계기판</span>
+      <span style="font:400 14px/1.6 'Pretendard Variable',Pretendard,sans-serif;color:#c9ced4;max-width:640px;text-wrap:pretty">조용한 보존 도구. 인기 순위도, 감시 로그도, AI 마법도 아닙니다. 화면은 기록을 읽는 표면이고, 크롬은 최소한으로 존재합니다.</span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px;text-align:right;flex:none">
+      <span style="font:400 10px/1 'JetBrains Mono',monospace;color:#83888f;letter-spacing:0.08em">Pretendard · JetBrains Mono</span>
+      <span style="font:400 10px/1 'JetBrains Mono',monospace;color:#83888f;letter-spacing:0.08em">radius 2 · hairline 1px · accent #4A5A8C</span>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:18px">
+    <div style="display:flex;align-items:baseline;gap:12px">
+      <span style="font:500 10px/1 'JetBrains Mono',monospace;color:#4A5A8C;letter-spacing:0.12em">01</span>
+      <span style="font:600 17px/1 'Pretendard Variable',Pretendard,sans-serif;color:#e6e8ea">아이덴티티 · Identity</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div style="background:#0e0f11;border:1px solid #26292e;border-radius:2px;padding:24px;display:flex;flex-direction:column;gap:24px">
+        <div style="display:flex;align-items:center;gap:11px">
+          <div style="width:14px;height:14px;background:#e6e8ea;border-radius:1px"></div>
+          <span style="font:600 26px/1 'Pretendard Variable',Pretendard,sans-serif;color:#e6e8ea;letter-spacing:-0.025em">Clip</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap">
+          <div style="display:flex;align-items:center;gap:8px"><div style="width:9px;height:9px;background:#8b9096;border-radius:1px"></div><span style="font:600 15px/1 'Pretendard Variable',Pretendard,sans-serif;color:#e6e8ea;letter-spacing:-0.01em">Clip</span></div>
+          <div style="display:flex;align-items:center;gap:6px"><div style="width:7px;height:7px;background:#83888f;border-radius:1px"></div><span style="font:600 12px/1 'Pretendard Variable',Pretendard,sans-serif;color:#c9ced4;letter-spacing:-0.005em">Clip</span></div>
+          <div style="width:26px;height:26px;border:1px solid #2f3339;border-radius:2px;display:flex;align-items:center;justify-content:center"><div style="width:8px;height:8px;background:#e6e8ea;border-radius:1px"></div></div>
+        </div>
+        <span style="font:400 12px/1.65 'Pretendard Variable',Pretendard,sans-serif;color:#83888f;text-wrap:pretty">마크는 종이집게가 아니라 <span style="color:#c9ced4">고정점</span>입니다. 정사각형 하나, 1px 라운드. 기울이거나 그라디언트를 넣거나 아이콘으로 대체하지 않습니다. 워드마크는 항상 라틴 표기 “Clip”이며 한글 병기는 P1에서 결정합니다.</span>
+      </div>
+      <div style="background:#0e0f11;border:1px solid #26292e;border-radius:2px;padding:24px;display:flex;flex-direction:column;gap:14px">
+        <span style="font:400 10px/1 'JetBrains Mono',monospace;color:#83888f;letter-spacing:0.09em;text-transform:uppercase">보이스 · 4가지 규칙</span>
+        <sc-for list="{{ voice }}" as="v" hint-placeholder-count="4">
+          <div style="display:flex;flex-direction:column;gap:5px;padding-bottom:12px;border-bottom:1px solid #1c1f23">
+            <span style="font:500 12.5px/1.4 'Pretendard Variable',Pretendard,sans-serif;color:#e6e8ea">{{ v.rule }}</span>
+            <div style="display:flex;flex-direction:column;gap:3px">
+              <span style="font:400 12px/1.5 'Pretendard Variable',Pretendard,sans-serif;color:#86c1a1">○ {{ v.good }}</span>
+              <span style="font:400 12px/1.5 'Pretendard Variable',Pretendard,sans-serif;color:#c98f8f">× {{ v.bad }}</span>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:18px">
+    <div style="display:flex;align-items:baseline;gap:12px">
+      <span style="font:500 10px/1 'JetBrains Mono',monospace;color:#4A5A8C;letter-spacing:0.12em">02</span>
+      <span style="font:600 17px/1 'Pretendard Variable',Pretendard,sans-serif;color:#e6e8ea">색 토큰 · Semantic color</span>
+      <span style="font:400 11px/1 'JetBrains Mono',monospace;color:#83888f">dark = canonical</span>
+    </div>
+    <div style="background:#0e0f11;border:1px solid #26292e;border-radius:2px;padding:20px;display:flex;flex-direction:column;gap:20px">
+      <sc-for list="{{ tokenGroups }}" as="g" hint-placeholder-count="3">
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <span style="font:400 10px/1 'JetBrains Mono',monospace;color:#83888f;letter-spacing:0.09em;text-transform:uppercase">{{ g.label }}</span>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+            <sc-for list="{{ g.tokens }}" as="t" hint-placeholder-count="4">
+              <div style="border:1px solid #26292e;border-radius:2px;overflow:hidden;display:flex;flex-direction:column">
+                <div style="height:44px;background:{{ t.dark }}"></div>
+                <div style="padding:8px 9px;display:flex;flex-direction:column;gap:3px;background:#0a0b0d">
+                  <span style="font:500 10.5px/1.2 'JetBrains Mono',monospace;color:#c9ced4">{{ t.name }}</span>
+                  <span style="font:400 10px/1.2 'JetBrains Mono',monospace;color:#83888f">{{ t.dark }}</span>
+                  <span style="font:400 10px/1.2 'JetBrains Mono',monospace;color:#6f747b">L {{ t.light }}</span>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-for>
+      <span style="font:400 11.5px/1.6 'Pretendard Variable',Pretendard,sans-serif;color:#83888f;text-wrap:pretty"><span style="color:#c9ced4">faint(#5f646a)는 비활성 컨트롤 전용입니다.</span> 의미를 가진 텍스트 — 플레이스홀더, 조건 라벨, 주석 — 에는 절대 쓰지 않고 muted(#83888f, 5.37:1)를 씁니다. 액센트는 상태 표시에만 씁니다 — 선택, 포커스, 기본 동작. 장식용 액센트 면적은 금지. 상태는 색만으로 전달하지 않고 항상 텍스트를 동반합니다.</span>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:18px">
+    <div style="display:flex;align-items:baseline;gap:12px">
+      <span style="font:500 10px/1 'JetBrains Mono',monospace;color:#4A5A8C;letter-spacing:0.12em">03</span>
+      <span style="font:600 17px/1 'Pretendard Variable',Pretendard,sans-serif;color:#e6e8ea">타이포그래피</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1.35fr 1fr;gap:16px">
+      <div style="background:#0e0f11;border:1px solid #26292e;border-radius:2px;padding:22px;display:flex;flex-direction:column;gap:0">
+        <sc-for list="{{ typeScale }}" as="s" hint-placeholder-count="6">
+          <div style="display:flex;align-items:baseline;gap:18px;padding:11px 0;border-bottom:1px solid #1c1f23">
+            <span style="font:400 10px/1 'JetBrains Mono',monospace;color:#83888f;width:104px;flex:none">{{ s.spec }}</span>
+            <span style="font:{{ s.font }};color:#e6e8ea;text-wrap:pretty">{{ s.sample }}</span>
+          </div>
+        </sc-for>
+        <span style="font:400 11.5px/1.6 'Pretendard Variable',Pretendard,sans-serif;color:#83888f;padding-top:14px;text-wrap:pretty">본문 최소 13.5px, 라벨 최소 11px. 한글 본문은 line-height 1.65 이상을 유지합니다.</span>
+      </div>
+      <div style="background:#0e0f11;border:1px solid #26292e;border-radius:2px;padding:22px;display:flex;flex-direction:column;gap:14px">
+        <span style="font:400 10px/1 'JetBrains Mono',monospace;color:#83888f;letter-spacing:0.09em;text-transform:uppercase">모노스페이스는 기계값 전용</span>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <sc-for list="{{ monoUses }}" as="m" hint-placeholder-count="5">
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="font:400 11.5px/1 'JetBrains Mono',monospace;color:#c9ced4;background:#08090b;border:1px solid #23262b;border-radius:2px;padding:5px 7px">{{ m.sample }}</span>
+              <span style="font:400 11.5px/1.4 'Pretendard Variable',Pretendard,sans-serif;color:#83888f">{{ m.what }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <span style="font:400 11.5px/1.6 'Pretendard Variable',Pretendard,sans-serif;color:#83888f;padding-top:4px;border-top:1px solid #1c1f23;text-wrap:pretty">사람이 쓴 문장에는 모노를 쓰지 않습니다. 모노가 보이면 “이건 시스템이 만든 값”이라는 신호입니다.</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:18px">
+    <div style="display:flex;align-items:baseline;gap:12px">
+      <span style="font:500 10px/1 'JetBrains Mono',monospace;color:#4A5A8C;letter-spacing:0.12em">04</span>
+      <span style="font:600 17px/1 'Pretendard Variable',Pretendard,sans-serif;color:#e6e8ea">간격 · 컨테이너 · 모서리</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px">
+      <div style="background:#0e0f11;border:1px solid #26292e;border-radius:2px;padding:20px;display:flex;flex-direction:column;gap:11px">
+        <span style="font:400 10px/1 'JetBrains Mono',monospace;color:#83888f;letter-spacing:0.09em;text-transform:uppercase">간격 (4px 배수)</span>
+        <sc-for list="{{ spacing }}" as="s" hint-placeholder-count="8">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font:400 10.5px/1 'JetBrains Mono',monospace;color:#83888f;width:26px;flex:none">{{ s.v }}</span>
+            <span style="height:7px;background:#3d4450;border-radius:1px;display:block;width:{{ s.w }}"></span>
+          </div>
+        </sc-for>
+      </div>
+      <div style="background:#0e0f11;border:1px solid #26292e;border-radius:2px;padding:20px;display:flex;flex-direction:column;gap:13px">
+        <span style="font:400 10px/1 'JetBrains Mono',monospace;color:#83888f;letter-spacing:0.09em;text-transform:uppercase">컨테이너 · 브레이크포인트</span>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <sc-for list="{{ containers }}" as="c" hint-placeholder-count="4">
+            <div style="display:flex;flex-direction:column;gap:4px">
+              <div style="display:flex;justify-content:space-between"><span style="font:500 11.5px/1 'Pretendard Variable',Pretendard,sans-serif;color:#c9ced4">{{ c.what }}</span><span style="font:400 11px/1 'JetBrains Mono',monospace;color:#83888f">{{ c.v }}</span></div>
+              <span style="height:5px;background:#2a2e34;border-radius:1px;display:block;width:{{ c.w }}"></span>
+            </div>
+          </sc-for>
+        </div>
+        <span style="font:400 11px/1.6 'Pretendard Variable',Pretendard,sans-serif;color:#83888f;padding-top:9px;border-top:1px solid #1c1f23">640 이하: 필터·페이지네이션 세로 적층, 카드 패딩 16→12. 960 이하: 설정 2열 → 1열.</span>
+      </div>
+      <div style="background:#0e0f11;border:1px solid #26292e;border-radius:2px;padding:20px;display:flex;flex-direction:column;gap:13px">
+        <span style="font:400 10px/1 'JetBrains Mono',monospace;color:#83888f;letter-spacing:0.09em;text-transform:uppercase">모서리 · 선</span>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <div style="width:56px;height:44px;border:1px solid #2f3339;border-radius:2px;display:flex;align-items:flex-end;justify-content:center;padding-bottom:5px"><span style="font:400 9.5px/1 'JetBrains Mono',monospace;color:#83888f">2px</span></div>
+          <div style="width:56px;height:44px;border:1px solid #2f3339;border-radius:1px;display:flex;align-items:flex-end;justify-content:center;padding-bottom:5px"><span style="font:400 9.5px/1 'JetBrains Mono',monospace;color:#83888f">1px 칩</span></div>
+          <div style="width:56px;height:44px;border:1px solid #2f3339;border-radius:50%;display:flex;align-items:center;justify-content:center"><span style="font:400 9.5px/1 'JetBrains Mono',monospace;color:#83888f">radio</span></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:7px;padding-top:4px">
+          <div style="display:flex;align-items:center;gap:10px"><span style="width:56px;height:1px;background:#1c1f23;display:block;flex:none"></span><span style="font:400 11px/1 'JetBrains Mono',monospace;color:#83888f">divider #1c1f23</span></div>
+          <div style="display:flex;align-items:center;gap:10px"><span style="width:56px;height:1px;background:#26292e;display:block;flex:none"></span><span style="font:400 11px/1 'JetBrains Mono',monospace;color:#83888f">border #26292e</span></div>
+          <div style="display:flex;align-items:center;gap:10px"><span style="width:56px;height:1px;background:#2f3339;display:block;flex:none"></span><span style="font:400 11px/1 'JetBrains Mono',monospace;color:#83888f">strong #2f3339</span></div>
+        </div>
+        <span style="font:400 11px/1.6 'Pretendard Variable',Pretendard,sans-serif;color:#83888f;padding-top:9px;border-top:1px solid #1c1f23">그림자 없음. 깊이는 선과 표면 색 한 단계로만 표현합니다.</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:18px">
+    <div style="display:flex;align-items:baseline;gap:12px">
+      <span style="font:500 10px/1 'JetBrains Mono',monospace;color:#4A5A8C;letter-spacing:0.12em">05</span>
+      <span style="font:600 17px/1 'Pretendard Variable',Pretendard,sans-serif;color:#e6e8ea">버튼</span>
+    </div>
+    <div style="background:#0e0f11;border:1px solid #26292e;border-radius:2px;padding:22px;display:flex;flex-direction:column;gap:20px">
+      <div style="display:grid;grid-template-columns:96px 1fr;gap:14px 18px;align-items:center">
+        <span style="font:400 10px/1 'JetBrains Mono',monospace;color:#83888f;letter-spacing:0.08em">PRIMARY</span>
+        <div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center">
+          <span style="font:500 12.5px/1 'Pretendard Variable',Pretendard,sans-serif;color:#0e0f11;background:#dfe3e7;border:1px solid #dfe3e7;border-radius:2px;padding:10px 16px">저장</span>
+          <span style="font:500 12.5px/1 'Pretendard Variable',Pretendard,sans-serif;color:#0e0f11;background:#fff;border:1px solid #fff;border-radius:2px;padding:10px 16px">hover</span>
+          <span style="font:500 12.5px/1 'Pretendard Variable',Pretendard,sans-serif;color:#0e0f11;background:#dfe3e7;border:1px solid #dfe3e7;border-radius:2px;padding:10px 16px;outline:2px solid #8f9fd6;outline-offset:2px">focus</span>
+          <span style="font:500 12.5px/1 'Pretendard Variable',Pretendard,sans-serif;color:#5f646a;background:#1b1e22;border:1px solid #23262b;border-radius:2px;padding:10px 16px">disabled</span>
+          <span style="font:500 11.5px/1 'Pretendard Variable',Pretendard,sans-serif;color:#0e0f11;background:#dfe3e7;border:1px solid #dfe3e7;border-radius:2px;padding:7px 12px">sm</span>
+        </div>
+        <span style="font:400 10px/1 'JetBrains Mono',monospace;color:#83888f;letter-spacing:0.08em">SECONDARY</span>
+        <div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center">
+          <span style="font:500 12.5px/1 'Pretendard Variable',Pretendard,sans-serif;color:#c9ced4;border:1px solid #2f3339;border-radius:2px;padding:10px 14px">취소</span>
+          <span style="font:500 12.5px/1 'Pretendard Variable',Pretendard,sans-serif;color:#e6e8ea;background:#1b1e22;border:1px solid #3a3f46;border-radius:2px;padding:10px 14px">hover</span>
+          <span style="font:500 12.5px/1 'Pretendard Variable',Pretendard,sans-serif;color:#c9ced4;border:1px solid #2f3339;border-radius:2px;padding:10px 14px;outline:2px solid #8f9fd6;outline-offset:2px">focus</span>
+          <span style="font:500 12.5px/1 'Pretendard Variable',Pretendard,sans-serif;color:#4a4e54;border:1px solid #23262b;border-radius:2px;padding:10px 14px">disabled</span>
+        </div>
+        <span style="font:400 10px/1 'JetBrains Mono',monospace;color:#83888f;letter-spacing:0.08em">GHOST</span>
+        <div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center">
+          <span style="font:500 12.5px/1 'Pretendard Variable',Pretendard,sans-serif;color:#c9ced4;border:1px solid transparent;border-radius:2px;padding:9px 11px">원본 열기</span>
+          <span style="font:500 12.5px/1 'Pretendard Variable',Pretendard,sans-serif;color:#e6e8ea;background:#17191d;border:1px solid transparent;border-radius:2px;padding:9px 11px">hover</span>
+          <span style="font:500 12.5px/1 'Pretendard Variable',Pretendard,sans-serif;color:#5f646a;border:1px solid transparent;border-radius:2px;padding:9px 11px">disabled</span>
+        </div>
+        <span style="font:400 10px/1 'JetBrains Mono',monospace;color:#83888f;letter-spacing:0.08em">DANGER</span>
+        <div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center">
+          <span style="font:500 12.5px/1 'Pretendard Variable',Pretendard,sans-serif;color:#e9a3a3;border:1px solid #5e3636;background:#1a1111;border-radius:2px;padding:10px 14px">Clip 데이터 삭제</span>
+          <span style="font:500 12.5px/1 'Pretendard Variable',Pretendard,sans-serif;color:#fff;background:#7d3a3a;border:1px solid #7d3a3a;border-radius:2px;padding:10px 14px">확인 후 실행</span>
+        </div>
+      </div>
+      <span style="font:400 11.5px/1.6 'Pretendard Variable',Pretendard,sans-serif;color:#83888f;padding-top:16px;border-top:1px solid #1c1f23;text-wrap:pretty">한 화면에 primary는 하나. 파괴적 동작은 항상 2단계이며, 결과를 문장으로 먼저 말합니다. 포커스 링은 액센트 2px + offset 2px로 전 컴포넌트 공통.</span>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:18px">
+    <div style="display:flex;align-items:baseline;gap:12px">
+      <span style="font:500 10px/1 'JetBrains Mono',monospace;color:#4A5A8C;letter-spacing:0.12em">06</span>
+      <span style="font:600 17px/1 'Pretendard Variable',Pretendard,sans-serif;color:#e6e8ea">입력 · 선택</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div style="background:#0e0f11;border:1px solid #26292e;border-radius:2px;padding:22px;display:flex;flex-direction:column;gap:16px">
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <span style="font:500 11px/1 'Pretendard Variable',Pretendard,sans-serif;color:#8b9096">텍스트 입력 · 기본</span>
+          <div style="padding:10px 11px;background:#0a0b0d;border:1px solid #2f3339;border-radius:2px"><span style="font:400 12.5px/1 'Pretendard Variable',Pretendard,sans-serif;color:#5f646a">채널 이름 검색</span></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <span style="font:500 11px/1 'Pretendard Variable',Pretendard,sans-serif;color:#8b9096">포커스</span>
+          <div style="padding:10px 11px;background:#0a0b0d;border:1px solid #4A5A8C;border-radius:2px;outline:2px solid #8f9fd6;outline-offset:1px"><span style="font:400 12.5px/1 'JetBrains Mono',monospace;color:#e6e8ea">#clip-archive</span></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <span style="font:500 11px/1 'Pretendard Variable',Pretendard,sans-serif;color:#8b9096">오류</span>
+          <div style="padding:10px 11px;background:#0a0b0d;border:1px solid #7d3a3a;border-radius:2px"><span style="font:400 12.5px/1 'Pretendard Variable',Pretendard,sans-serif;color:#e6e8ea">—</span></div>
+          <span style="font:400 11px/1.5 'Pretendard Variable',Pretendard,sans-serif;color:#e9a3a3">채널을 선택해야 저장할 수 있습니다.</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <span style="font:500 11px/1 'Pretendard Variable',Pretendard,sans-serif;color:#5f646a">비활성</span>
+          <div style="padding:10px 11px;background:#0d0e10;border:1px solid #23262b;border-radius:2px"><span style="font:400 12.5px/1 'Pretendard Variable',Pretendard,sans-serif;color:#4a4e54">권한이 없습니다</span></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <span style="font:500 11px/1 'Pretendard Variable',Pretendard,sans-serif;color:#8b9096">셀렉트</span>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 11px;background:#0a0b0d;border:1px solid #2f3339;border-radius:2px"><span style="font:400 12.5px/1 'JetBrains Mono',monospace;color:#e6e8ea">#일반</span><span style="font:400 11px/1 'JetBrains Mono',monospace;color:#83888f">▾</span></div>
+        </div>
+      </div>
+      <div style="background:#0e0f11;border:1px solid #26292e;border-radius:2px;padding:22px;display:flex;flex-direction:column;gap:16px">
+        <div style="display:flex;flex-direction:column;gap:7px">
+          <span style="font:500 11px/1 'Pretendard Variable',Pretendard,sans-serif;color:#8b9096">역할 다중 선택</span>
+          <div style="display:flex;flex-wrap:wrap;gap:5px;padding:9px;border:1px solid #2f3339;background:#0a0b0d;border-radius:2px">
+            <span style="display:inline-flex;align-items:center;gap:6px;font:400 11.5px/1 'JetBrains Mono',monospace;color:#e6e8ea;background:#1b1e22;border:1px solid #2f3339;border-radius:1px;padding:5px 7px">@moderator <span style="color:#83888f">×</span></span>
+            <span style="display:inline-flex;align-items:center;gap:6px;font:400 11.5px/1 'JetBrains Mono',monospace;color:#e6e8ea;background:#1b1e22;border:1px solid #2f3339;border-radius:1px;padding:5px 7px">@기록관리 <span style="color:#83888f">×</span></span>
+            <span style="font:400 11.5px/1 'Pretendard Variable',Pretendard,sans-serif;color:#83888f;padding:5px 4px">역할 추가…</span>
+          </div>
+          <div style="border:1px solid #2f3339;background:#0a0b0d;border-radius:2px;display:flex;flex-direction:column">
+            <span style="font:400 11.5px/1 'JetBrains Mono',monospace;color:#e6e8ea;padding:8px 10px;background:#16191d;border-bottom:1px solid #1c1f23">@아카이브 <span style="color:#83888f">— 선택됨 아님</span></span>
+            <span style="font:400 11.5px/1 'JetBrains Mono',monospace;color:#c9ced4;padding:8px 10px;border-bottom:1px solid #1c1f23">@newbie</span>
+            <span style="font:400 11.5px/1 'JetBrains Mono',monospace;color:#4a4e54;padding:8px 10px">@everyone — 선택 불가</span>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:7px;padding-top:4px;border-top:1px solid #1c1f23">
+          <span style="font:500 11px/1 'Pretendard Variable',Pretendard,sans-serif;color:#8b9096">라디오 · 체크박스</span>
+          <div style="display:flex;gap:10px;align-items:center;padding:10px 11px;border:1px solid #4A5A8C;background:#131721;border-radius:2px">
+            <span style="width:12px;height:12px;border:1px solid #8f9fd6;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center"><span style="width:5px;height:5px;background:#8f9fd6;border-radius:50%;display:block"></span></span>
+            <span style="font:500 12.5px/1 'Pretendard Variable',Pretendard,sans-serif;color:#e6e8ea">선택됨</span>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center;padding:10px 11px;border:1px solid #26292e;border-radius:2px">
+            <span style="width:12px;height:12px;border:1px solid #4a4e54;border-radius:50%;flex:none;display:block"></span>
+            <span style="font:400 12.5px/1 'Pretendard Variable',Pretendard,sans-serif;color:#c9ced4">선택 안 됨</span>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center">
+            <span style="width:13px;height:13px;border:1px solid #8f9fd6;background:#4A5A8C;border-radius:1px;flex:none;display:flex;align-items:center;justify-content:center"><span style="width:6px;height:6px;background:#e6e8ea;border-radius:1px;display:block"></span></span>
+            <span style="font:400 12.5px/1.4 'Pretendard Variable',Pretendard,sans-serif;color:#c9ced4">결과를 이해했습니다</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:18px">
+    <div style="display:flex;align-items:baseline;gap:12px">
+      <span style="font:500 10px/1 'JetBrains Mono',monospace;color:#4A5A8C;letter-spacing:0.12em">07</span>
+      <span style="font:600 17px/1 'Pretendard Variable',Pretendard,sans-serif;color:#e6e8ea">피드백 · 상태 표시</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1.25fr 1fr;gap:16px">
+      <div style="background:#0e0f11;border:1px solid #26292e;border-radius:2px;padding:22px;display:flex;flex-direction:column;gap:10px">
+        <sc-for list="{{ callouts }}" as="c" hint-placeholder-count="4">
+          <div style="display:flex;gap:10px;align-items:flex-start;padding:11px 12px;border:1px solid {{ c.border }};background:{{ c.bg }};border-radius:2px">
+            <span style="font:500 10px/1.4 'JetBrains Mono',monospace;color:{{ c.fg }};letter-spacing:0.08em;flex:none;padding-top:1px">{{ c.tag }}</span>
+            <span style="font:400 11.5px/1.55 'Pretendard Variable',Pretendard,sans-serif;color:{{ c.fg }};text-wrap:pretty">{{ c.copy }}</span>
+          </div>
+        </sc-for>
+        <span style="font:400 11.5px/1.6 'Pretendard Variable',Pretendard,sans-serif;color:#83888f;padding-top:10px;border-top:1px solid #1c1f23;text-wrap:pretty">모든 상태는 앞에 텍스트 태그가 붙습니다. 색을 못 봐도 의미가 전달되어야 합니다.</span>
+      </div>
+      <div style="background:#0e0f11;border:1px solid #26292e;border-radius:2px;padding:22px;display:flex;flex-direction:column;gap:16px">
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <span style="font:400 10px/1 'JetBrains Mono',monospace;color:#83888f;letter-spacing:0.09em;text-transform:uppercase">배지</span>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <span style="font:400 10.5px/1 'JetBrains Mono',monospace;color:#c9ced4;border:1px solid #2f3339;border-radius:1px;padding:4px 6px">#일반</span>
+            <span style="font:400 10.5px/1 'JetBrains Mono',monospace;color:#8f9fd6;border:1px solid #3b4560;border-radius:1px;padding:4px 6px">관리자</span>
+            <span style="font:400 10.5px/1 'JetBrains Mono',monospace;color:#86c1a1;border:1px solid #2f4d3d;border-radius:1px;padding:4px 6px">보존됨</span>
+            <span style="font:400 10.5px/1 'JetBrains Mono',monospace;color:#83888f;border:1px solid #26292e;border-radius:1px;padding:4px 6px">원본 없음</span>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;padding-top:14px;border-top:1px solid #1c1f23">
+          <span style="font:400 10px/1 'JetBrains Mono',monospace;color:#83888f;letter-spacing:0.09em;text-transform:uppercase">토스트 (우하단, 4초)</span>
+          <div style="display:flex;align-items:center;gap:10px;padding:11px 13px;background:#16191d;border:1px solid #2f3339;border-radius:2px">
+            <span style="font:500 10px/1 'JetBrains Mono',monospace;color:#86c1a1;letter-spacing:0.08em">SAVED</span>
+            <span style="font:400 12px/1 'Pretendard Variable',Pretendard,sans-serif;color:#e6e8ea">설정을 저장했습니다.</span>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;padding-top:14px;border-top:1px solid #1c1f23">
+          <span style="font:400 10px/1 'JetBrains Mono',monospace;color:#83888f;letter-spacing:0.09em;text-transform:uppercase">인라인 로딩</span>
+          <div style="display:flex;align-items:center;gap:9px">
+            <span style="width:22px;height:6px;background:linear-gradient(90deg,#3d4450 0%,#2a2e34 100%);border-radius:1px;display:block"></span>
+            <span style="font:400 11.5px/1 'JetBrains Mono',monospace;color:#83888f">Discord에서 내용을 불러오는 중…</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:18px">
+    <div style="display:flex;align-items:baseline;gap:12px">
+      <span style="font:500 10px/1 'JetBrains Mono',monospace;color:#4A5A8C;letter-spacing:0.12em">08</span>
+      <span style="font:600 17px/1 'Pretendard Variable',Pretendard,sans-serif;color:#e6e8ea">클립 카드 해부</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1.4fr 1fr;gap:16px;align-items:start">
+      <div style="background:#0e0f11;border:1px solid #26292e;border-radius:2px;overflow:hidden">
+        <div style="padding:16px 18px;display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <span style="width:22px;height:22px;border-radius:2px;background:#2a2e34;color:#c3c8ce;font:500 11px/22px 'Pretendard Variable',Pretendard,sans-serif;text-align:center">K</span>
+            <span style="font:600 13px/1 'Pretendard Variable',Pretendard,sans-serif;color:#e6e8ea">kyuhyun.dev</span>
+            <span style="font:400 11px/1 'JetBrains Mono',monospace;color:#8b9096">#질문-답변</span>
+            <span style="font:400 11px/1 'JetBrains Mono',monospace;color:#83888f">2026-06-28 02:41</span>
+            <span style="flex:1"></span>
+            <span style="font:500 10px/1 'JetBrains Mono',monospace;color:#4A5A8C;letter-spacing:0.08em">① 출처</span>
+          </div>
+          <span style="font:400 11px/1.5 'Pretendard Variable',Pretendard,sans-serif;color:#83888f;padding-left:8px;border-left:2px solid #2f3339">답장 → 왜 유니크 제약이 계속 터지나요?</span>
+          <div style="font:400 13.5px/1.65 'Pretendard Variable',Pretendard,sans-serif;color:#c9ced4;text-wrap:pretty">트랜잭션 안에서 재시도 걸 때 이 패턴 쓰세요. 어제 나온 데드락 대부분 이걸로 해결됩니다.</div>
+          <pre style="margin:0;padding:11px 12px;background:#08090b;border:1px solid #23262b;border-radius:2px;font:400 11.5px/1.6 'JetBrains Mono',monospace;color:#a8b4c0;overflow-x:auto;white-space:pre">on conflict (guild_id, message_id)
+  do nothing returning id</pre>
+          <div style="display:flex;align-items:center;gap:12px">
+            <span style="font:400 10px/1 'JetBrains Mono',monospace;color:#83888f;letter-spacing:0.07em;text-transform:uppercase">클립 6월 28일</span>
+            <span style="flex:1"></span>
+            <span style="font:500 11px/1 'JetBrains Mono',monospace;color:#c9ced4;padding:5px 8px;border:1px solid #2f3339;border-radius:2px">원본 열기</span>
+          </div>
+        </div>
+      </div>
+      <div style="background:#0e0f11;border:1px solid #26292e;border-radius:2px;padding:22px;display:flex;flex-direction:column;gap:12px">
+        <span style="font:400 10px/1 'JetBrains Mono',monospace;color:#83888f;letter-spacing:0.09em;text-transform:uppercase">시각적 위계 (고정)</span>
+        <sc-for list="{{ hierarchy }}" as="h" hint-placeholder-count="5">
+          <div style="display:flex;gap:11px;align-items:baseline;padding-bottom:10px;border-bottom:1px solid #1c1f23">
+            <span style="font:500 11px/1.4 'JetBrains Mono',monospace;color:#4A5A8C;flex:none">{{ h.n }}</span>
+            <div style="display:flex;flex-direction:column;gap:3px">
+              <span style="font:500 12.5px/1.3 'Pretendard Variable',Pretendard,sans-serif;color:#e6e8ea">{{ h.what }}</span>
+              <span style="font:400 11px/1.5 'Pretendard Variable',Pretendard,sans-serif;color:#83888f">{{ h.how }}</span>
+            </div>
+          </div>
+        </sc-for>
+        <span style="font:400 11px/1.6 'Pretendard Variable',Pretendard,sans-serif;color:#83888f">반응 수, 좋아요, 순위 표시는 카드에 존재하지 않습니다.</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:18px">
+    <div style="display:flex;align-items:baseline;gap:12px">
+      <span style="font:500 10px/1 'JetBrains Mono',monospace;color:#4A5A8C;letter-spacing:0.12em">09</span>
+      <span style="font:600 17px/1 'Pretendard Variable',Pretendard,sans-serif;color:#e6e8ea">빈 화면 · 로딩 · 오류 · 세션</span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px">
+      <sc-for list="{{ states }}" as="s" hint-placeholder-count="4">
+        <div style="background:#0e0f11;border:1px solid #26292e;border-radius:2px;padding:20px;display:flex;flex-direction:column;gap:10px;min-height:168px">
+          <span style="font:500 10px/1 'JetBrains Mono',monospace;color:#83888f;letter-spacing:0.09em">{{ s.tag }}</span>
+          <span style="font:600 14px/1.4 'Pretendard Variable',Pretendard,sans-serif;color:#e6e8ea;text-wrap:pretty">{{ s.title }}</span>
+          <span style="font:400 11.5px/1.6 'Pretendard Variable',Pretendard,sans-serif;color:#83888f;text-wrap:pretty;flex:1">{{ s.body }}</span>
+          <span style="font:500 11.5px/1 'Pretendard Variable',Pretendard,sans-serif;color:#c9ced4;border:1px solid #2f3339;border-radius:2px;padding:8px 11px;align-self:flex-start">{{ s.action }}</span>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:18px">
+    <div style="display:flex;align-items:baseline;gap:12px">
+      <span style="font:500 10px/1 'JetBrains Mono',monospace;color:#4A5A8C;letter-spacing:0.12em">10</span>
+      <span style="font:600 17px/1 'Pretendard Variable',Pretendard,sans-serif;color:#e6e8ea">라이트 테마 (동일 토큰, 값만 교체)</span>
+    </div>
+    <div style="background:#ececeb;border:1px solid #d9d9d7;border-radius:2px;padding:24px;display:grid;grid-template-columns:1.3fr 1fr;gap:18px">
+      <div style="background:#f7f7f6;border:1px solid #d9d9d7;border-radius:2px;overflow:hidden">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border-bottom:1px solid #d9d9d7;background:#f1f1f0">
+          <div style="display:flex;align-items:center;gap:9px">
+            <div style="width:9px;height:9px;background:#3a3d42;border-radius:1px"></div>
+            <span style="font:600 14.5px/1 'Pretendard Variable',Pretendard,sans-serif;color:#17181a;letter-spacing:-0.01em">Clip</span>
+            <span style="width:1px;height:13px;background:#d9d9d7;display:block"></span>
+            <span style="font:400 11.5px/1 'JetBrains Mono',monospace;color:#6a6e74">달빛 개발자 모임</span>
+          </div>
+          <span style="font:500 11.5px/1 'Pretendard Variable',Pretendard,sans-serif;color:#17181a;padding:6px 9px;background:#e4e4e2;border:1px solid #c4c4c1;border-radius:2px">아카이브</span>
+        </div>
+        <div style="padding:16px;display:flex;flex-direction:column;gap:9px;border-bottom:1px solid #e6e6e4">
+          <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+            <span style="width:22px;height:22px;border-radius:2px;background:#dedede;color:#4a4d52;font:500 11px/22px 'Pretendard Variable',Pretendard,sans-serif;text-align:center">하</span>
+            <span style="font:600 13px/1 'Pretendard Variable',Pretendard,sans-serif;color:#17181a">하늘봄</span>
+            <span style="font:400 11px/1 'JetBrains Mono',monospace;color:#5c6067">#일반</span>
+            <span style="font:400 11px/1 'JetBrains Mono',monospace;color:#6a6e74">2026-07-14 21:03</span>
+          </div>
+          <span style="font:400 13.5px/1.65 'Pretendard Variable',Pretendard,sans-serif;color:#3a3d42;text-wrap:pretty">서버 규칙 개정안 최종본입니다. 다음 주 월요일부터 적용됩니다.</span>
+          <div style="display:flex;align-items:center;gap:12px">
+            <span style="font:400 10px/1 'JetBrains Mono',monospace;color:#6a6e74;letter-spacing:0.07em;text-transform:uppercase">클립 7월 14일</span>
+            <span style="flex:1"></span>
+            <span style="font:500 11px/1 'JetBrains Mono',monospace;color:#3a3d42;padding:5px 8px;border:1px solid #c4c4c1;border-radius:2px">원본 열기</span>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 16px">
+          <span style="font:400 11px/1 'JetBrains Mono',monospace;color:#6a6e74">1–1 / 47</span>
+          <span style="font:500 11px/1 'JetBrains Mono',monospace;color:#17181a;padding:6px 10px;border:1px solid #c4c4c1;background:#e4e4e2;border-radius:2px">다음</span>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:11px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <span style="font:500 12.5px/1 'Pretendard Variable',Pretendard,sans-serif;color:#f7f7f6;background:#22242a;border:1px solid #22242a;border-radius:2px;padding:10px 16px">저장</span>
+          <span style="font:500 12.5px/1 'Pretendard Variable',Pretendard,sans-serif;color:#3a3d42;border:1px solid #c4c4c1;border-radius:2px;padding:10px 14px">취소</span>
+          <span style="font:500 12.5px/1 'Pretendard Variable',Pretendard,sans-serif;color:#8a3535;border:1px solid #d9b6b6;background:#f7eeee;border-radius:2px;padding:10px 14px">삭제</span>
+        </div>
+        <div style="padding:10px 11px;background:#fff;border:1px solid #3F5185;border-radius:2px;outline:2px solid #8f9fd6;outline-offset:1px"><span style="font:400 12.5px/1 'JetBrains Mono',monospace;color:#17181a">#clip-archive</span></div>
+        <div style="display:flex;gap:10px;align-items:flex-start;padding:11px 12px;border:1px solid #c2ccdf;background:#eef0f7;border-radius:2px">
+          <span style="font:500 10px/1.4 'JetBrains Mono',monospace;color:#3F5185;letter-spacing:0.08em;flex:none;padding-top:1px">NOTE</span>
+          <span style="font:400 11.5px/1.55 'Pretendard Variable',Pretendard,sans-serif;color:#2f3a55">보관된 메시지는 Discord 서버에 그대로 남습니다.</span>
+        </div>
+        <div style="display:flex;gap:10px;align-items:flex-start;padding:11px 12px;border:1px solid #dcc79a;background:#f9f3e6;border-radius:2px">
+          <span style="font:500 10px/1.4 'JetBrains Mono',monospace;color:#7a5a1e;letter-spacing:0.08em;flex:none;padding-top:1px">확인</span>
+          <span style="font:400 11.5px/1.55 'Pretendard Variable',Pretendard,sans-serif;color:#5e4715">채널을 선택해야 저장할 수 있습니다.</span>
+        </div>
+        <span style="font:400 11px/1.6 'Pretendard Variable',Pretendard,sans-serif;color:#5c6067;padding-top:6px;border-top:1px solid #d9d9d7">라이트 테마는 다크의 대비 관계를 반전한 것뿐입니다. 액센트만 #4A5A8C → #3F5185로 낮춰 흰 배경 대비를 확보합니다.</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;accent&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#4A5A8C&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;options&quot;:[&quot;#4A5A8C&quot;,&quot;#3D6B5C&quot;,&quot;#8A5A2B&quot;,&quot;#6B6B6B&quot;],&quot;section&quot;:&quot;Identity&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const accent = this.props.accent ?? "#4A5A8C";
+    return {
+      accent,
+      voice: [
+        { rule: "결과를 먼저, 이유는 짧게", good: "채널을 선택해야 저장할 수 있습니다.", bad: "유효성 검사에 실패했습니다. (ERR_VALIDATION)" },
+        { rule: "내부 용어를 노출하지 않기", good: "이미 보관된 메시지입니다.", bad: "canonical clip이 PENDING 상태입니다." },
+        { rule: "약속을 과장하지 않기", good: "Clip은 메시지 사본이 아니라 운영 정보를 저장합니다.", bad: "저희는 어떤 데이터도 저장하지 않습니다." },
+        { rule: "파괴적 동작은 결과를 문장으로", good: "Clip 데이터를 삭제해도 Discord 채널과 메시지는 남습니다.", bad: "정말 삭제하시겠습니까?" }
+      ],
+      tokenGroups: [
+        { label: "표면 · surface", tokens: [
+          { name: "page", dark: "#08090b", light: "#ececeb" },
+          { name: "surface", dark: "#0e0f11", light: "#f7f7f6" },
+          { name: "raised", dark: "#121417", light: "#f1f1f0" },
+          { name: "sunken", dark: "#0a0b0d", light: "#ffffff" }
+        ] },
+        { label: "선 · border", tokens: [
+          { name: "divider", dark: "#1c1f23", light: "#e6e6e4" },
+          { name: "border", dark: "#26292e", light: "#d9d9d7" },
+          { name: "strong", dark: "#2f3339", light: "#c4c4c1" },
+          { name: "focus", dark: "#8f9fd6", light: "#8f9fd6" }
+        ] },
+        { label: "글자 · text", tokens: [
+          { name: "text", dark: "#e6e8ea", light: "#17181a" },
+          { name: "text-2", dark: "#c9ced4", light: "#3a3d42" },
+          { name: "muted", dark: "#83888f", light: "#6a6e74" },
+          { name: "faint", dark: "#5f646a", light: "#8d9298" }
+        ] },
+        { label: "의미 · semantic", tokens: [
+          { name: "accent", dark: "#4A5A8C", light: "#3F5185" },
+          { name: "success", dark: "#86c1a1", light: "#2f6b4c" },
+          { name: "warning", dark: "#d6bb8f", light: "#7a5a1e" },
+          { name: "error", dark: "#e9a3a3", light: "#8a3535" }
+        ] }
+      ],
+      typeScale: [
+        { spec: "26 / 600 / -0.02em", font: "600 26px/1.2 'Pretendard Variable',Pretendard,sans-serif", sample: "아카이브" },
+        { spec: "20 / 600 / -0.015em", font: "600 20px/1.3 'Pretendard Variable',Pretendard,sans-serif", sample: "아카이브 위치와 권한" },
+        { spec: "17 / 600", font: "600 17px/1.35 'Pretendard Variable',Pretendard,sans-serif", sample: "설정을 저장했습니다" },
+        { spec: "13.5 / 400 / 1.65", font: "400 13.5px/1.65 'Pretendard Variable',Pretendard,sans-serif", sample: "보존된 메시지 본문입니다. 한글 본문 기준 크기." },
+        { spec: "12.5 / 500 label", font: "500 12.5px/1.4 'Pretendard Variable',Pretendard,sans-serif", sample: "기존 채널 사용" },
+        { spec: "11 / 400 mono caps", font: "400 11px/1.4 'JetBrains Mono',monospace", sample: "CLIPPED 2026-06-28" }
+      ],
+      monoUses: [
+        { sample: "#clip-archive", what: "채널 이름" },
+        { sample: "@moderator", what: "역할 이름" },
+        { sample: "2026-06-28 02:41", what: "원본/보관 시각" },
+        { sample: "/setup", what: "Discord 명령" },
+        { sample: "MANAGE_CHANNELS", what: "권한 상수" }
+      ],
+      spacing: [
+        { v: "4", w: "4px" }, { v: "8", w: "8px" }, { v: "12", w: "12px" },
+        { v: "16", w: "16px" }, { v: "20", w: "20px" }, { v: "24", w: "24px" },
+        { v: "32", w: "32px" }, { v: "48", w: "48px" }
+      ],
+      containers: [
+        { what: "아카이브 목록", v: "720px", w: "100%" },
+        { what: "설정 폼", v: "560px", w: "78%" },
+        { what: "복구/오류 화면", v: "420px", w: "58%" },
+        { what: "페이지 최대", v: "1120px", w: "100%" }
+      ],
+      callouts: [
+        { tag: "NOTE", copy: "보관된 메시지는 Discord 서버에 그대로 남습니다.", bg: "#131721", border: "#3b4560", fg: "#aeb9dc" },
+        { tag: "OK", copy: "아카이브 채널을 만들었습니다. 이제 채널 관리 권한은 필요하지 않습니다.", bg: "#111a15", border: "#2f4d3d", fg: "#9ccdb3" },
+        { tag: "확인", copy: "채널을 선택해야 저장할 수 있습니다.", bg: "#1a1610", border: "#5c4a2a", fg: "#d6bb8f" },
+        { tag: "오류", copy: "설정을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.", bg: "#1a1111", border: "#5e3636", fg: "#e9a3a3" }
+      ],
+      hierarchy: [
+        { n: "①", what: "출처 · 작성자 · 채널", how: "13px 600 + 11px 모노. 가장 먼저 읽히는 줄." },
+        { n: "②", what: "메시지 본문", how: "13.5px / 1.65, text-2. 카드에서 가장 넓은 면적." },
+        { n: "③", what: "출처 맥락 (답장)", how: "11px muted + 왼쪽 2px 선." },
+        { n: "④", what: "보관 시각", how: "10px 모노 대문자, muted. 원본 시각과 시각적으로 구분." },
+        { n: "⑤", what: "동작", how: "secondary 하나만. P0 아카이브는 읽기 전용." }
+      ],
+      states: [
+        { tag: "EMPTY", title: "아직 보관된 메시지가 없습니다", body: "Discord에서 메시지를 우클릭 → 앱 → Clip 을 선택하면 이곳에 쌓입니다.", action: "사용법 보기" },
+        { tag: "LOADING", title: "내용을 불러오는 중", body: "본문은 Discord에서 직접 가져옵니다. 목록 구조는 먼저 표시됩니다.", action: "—" },
+        { tag: "ERROR", title: "원본을 찾을 수 없습니다", body: "아카이브 채널의 메시지가 Discord에서 삭제된 것 같습니다. 보관 기록은 남아 있습니다.", action: "다시 시도" },
+        { tag: "SESSION", title: "설정 링크가 만료되었습니다", body: "보안을 위해 관리자 링크는 일회용입니다. Discord에서 /setup 을 다시 실행해 주세요.", action: "닫기" }
+      ]
+    };
+  }
+}
+
+</script>
+</body>
+</html>

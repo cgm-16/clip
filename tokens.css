@@ -1,0 +1,104 @@
+/* Clip — P0 design tokens. Dark is canonical; light overrides under [data-theme="light"]. */
+
+:root {
+  --page: #08090b;
+  --surface: #0e0f11;
+  --raised: #121417;
+  --sunken: #0a0b0d;
+
+  --divider: #1c1f23;
+  --border: #26292e;
+  --border-strong: #2f3339;
+  --focus: #8f9fd6;
+
+  --text: #e6e8ea;
+  --text-2: #c9ced4;
+  --muted: #83888f;      /* 5.37:1 on --surface. All meaningful secondary text. */
+  --faint: #5f646a;      /* DISABLED CONTROLS ONLY. Never for readable text. */
+
+  --accent: #4a5a8c;
+  --accent-text: #8f9fd6;
+  --accent-surface: #131721;
+  --accent-border: #3b4560;
+
+  --success-text: #86c1a1;
+  --success-surface: #111a15;
+  --success-border: #2f4d3d;
+  --warning-text: #d6bb8f;
+  --warning-surface: #1a1610;
+  --warning-border: #5c4a2a;
+  --error-text: #e9a3a3;
+  --error-surface: #1a1111;
+  --error-border: #5e3636;
+  --danger-solid: #7d3a3a;
+
+  --btn-primary-bg: #dfe3e7;
+  --btn-primary-bg-hover: #ffffff;
+  --btn-primary-fg: #0e0f11;
+  --btn-disabled-bg: #1b1e22;
+  --btn-disabled-fg: #5f646a;
+  --hover-surface: #17191d;
+
+  --font-ui: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --fs-display: 26px;   --lh-display: 1.2;   /* 600, -0.02em */
+  --fs-title: 20px;     --lh-title: 1.3;     /* 600, -0.015em */
+  --fs-subtitle: 17px;  --lh-subtitle: 1.35; /* 600 */
+  --fs-body: 13.5px;    --lh-body: 1.65;     /* 400 — Korean body minimum */
+  --fs-label: 12.5px;   --lh-label: 1.4;     /* 500 */
+  --fs-small: 11.5px;   --lh-small: 1.55;    /* 400 */
+  --fs-meta: 11px;      --lh-meta: 1.4;      /* 400 mono */
+  --fs-micro: 10px;                          /* 400/500 mono, letter-spacing .07–.09em, uppercase */
+
+  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 20px; --sp-6: 24px; --sp-8: 32px; --sp-12: 48px;
+
+  --radius: 2px;
+  --radius-chip: 1px;
+  --hairline: 1px;
+
+  --w-archive: 720px;
+  --w-form: 560px;
+  --w-recovery: 420px;
+  --w-page: 1120px;
+
+  --focus-ring: 2px solid var(--focus);
+  --focus-offset: 2px;
+}
+
+[data-theme="light"] {
+  --page: #ececeb;
+  --surface: #f7f7f6;
+  --raised: #f1f1f0;
+  --sunken: #ffffff;
+
+  --divider: #e6e6e4;
+  --border: #d9d9d7;
+  --border-strong: #c4c4c1;
+
+  --text: #17181a;
+  --text-2: #3a3d42;
+  --muted: #6a6e74;
+  --faint: #8d9298;
+
+  --accent: #3f5185;
+  --accent-text: #3f5185;
+  --accent-surface: #eef0f7;
+  --accent-border: #c2ccdf;
+
+  --success-text: #2f6b4c;
+  --warning-text: #7a5a1e;
+  --warning-surface: #f9f3e6;
+  --warning-border: #dcc79a;
+  --error-text: #8a3535;
+  --error-surface: #f7eeee;
+  --error-border: #d9b6b6;
+
+  --btn-primary-bg: #22242a;
+  --btn-primary-bg-hover: #0e0f11;
+  --btn-primary-fg: #f7f7f6;
+  --hover-surface: #e4e4e2;
+}
+
+/* No shadows anywhere. Depth = one border step + one surface step. */

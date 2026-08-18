@@ -1,0 +1,38 @@
+# dependencies
+node_modules/
+.pnp.*
+.yarn/*
+
+# build output
+.next/
+out/
+dist/
+build/
+
+# env / secrets
+.env
+.env.*
+!.env.example
+k8s/secret.yaml
+
+# test / coverage
+coverage/
+test-results/
+playwright-report/
+blob-report/
+.playwright/
+
+# os / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# claude
+.claude/settings.local.json
