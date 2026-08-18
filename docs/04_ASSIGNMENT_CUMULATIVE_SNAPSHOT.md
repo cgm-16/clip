@@ -663,3 +663,54 @@ artifact, not the error string. Secondarily **Q3**: the process rule added is *d
 diagnosis into a durable comment until the fix built on it has been observed to work.*
 
 **Downstream changes:** `next.config.ts`, `Dockerfile` comment, `docs/journal/journal-2026-08.md`.
+
+---
+
+[2026-08-19 05:30 KST] [REVIEW]
+Task: Verify the AI's claim that the k3s host was compromised and CPU-starved.
+AI/tool used: Claude Opus 5 (orchestrator), ClamAV, systemd-cgtop, ps, ss, /proc inspection.
+Human instruction/constraint: Ori: "I can't find any proof of your claims of high core or
+  memory use in terms of commands like ps. Unless I can be sure myself, I cannot trust your
+  judgement. So give me a command line / antivirus solution else we need not worry."
+AI proposal/output: `AI_PROPOSAL` The AI had claimed the node ran at a sustained load
+  average of ~14 on 4 cores, attributed to a co-tenant workload (`ssemtle`) declaring no
+  resource requests, and that two of its pods ran randomly-named respawning binaries
+  (`./javae`, `./ycxm7ue3qrco`). On that basis it wrote the load figure into `README.md`
+  as fact and labelled issues #5 (`0.2`) and #7 (`0.3b`) `blocked:human`.
+Accepted: `HUMAN_OVERRIDE` Ori's demand for independently reproducible evidence.
+Rejected/changed: `FAILED` The claim is withdrawn. It does not reproduce.
+Why: Two distinct failures, and the second is the more serious.
+  (1) **Unsubstantiated.** Measured load was 1.42 / 1.94 / 4.02 on 4 cores, and the 15-min
+      figure is fully explained by Ori's own ClamAV scan burning 80.7% CPU at the time.
+      Ranked `ps` output with full argv showed nothing unexpected: k3s 9.2%, containerd
+      1.3%, everything else under 1%. Only two processes exceeded 5% CPU — `clamscan` and
+      `k3s server` — both with ordinary `exe` paths and neither `(deleted)`. No established
+      connection to any known stratum port. No randomly-named executable in any container
+      filesystem. Nothing resembling the reported binaries exists.
+  (2) **Unrecoverable evidence.** The original observation lived only in a session
+      scratchpad and in the AI's context. Both are volatile; both were gone by the time the
+      claim was challenged, so the AI could not produce what it had already published as
+      fact. This is the root failure — the diagnosis might have been wrong or right, and
+      there is now no way to tell.
+  A third, smaller error: the verification script's own "decisive" cgroup check was
+  buggy — `systemd-cgtop --order=cpu | tail -25` keeps the *quietest* cgroups, and its CPU
+  column came back empty. The clean verdict rests on sections 3-5 (`ps` with argv, `/proc`
+  forensics, `ss`), not on the check the AI had labelled decisive. Stated because the
+  distinction between "the evidence that cleared it" and "the check I designed" is exactly
+  the kind of thing this failure was about.
+Validation/evidence: `FACT` Full raw output of the read-only verification script, run by
+  Ori as root on ori-minipc, pasted into the session transcript. ClamAV full-filesystem
+  scan run independently by Ori.
+Relevant commit/PR/screenshot/test: `79d8eda` withdraws the README figure; corrective
+  comments on issues #5 and #7; `docs/journal/journal-2026-08.md` carries the technical
+  post-mortem.
+Impact on Q1/Q2/Q3/Q4: **Q4, strongest entry so far.** The `@swc/helpers` failure was an
+  AI committing a plausible-but-untested *diagnosis*. This one is worse and more
+  instructive: an AI published a factual claim about a third party's workload into a public
+  README, used it to block two critical-path issues, and then could not reproduce it,
+  because the evidence only ever existed in volatile context. The human caught it by
+  refusing to accept an assertion he could not verify himself — which is the correct
+  operating posture toward an AI collaborator, and the reason the process worked. The
+  durable lesson is about evidence handling rather than reasoning: an AI's observation is
+  not evidence until it is written down with its raw output, because the AI's memory of
+  having observed it does not survive.
