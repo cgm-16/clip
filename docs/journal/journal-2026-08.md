@@ -102,3 +102,22 @@ solutions than exposing the Kubernetes API.
 `orioriori.duckdns.org`**, not an A record to `14.39.43.191`. Cloudflare flattens CNAMEs at the
 apex, so this survives the DDNS address changing — an A record would silently break the Discord
 endpoint the next time the home IP rotates.
+
+### 2026-08-18 — deploy access and registry resolved
+
+**Access: Tailscale + SSH tunnel to `127.0.0.1:6443`.** Chosen over exposing 6443 or SSH publicly.
+The key property: the stock k3s serving cert already includes `127.0.0.1`, so tunnelling to
+localhost avoids the `--tls-san` restart that every other remote-kubectl approach would need.
+`tailscale up --ssh` also means sshd on the host is never reconfigured.
+
+**Registry: GHCR, pushed by CI, not from this machine.** The local `gh` token has scopes
+`gist, read:org, repo, workflow` — no `write:packages`. Widening it was the obvious move and the
+wrong one: building in CI means the deployed image always corresponds to a commit, needs no PAT
+(`GITHUB_TOKEN` with `packages: write` suffices), and removes the dev Mac from the deploy path
+entirely. Added as task `0.1b`.
+
+Redeploys become one command over the tunnel:
+`kubectl set image deployment/clip clip=ghcr.io/cgm-16/clip:sha-<short>`
+
+**Watch for:** the GHCR package defaults to private. It must be flipped to public after the first
+push, or k3s needs an `imagePullSecret` for no good reason.

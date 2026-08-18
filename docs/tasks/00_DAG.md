@@ -31,6 +31,7 @@ flowchart TD
   H3["H3 · kubeconfig for k3s"]:::human
 
   T01["0.1 scaffold + env + health"]
+  T01b["0.1b build + push to GHCR"]
   T02["0.2 k8s deploy + HTTPS"]
   T03a["0.3a verify signature + PING"]
   T03b["0.3b Discord accepts endpoint"]:::gate
@@ -80,7 +81,7 @@ flowchart TD
 
   H1 --> T02
   H3 --> T02
-  T01 --> T02
+  T01 --> T01b --> T02
   T01 --> T03a
   T02 --> T03b
   H2 --> T03b
@@ -129,7 +130,7 @@ flowchart TD
 ```
 H2 ─┐
     ├→ 0.1 → 1.1 → 2.2 → 2.3 → 3.1 → 3.4 → 6.2 → 6.3 → 7.3
-H1 ─┴→ 0.2 → 0.3b ─────────────────────↗
+H1 ─┴→ 0.1b → 0.2 → 0.3b ───────────────↗
 ```
 
 Nine tasks deep. The domain chain (`1.1 → 2.2 → 2.3 → 3.1`) is the longest stretch of pure
@@ -153,7 +154,7 @@ Three prep tasks are human-only and sit at the head of the graph:
 |---|---|---|
 | **H1** | Register a domain, point DNS at the k3s ingress | `0.2`, then `0.3b` |
 | **H2** | Create the Discord application + a test guild; hand over `APPLICATION_ID`, `PUBLIC_KEY`, `BOT_TOKEN` | `0.3b`, `1.3b`, all of Wave 3–4 |
-| **H3** | Provide a kubeconfig (or apply manifests manually) | `0.2` |
+| **H3** | Tailscale on the k3s host + this Mac, then hand over the tailnet address and username | `0.2` |
 
 **None of them block the start of work.** Everything below is reachable with zero external
 dependencies, and it is most of the codebase:
@@ -191,7 +192,7 @@ One branch and one PR per wave, per the agreed process. Commits stay per-task.
 
 | Wave | Branch | Contains | Merge gate |
 |---|---|---|---|
-| 0 | `wave/0-deploy-skeleton` | `0.1`, `0.2`, `0.3a`, `0.3b` | Health endpoint live over HTTPS; Discord accepts the endpoint |
+| 0 | `wave/0-deploy-skeleton` | `0.1`, `0.1b`, `0.2`, `0.3a`, `0.3b` | Health endpoint live over HTTPS; Discord accepts the endpoint |
 | F | `wave/f-ui-foundation` | `F.1`–`F.6` | Primitives render per handoff; focus states and keyboard nav verified |
 | 1 | `wave/1-control-plane` | `1.1`–`1.5` | Migration applies; token/session tests pass; `/setup` works in a real guild |
 | 2 | `wave/2-clip-domain` | `2.1`–`2.3` | Concurrency tests green against real Postgres |
