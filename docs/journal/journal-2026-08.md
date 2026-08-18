@@ -62,3 +62,43 @@ k3s cannot pull an image from this Mac's Docker daemon, and no document specifie
 registry. Options given to Ori: GHCR (recommended — free for public images, `gh` is already
 authed), local `k3s ctr images import`, or an existing cluster registry. This would have blocked
 `0.2` at apply time.
+
+### 2026-08-18 — kubectl NotFound: root cause
+
+`kubectl get nodes` → `Error from server (NotFound): the server could not find the requested resource`.
+
+**Two distinct problems, only one of which is the reported error.**
+
+**1. Malformed kubeconfig (the visible error).** `server: orioriori.duckdns.org` — a bare hostname
+with no scheme and no port. A kubeconfig `server` must be a full URL. kubectl defaulted to
+`https://orioriori.duckdns.org:443`, which is Traefik, which returned 404. `kubectl get --raw /`
+also 404s; a real API server returns a JSON list of API paths there. So kubectl was talking to a
+web server, not Kubernetes.
+
+**2. The k3s API is not reachable from this machine at all (the real blocker).**
+
+| Probe | Result |
+|---|---|
+| `orioriori.duckdns.org` resolves to | `14.39.43.191` |
+| This Mac's public IP | `121.128.27.112` — **different network** |
+| TCP 6443 (k3s API) | CLOSED/FILTERED |
+| TCP 22 (SSH) | CLOSED/FILTERED |
+| TCP 80 / 443 | OPEN — `HTTP/2 404`, `text/plain`, 19 bytes = Traefik default backend |
+
+No kubeconfig edit can fix this. There is no LAN path and no SSH path from here.
+
+**3. Latent third problem if 6443 is ever opened.** k3s generates its serving certificate with SANs
+for `localhost`, `127.0.0.1`, the node IP and cluster names — **not** the DDNS hostname. Connecting
+to `https://orioriori.duckdns.org:6443` would then fail x509 SAN validation unless k3s is restarted
+with `--tls-san orioriori.duckdns.org`. Worth knowing before anyone opens the port and concludes
+the fix did not work.
+
+**The good news, and it is significant:** Traefik answering on 80/443 proves the ingress path is
+internet-reachable. That is the only network property the *product* actually needs. `clipendpoint.cc`
+will work. kubectl access is only needed for *deploying*, which is a separate problem with cheaper
+solutions than exposing the Kubernetes API.
+
+**DNS recommendation:** point `clipendpoint.cc` at the host with a **CNAME to
+`orioriori.duckdns.org`**, not an A record to `14.39.43.191`. Cloudflare flattens CNAMEs at the
+apex, so this survives the DDNS address changing — an A record would silently break the Discord
+endpoint the next time the home IP rotates.
