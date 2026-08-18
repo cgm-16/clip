@@ -47,6 +47,7 @@ flowchart TD
   F3["F.3 UI primitives"]
   F4["F.4 role multi-select"]
   F5["F.5 clip card"]
+  F6["F.6 CI design guard"]
 
   T21["2.1 types + authorization"]
   T22["2.2 repository + locking"]
@@ -94,6 +95,7 @@ flowchart TD
   F1 --> F3 --> F4
   F1 --> F5
   F3 --> F5
+  F1 & F2 --> F6
 
   T11 --> T22
   T21 --> T22 --> T23
@@ -161,7 +163,7 @@ dependencies, and it is most of the codebase:
 1.2  safe logging        1.3a command defs     2.2  repository + locking
 F.1  tokens + globals    F.2  string table     2.3  ClipService (fake gateway)
 F.3  UI primitives       F.4  role select      5.1  paginated reader
-F.5  clip card           CI   workflow
+F.5  clip card           F.6  CI design guard
 ```
 
 That is Waves 1, 2 and the whole UI foundation. Postgres work runs against a local Docker
@@ -190,7 +192,7 @@ One branch and one PR per wave, per the agreed process. Commits stay per-task.
 | Wave | Branch | Contains | Merge gate |
 |---|---|---|---|
 | 0 | `wave/0-deploy-skeleton` | `0.1`, `0.2`, `0.3a`, `0.3b` | Health endpoint live over HTTPS; Discord accepts the endpoint |
-| F | `wave/f-ui-foundation` | `F.1`–`F.5` | Primitives render per handoff; focus states and keyboard nav verified |
+| F | `wave/f-ui-foundation` | `F.1`–`F.6` | Primitives render per handoff; focus states and keyboard nav verified |
 | 1 | `wave/1-control-plane` | `1.1`–`1.5` | Migration applies; token/session tests pass; `/setup` works in a real guild |
 | 2 | `wave/2-clip-domain` | `2.1`–`2.3` | Concurrency tests green against real Postgres |
 | 3 | `wave/3-discord-archive` | `3.1`–`3.4` | Clip/Unclip/Remove work end to end in the test guild |
@@ -199,8 +201,13 @@ One branch and one PR per wave, per the agreed process. Commits stay per-task.
 | 6 | `wave/6-qa` | `6.1`–`6.4` | Permission matrix recorded; race tests green; 17 manual scenarios evidenced |
 | 7 | `wave/7-submission` | `7.1`–`7.3` | A11y pass done; docs and evidence complete |
 
-CI (`pnpm lint`, `pnpm test`, `pnpm build`) blocks every merge. Playwright runs against the
-deployment, not the merge gate.
+CI (`pnpm lint`, `pnpm test`, `pnpm build`, and `pnpm lint:design` once `F.6` lands) blocks every
+merge. Playwright runs against the deployment, not the merge gate.
+
+**Branches must be up to date with `main` before merging** (`strict` status checks). The three
+tracks run in parallel, so a merge on one invalidates open PRs on the others — update the branch
+and let CI rerun. The friction is a couple of minutes; a wave PR that was green against a stale
+base and breaks `main` mid-sprint costs far more.
 
 ---
 
