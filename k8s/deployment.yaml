@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clip
+  namespace: clip
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: clip
+  template:
+    metadata:
+      labels:
+        app: clip
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+
+      # No migration initContainer yet, deliberately. Wave 0 ships no Prisma
+      # schema, so there is nothing to migrate, and the runtime image contains
+      # only the Next.js standalone bundle — no Prisma CLI and no migration SQL.
+      # An initContainer running `prisma migrate deploy` against this image
+      # would crash-loop. It lands with Wave 1, together with the schema and a
+      # Dockerfile stage that carries the migration tooling.
+
+      containers:
+        - name: clip
+          image: ghcr.io/cgm-16/clip:latest
+          ports:
+            - containerPort: 3000
+
+          env:
+            # CloudNativePG owns this secret; the connection string is never
+            # written by hand or committed.
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: clip-db-app
+                  key: uri
+          envFrom:
+            - secretRef:
+                name: clip-env
+
+          # The node's other workloads declare no resources at all, which makes
+          # them BestEffort. Declaring requests is what keeps Clip scheduled and
+          # preemption-safe against them — omitting them would put Clip in the
+          # same class it needs protection from.
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: 2
+              memory: 1Gi
+
+          # Discord retries an interaction that does not answer in 3s, so a
+          # wedged pod must leave the rotation quickly.
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 20

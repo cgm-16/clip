@@ -37,68 +37,67 @@
 If starting from an empty repo, use this boundary-first structure. If an existing repo differs, map responsibilities without collapsing the domain into route handlers.
 
 ```text
-src/
-  app/
-    api/
-      discord/
-        interactions/route.ts
-      setup/
-        exchange/route.ts
-      admin/
-        guilds/[guildId]/config/route.ts
-        guilds/[guildId]/delete-data/route.ts
-    setup/[token]/page.tsx
-    admin/[guildId]/page.tsx
-    admin/[guildId]/archive/page.tsx
-    expired/page.tsx
-  components/
-    setup/archive-destination-field.tsx
-    setup/role-selector.tsx
-    archive/clip-card.tsx
-    archive/channel-filter.tsx
-    ui/*
-  lib/
-    db.ts
-    env.ts
+app/
+  api/
     discord/
-      verify-interaction.ts
-      rest-client.ts
-      commands.ts
-      permissions.ts
-      archive-message.ts
-      notifications.ts
-      marker.ts
-    clip/
-      types.ts
-      authorization.ts
-      service.ts
-      state-machine.ts
-      repository.ts
-    admin-session/
-      tokens.ts
-      repository.ts
-      service.ts
-    archive/
-      reader.ts
-      view-model.ts
-    logging/
-      safe-log.ts
-  scripts/
-    register-discord-commands.ts
-  tests/
-    clip/
-    discord/
-    admin-session/
-    archive/
+      interactions/route.ts
+    setup/
+      exchange/route.ts
+    admin/
+      guilds/[guildId]/config/route.ts
+      guilds/[guildId]/delete-data/route.ts
+  setup/[token]/page.tsx
+  admin/[guildId]/page.tsx
+  admin/[guildId]/archive/page.tsx
+  expired/page.tsx
+components/
+  setup/archive-destination-field.tsx
+  setup/role-selector.tsx
+  archive/clip-card.tsx
+  archive/channel-filter.tsx
+  ui/*
+lib/
+  db.ts
+  env.ts
+  discord/
+    verify-interaction.ts
+    rest-client.ts
+    commands.ts
+    permissions.ts
+    archive-message.ts
+    notifications.ts
+    marker.ts
+  clip/
+    types.ts
+    authorization.ts
+    service.ts
+    state-machine.ts
+    repository.ts
+  admin-session/
+    tokens.ts
+    repository.ts
+    service.ts
+  archive/
+    reader.ts
+    view-model.ts
+  logging/
+    safe-log.ts
+scripts/
+  register-discord-commands.ts
+tests/
+  clip/
+  discord/
+  admin-session/
+  archive/
 prisma/
-  schema.prisma
-  migrations/
+schema.prisma
+migrations/
 Dockerfile
 k8s/
-  deployment.yaml
-  service.yaml
-  ingress.yaml
-  secret.example.yaml
+deployment.yaml
+service.yaml
+ingress.yaml
+secret.example.yaml
 .env.example
 README.md
 ```
@@ -142,7 +141,7 @@ Keep domain tests against these interfaces so Discord REST details can be mocked
 ### Task 0.1: Scaffold application and health endpoint
 
 **Files:**
-- Create: `package.json`, `src/app/page.tsx`, `src/app/api/health/route.ts`, `src/lib/env.ts`, `Dockerfile`, `.env.example`
+- Create: `package.json`, `app/page.tsx`, `app/api/health/route.ts`, `lib/env.ts`, `Dockerfile`, `.env.example`
 
 **Produces:** A container that returns `200 {"ok":true}` at `/api/health`.
 
@@ -153,7 +152,7 @@ pnpm add zod @prisma/client discord-interactions
 pnpm add -D prisma vitest @vitest/coverage-v8 tsx
 ```
 
-- [ ] Create strict environment parser in `src/lib/env.ts` for at least:
+- [ ] Create strict environment parser in `lib/env.ts` for at least:
 
 ```ts
 const EnvSchema = z.object({
@@ -238,9 +237,9 @@ Expected: HTTPS health returns `{"ok":true}` and pod remains ready.
 ### Task 0.3: Implement Discord interaction verification + PING
 
 **Files:**
-- Create: `src/lib/discord/verify-interaction.ts`
-- Create: `src/app/api/discord/interactions/route.ts`
-- Test: `src/tests/discord/verify-interaction.test.ts`
+- Create: `lib/discord/verify-interaction.ts`
+- Create: `app/api/discord/interactions/route.ts`
+- Test: `tests/discord/verify-interaction.test.ts`
 
 **Produces:** Discord can verify the Interaction Endpoint URL.
 
@@ -269,8 +268,8 @@ if (interaction.type === 1) {
 
 **Files:**
 - Create: `prisma/schema.prisma`
-- Create: `src/lib/db.ts`
-- Test: `src/tests/clip/schema-invariants.test.ts`
+- Create: `lib/db.ts`
+- Test: `tests/clip/schema-invariants.test.ts`
 
 **Produces:** Durable P0 relational state with uniqueness constraints.
 
@@ -307,8 +306,8 @@ pnpm prisma migrate dev --name init_clip_control_plane
 ### Task 1.2: Implement safe structured logging
 
 **Files:**
-- Create: `src/lib/logging/safe-log.ts`
-- Test: `src/tests/logging/safe-log.test.ts`
+- Create: `lib/logging/safe-log.ts`
+- Test: `tests/logging/safe-log.test.ts`
 
 **Produces:** State/error logs that exclude message bodies/attachments.
 
@@ -333,8 +332,8 @@ type SafeClipLog = {
 ### Task 1.3: Register Discord commands
 
 **Files:**
-- Create: `src/lib/discord/commands.ts`
-- Create: `src/scripts/register-discord-commands.ts`
+- Create: `lib/discord/commands.ts`
+- Create: `scripts/register-discord-commands.ts`
 
 **Produces:** `/setup` plus message commands `Clip`, `Unclip`, `Remove from Clip Archive`.
 
@@ -347,11 +346,11 @@ type SafeClipLog = {
 ### Task 1.4: Implement one-time setup token + short admin session
 
 **Files:**
-- Create: `src/lib/admin-session/tokens.ts`
-- Create: `src/lib/admin-session/repository.ts`
-- Create: `src/lib/admin-session/service.ts`
-- Create: `src/app/api/setup/exchange/route.ts`
-- Test: `src/tests/admin-session/service.test.ts`
+- Create: `lib/admin-session/tokens.ts`
+- Create: `lib/admin-session/repository.ts`
+- Create: `lib/admin-session/service.ts`
+- Create: `app/api/setup/exchange/route.ts`
+- Test: `tests/admin-session/service.test.ts`
 
 **Produces:** One-use ~10-minute setup token exchanged for short secure admin cookie/session.
 
@@ -368,9 +367,9 @@ type SafeClipLog = {
 ### Task 1.5: `/setup` interaction
 
 **Files:**
-- Modify: `src/app/api/discord/interactions/route.ts`
-- Create: `src/lib/discord/permissions.ts`
-- Test: `src/tests/discord/setup-command.test.ts`
+- Modify: `app/api/discord/interactions/route.ts`
+- Create: `lib/discord/permissions.ts`
+- Test: `tests/discord/setup-command.test.ts`
 
 **Produces:** Admin-only ephemeral Configure Clip URL.
 
@@ -387,9 +386,9 @@ type SafeClipLog = {
 ### Task 2.1: Define domain types and authorization
 
 **Files:**
-- Create: `src/lib/clip/types.ts`
-- Create: `src/lib/clip/authorization.ts`
-- Test: `src/tests/clip/authorization.test.ts`
+- Create: `lib/clip/types.ts`
+- Create: `lib/clip/authorization.ts`
+- Test: `tests/clip/authorization.test.ts`
 
 **Produces:** `canClip(adminPermission, memberRoleIds, allowedRoleIds)`.
 
@@ -402,8 +401,8 @@ type SafeClipLog = {
 ### Task 2.2: Implement Clip repository transactions/locking
 
 **Files:**
-- Create: `src/lib/clip/repository.ts`
-- Test: `src/tests/clip/repository.test.ts`
+- Create: `lib/clip/repository.ts`
+- Test: `tests/clip/repository.test.ts`
 
 **Produces:** Atomic methods for claiming Clip, adding/removing Clipper, locking a canonical Clip, tombstoning.
 
@@ -431,9 +430,9 @@ markRemovedByAdmin(...): Promise<void>;
 ### Task 2.3: Implement ClipService with fake Discord gateway
 
 **Files:**
-- Create: `src/lib/clip/service.ts`
-- Create: `src/lib/discord/rest-client.ts` interface/adapter shell
-- Test: `src/tests/clip/service.test.ts`
+- Create: `lib/clip/service.ts`
+- Create: `lib/discord/rest-client.ts` interface/adapter shell
+- Test: `tests/clip/service.test.ts`
 
 **Produces:** Tested orchestration independent of actual REST.
 
@@ -460,9 +459,9 @@ markRemovedByAdmin(...): Promise<void>;
 ### Task 3.1: Implement Discord REST gateway
 
 **Files:**
-- Implement: `src/lib/discord/rest-client.ts`
-- Create: `src/lib/discord/archive-message.ts`
-- Test: `src/tests/discord/archive-message.test.ts`
+- Implement: `lib/discord/rest-client.ts`
+- Create: `lib/discord/archive-message.ts`
+- Test: `tests/discord/archive-message.test.ts`
 
 **Produces:** Create/fetch/delete archive message with snapshot/forward + provenance.
 
@@ -482,9 +481,9 @@ markRemovedByAdmin(...): Promise<void>;
 ### Task 3.2: Implement marker as auxiliary side effect
 
 **Files:**
-- Create: `src/lib/discord/marker.ts`
-- Modify: `src/lib/clip/service.ts`
-- Test: `src/tests/discord/marker.test.ts`
+- Create: `lib/discord/marker.ts`
+- Modify: `lib/clip/service.ts`
+- Test: `tests/discord/marker.test.ts`
 
 **Produces:** Bot-owned `📎` status reaction added on active archive and removed on canonical removal where possible.
 
@@ -496,9 +495,9 @@ markRemovedByAdmin(...): Promise<void>;
 ### Task 3.3: Implement first-clip author DM
 
 **Files:**
-- Create: `src/lib/discord/notifications.ts`
-- Modify: `src/lib/clip/service.ts`
-- Test: `src/tests/discord/notifications.test.ts`
+- Create: `lib/discord/notifications.ts`
+- Modify: `lib/clip/service.ts`
+- Test: `tests/discord/notifications.test.ts`
 
 **Produces:** One best-effort DM per first canonical archival; failure stored as UNDELIVERABLE, no rollback.
 
@@ -510,8 +509,8 @@ markRemovedByAdmin(...): Promise<void>;
 ### Task 3.4: Wire message context interactions
 
 **Files:**
-- Modify: `src/app/api/discord/interactions/route.ts`
-- Test: `src/tests/discord/context-commands.test.ts`
+- Modify: `app/api/discord/interactions/route.ts`
+- Test: `tests/discord/context-commands.test.ts`
 
 **Produces:** Real `Clip`, `Unclip`, `Remove from Clip Archive` flows with ephemeral feedback.
 
@@ -532,9 +531,9 @@ markRemovedByAdmin(...): Promise<void>;
 ### Task 4.1: Guild/channel/role lookup for setup
 
 **Files:**
-- Extend: `src/lib/discord/rest-client.ts`
-- Create: `src/app/setup/[token]/page.tsx`
-- Test: `src/tests/discord/setup-data.test.ts`
+- Extend: `lib/discord/rest-client.ts`
+- Create: `app/setup/[token]/page.tsx`
+- Test: `tests/discord/setup-data.test.ts`
 
 **Produces:** Valid setup page can display guild identity, selectable channels and roles without full OAuth.
 
@@ -545,9 +544,9 @@ markRemovedByAdmin(...): Promise<void>;
 ### Task 4.2: Archive destination configuration
 
 **Files:**
-- Create: `src/components/setup/archive-destination-field.tsx`
-- Create/modify: `src/app/api/admin/guilds/[guildId]/config/route.ts`
-- Test: `src/tests/admin/config-route.test.ts`
+- Create: `components/setup/archive-destination-field.tsx`
+- Create/modify: `app/api/admin/guilds/[guildId]/config/route.ts`
+- Test: `tests/admin/config-route.test.ts`
 
 **Produces:** Choose automatic private channel creation or existing channel.
 
@@ -559,9 +558,9 @@ markRemovedByAdmin(...): Promise<void>;
 ### Task 4.3: Role configuration
 
 **Files:**
-- Create: `src/components/setup/role-selector.tsx`
+- Create: `components/setup/role-selector.tsx`
 - Modify: config API route
-- Test: `src/tests/admin/role-config.test.ts`
+- Test: `tests/admin/role-config.test.ts`
 
 **Produces:** Replace configured allowed-role set transactionally.
 
@@ -573,7 +572,7 @@ markRemovedByAdmin(...): Promise<void>;
 ### Task 4.4: Setup completion/current config
 
 **Files:**
-- Create: `src/app/admin/[guildId]/page.tsx`
+- Create: `app/admin/[guildId]/page.tsx`
 
 **Produces:** Minimal success/config page showing archive destination, roles, usage instruction, archive link, bootstrap permission note.
 
@@ -587,8 +586,8 @@ markRemovedByAdmin(...): Promise<void>;
 ### Task 5.1: Paginated Clip metadata reader
 
 **Files:**
-- Create: `src/lib/archive/reader.ts`
-- Test: `src/tests/archive/reader.test.ts`
+- Create: `lib/archive/reader.ts`
+- Test: `tests/archive/reader.test.ts`
 
 **Produces:** Newest-first pagination with optional `source_channel_id` filter.
 
@@ -603,9 +602,9 @@ getClipPage({ guildId, sourceChannelId?, cursor?, limit: 20 })
 ### Task 5.2: Live Discord content fetch/view model
 
 **Files:**
-- Create: `src/lib/archive/view-model.ts`
-- Extend: `src/lib/discord/rest-client.ts`
-- Test: `src/tests/archive/view-model.test.ts`
+- Create: `lib/archive/view-model.ts`
+- Extend: `lib/discord/rest-client.ts`
+- Test: `tests/archive/view-model.test.ts`
 
 **Produces:** Metadata page -> live Discord archive-message payload -> render model.
 
@@ -618,9 +617,9 @@ getClipPage({ guildId, sourceChannelId?, cursor?, limit: 20 })
 ### Task 5.3: Archive UI
 
 **Files:**
-- Create: `src/app/admin/[guildId]/archive/page.tsx`
-- Create: `src/components/archive/clip-card.tsx`
-- Create: `src/components/archive/channel-filter.tsx`
+- Create: `app/admin/[guildId]/archive/page.tsx`
+- Create: `components/archive/clip-card.tsx`
+- Create: `components/archive/channel-filter.tsx`
 
 **Produces:** Read-only newest-first admin archive with channel filter + pagination.
 
@@ -632,8 +631,8 @@ getClipPage({ guildId, sourceChannelId?, cursor?, limit: 20 })
 ### Task 5.4: Delete Clip control-plane data
 
 **Files:**
-- Create: `src/app/api/admin/guilds/[guildId]/delete-data/route.ts`
-- Test: `src/tests/admin/delete-data.test.ts`
+- Create: `app/api/admin/guilds/[guildId]/delete-data/route.ts`
+- Test: `tests/admin/delete-data.test.ts`
 
 **Produces:** Explicit admin action deletes Clip DB state but leaves Discord archive untouched.
 
@@ -666,7 +665,7 @@ getClipPage({ guildId, sourceChannelId?, cursor?, limit: 20 })
 ### Task 6.2: Integrated race/idempotency test
 
 **Files:**
-- Add: `src/tests/integration/clip-concurrency.test.ts`
+- Add: `tests/integration/clip-concurrency.test.ts`
 
 - [ ] Parallel Clip same source, different users -> one Discord archive side effect (mocked) + N clippers.
 - [ ] Parallel same-user Clip -> one signal.
@@ -708,7 +707,7 @@ This wave may be executed by a separate design agent using `05_DESIGN_AGENT_BRIE
 ### Task 7.1: Minimum design system
 
 **Files:**
-- Modify/create: `src/app/globals.css`, `src/components/ui/*`
+- Modify/create: `app/globals.css`, `components/ui/*`
 
 - [ ] Define explicit typography/spacing/radius/semantic color tokens.
 - [ ] Normalize button/input/select/status states.

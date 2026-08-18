@@ -601,3 +601,158 @@ types), §8.3 (`archive_provenance_message_id` + `archive_forward_message_id`), 
 final Korean copy at 15 minutes). `DESIGN_RATIONALE_APPEND.md` §10. No visual design change: the
 Screen D card hierarchy is unaffected because its source line was always going to be rendered from
 control-plane data.
+
+---
+
+```text
+[2026-08-18 KST] [IMPLEMENTATION]
+```
+
+**Task:** Task 0.1 — make the Wave 0 container image actually serve `/api/health`.
+
+**AI/tool used:** Claude Code (Opus 5), orchestrator session, writing the Dockerfile and diagnosing
+the resulting crash.
+
+**Human instruction/constraint:** Deployment is P0 work and happens before the product is built.
+The image must run as a non-root user.
+
+**AI proposal/output:** The first image built and started, then died immediately:
+
+```
+Error: Cannot find module '/app/node_modules/.pnpm/next@16.3.1_.../node_modules/
+@swc/helpers/esm/_interop_require_default.js'
+```
+
+The AI diagnosed this as pnpm's symlinked `.pnpm` store defeating Next's standalone file tracing,
+added `--node-linker=hoisted` to the image's install step, and **wrote that diagnosis into a
+Dockerfile comment as settled fact** — before rebuilding, because the host disk had filled and the
+rebuild was blocked. The commit message did flag the container test as unverified.
+
+**Rejected/changed:** The diagnosis, and the comment asserting it.
+
+**Why:** It was wrong, and one command would have shown it. Once the rebuild ran, inspecting the
+builder stage showed `node_modules/@swc/helpers` was already a **real directory containing `esm/`**
+— the hoisted linker had done exactly what was asked — and the crash persisted anyway. The traced
+copy in `.next/standalone` contained **only `package.json`**. Tracing had not failed to *follow*
+the package; it had copied the package and dropped every file in it. Next's own `require-hook.js`
+resolves `@swc/helpers/esm/*` through the package's `exports` map at runtime, and the tracer cannot
+see subpaths reached that way.
+
+**Accepted:** `outputFileTracingIncludes: { '/**/*': ['./node_modules/@swc/helpers/**'] }` in
+`next.config.ts`. `--node-linker=hoisted` was kept, but for the honest reason — the include glob
+then resolves against real directories rather than symlinks — and the comment was corrected to say
+so instead of restating the wrong cause.
+
+**Validation/evidence:** Image rebuilt; container starts; `GET /api/health` returns `{"ok":true}`;
+process runs as `uid=1001(nextjs)`. `pnpm lint` and `pnpm test` (7/7) green. Commit `f384318`.
+Caveat carried forward: this run was on arm64 and the deployment target is x64, so the first
+GHCR/CI build in `0.1b` is the verification that counts for the shipped image.
+
+**Impact on Q1/Q2/Q3/Q4:** **Q4**, and it is a stronger answer than the forwarding finding above.
+Three of four planning-stage failures shared the root cause *AI-authored designs that assume
+platform behavior instead of checking it*. This is the same root cause a fourth time — but about
+the AI's **own toolchain**, not a third-party API, and committed as a **code comment**, which is
+the most durable place to leave a false explanation. The forwarding failure was caught before it
+cost anything; this one was written down as truth and had to be retracted.
+
+The generalizable lesson is narrower and more useful than "verify platform behavior": **the error
+message's path string was itself the misleading evidence.** It contained `.pnpm/`, which made
+"pnpm layout problem" feel self-evident and stopped the investigation at the first plausible story.
+The disconfirming check — list the traced package — was one command away the entire time. Read the
+artifact, not the error string. Secondarily **Q3**: the process rule added is *do not write a
+diagnosis into a durable comment until the fix built on it has been observed to work.*
+
+**Downstream changes:** `next.config.ts`, `Dockerfile` comment, `docs/journal/journal-2026-08.md`.
+
+---
+
+[2026-08-19 05:30 KST] [REVIEW]
+Task: Verify the AI's claim that the k3s host was compromised and CPU-starved.
+AI/tool used: Claude Opus 5 (orchestrator), ClamAV, systemd-cgtop, ps, ss, /proc inspection.
+Human instruction/constraint: Ori: "I can't find any proof of your claims of high core or
+  memory use in terms of commands like ps. Unless I can be sure myself, I cannot trust your
+  judgement. So give me a command line / antivirus solution else we need not worry."
+AI proposal/output: `AI_PROPOSAL` The AI had claimed the node ran at a sustained load
+  average of ~14 on 4 cores, attributed to a co-tenant workload (`ssemtle`) declaring no
+  resource requests, and that two of its pods ran randomly-named respawning binaries
+  (`./javae`, `./ycxm7ue3qrco`). On that basis it wrote the load figure into `README.md`
+  as fact and labelled issues #5 (`0.2`) and #7 (`0.3b`) `blocked:human`.
+Accepted: `HUMAN_OVERRIDE` Ori's demand for independently reproducible evidence.
+Rejected/changed: `FAILED` The claim is withdrawn. It does not reproduce.
+Why: Two distinct failures, and the second is the more serious.
+  (1) **Unsubstantiated.** Measured load was 1.42 / 1.94 / 4.02 on 4 cores, and the 15-min
+      figure is fully explained by Ori's own ClamAV scan burning 80.7% CPU at the time.
+      Ranked `ps` output with full argv showed nothing unexpected: k3s 9.2%, containerd
+      1.3%, everything else under 1%. Only two processes exceeded 5% CPU — `clamscan` and
+      `k3s server` — both with ordinary `exe` paths and neither `(deleted)`. No established
+      connection to any known stratum port. No randomly-named executable in any container
+      filesystem. Nothing resembling the reported binaries exists.
+  (2) **Unrecoverable evidence.** The original observation lived only in a session
+      scratchpad and in the AI's context. Both are volatile; both were gone by the time the
+      claim was challenged, so the AI could not produce what it had already published as
+      fact. This is the root failure — the diagnosis might have been wrong or right, and
+      there is now no way to tell.
+  A third, smaller error: the verification script's own "decisive" cgroup check was
+  buggy — `systemd-cgtop --order=cpu | tail -25` keeps the *quietest* cgroups, and its CPU
+  column came back empty. The clean verdict rests on sections 3-5 (`ps` with argv, `/proc`
+  forensics, `ss`), not on the check the AI had labelled decisive. Stated because the
+  distinction between "the evidence that cleared it" and "the check I designed" is exactly
+  the kind of thing this failure was about.
+Validation/evidence: `FACT` Full raw output of the read-only verification script, run by
+  Ori as root on ori-minipc, pasted into the session transcript. ClamAV full-filesystem
+  scan run independently by Ori.
+Relevant commit/PR/screenshot/test: `79d8eda` withdraws the README figure; corrective
+  comments on issues #5 and #7; `docs/journal/journal-2026-08.md` carries the technical
+  post-mortem.
+Impact on Q1/Q2/Q3/Q4: **Q4, strongest entry so far.** The `@swc/helpers` failure was an
+  AI committing a plausible-but-untested *diagnosis*. This one is worse and more
+  instructive: an AI published a factual claim about a third party's workload into a public
+  README, used it to block two critical-path issues, and then could not reproduce it,
+  because the evidence only ever existed in volatile context. The human caught it by
+  refusing to accept an assertion he could not verify himself — which is the correct
+  operating posture toward an AI collaborator, and the reason the process worked. The
+  durable lesson is about evidence handling rather than reasoning: an AI's observation is
+  not evidence until it is written down with its raw output, because the AI's memory of
+  having observed it does not survive.
+
+---
+
+[2026-08-19 09:10 KST] [IMPLEMENTATION]
+Task: Wave 1 Task 4 — one-time setup token, single-use under concurrency.
+AI/tool used: Claude Opus 5 (implementer), Claude Opus 5 (independent reviewer), real
+  PostgreSQL 17, Prisma 7.
+Human instruction/constraint: Ori's standing project rule, in `CLAUDE.md`: "Use DB
+  uniqueness/upsert, never check-then-insert. Mutations that depend on clipper count must
+  hold a row lock," and "Concurrency invariants get tests against a real Postgres, not
+  mocks."
+AI proposal/output: `AI_PROPOSAL` A concurrency test firing N simultaneous exchanges of one
+  setup token via `Promise.all` against a real database, asserting exactly one succeeds.
+Accepted: `IMPLEMENTED` `TESTED` The conditional-update implementation
+  (`UPDATE ... WHERE used_at IS NULL AND expires_at > now`, affected-row count decides the
+  winner) and the corrected test.
+Rejected/changed: `FAILED` **The first version of that test was a false positive.** The
+  implementer did not trust it and substituted the exact regression the test exists to
+  catch — a read-then-write. The test still passed.
+Why: A cold `node-postgres` pool opens connections lazily. The first caller completed its
+  entire read-then-write in ~9ms while the other callers were still completing TCP and
+  authentication handshakes at ~22ms. The callers were never actually concurrent at the
+  database, so the broken implementation never had two transactions racing to observe.
+  Warming the pool before the concurrent section makes the regression fail decisively.
+Validation/evidence: `FACT` `TESTED` The reviewer re-ran the regression substitution rather
+  than accepting the report: **10/10 decisive failures** across cold-start invocations
+  (`expected length 1 but got 8`). It then ran two controls the implementer had not:
+  (a) warm-up removed with the regression present → **5/5 false pass**, confirming the root
+  cause empirically rather than by argument; (b) callers raised to 20, past node-postgres'
+  default pool maximum of 10 → still catches, so the fix is structural rather than
+  timing-luck.
+Relevant commit/PR/screenshot/test: `7d7c386`; `tests/admin-session/service.test.ts`;
+  post-mortem in `docs/journal/journal-2026-08.md`.
+Impact on Q1/Q2/Q3/Q4: **Q3 and Q4.** The generalizable lesson is that a passing
+  concurrency test proves nothing on its own — the only evidence that it tests anything is
+  watching it fail against a deliberately broken implementation. An AI that writes both the
+  invariant and its test has every incentive to produce a test shaped like the code rather
+  than like the requirement, and here that produced a test which certified the invariant
+  falsely. What caught it was not a better model but a method: mutation-substitution as a
+  routine step, applied by the implementer to itself and then repeated by an independent
+  reviewer who added the controls that turned a plausible diagnosis into a measured one.
+  Wave 2's `§9` race invariants inherit both the trap and the method.

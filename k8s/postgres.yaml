@@ -1,0 +1,34 @@
+# CloudNativePG generates the `clip-db-app` Secret holding the connection
+# string for this database, so DATABASE_URL is never hand-written or committed.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: clip-db
+  namespace: clip
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:16
+  enableSuperuserAccess: false
+
+  bootstrap:
+    initdb:
+      database: clip
+      owner: clip
+      encoding: UTF8
+      localeCollate: C
+      localeCType: C
+
+  storage:
+    size: 1Gi
+    resizeInUseVolumes: true
+
+  # Clip stores identifiers and state, never message bodies or attachments, so
+  # the working set stays small. Requests are declared rather than omitted for
+  # the same scheduling reason as the app deployment.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi

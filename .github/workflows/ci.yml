@@ -33,34 +33,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Removed once Wave 0 task 0.1 lands. Until the app is scaffolded there is
-      # nothing to lint, test or build, and this check would fail on docs-only PRs.
-      - id: scaffold
-        run: |
-          if [ -f package.json ]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::No package.json yet — application not scaffolded (Wave 0, task 0.1). Skipping lint/test/build."
-          fi
+      - uses: pnpm/action-setup@v4
 
-      - if: steps.scaffold.outputs.present == 'true'
-        uses: pnpm/action-setup@v4
-
-      - if: steps.scaffold.outputs.present == 'true'
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
 
-      - if: steps.scaffold.outputs.present == 'true'
-        run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile
 
-      - if: steps.scaffold.outputs.present == 'true'
-        run: pnpm lint
+      - run: pnpm lint
 
-      - if: steps.scaffold.outputs.present == 'true'
-        run: pnpm test
+      - run: pnpm test
 
-      - if: steps.scaffold.outputs.present == 'true'
-        run: pnpm build
+      - run: pnpm build
