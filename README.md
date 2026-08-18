@@ -124,7 +124,16 @@ We do not claim to store no user data. Clip stores Discord IDs, role configurati
 
 Self-hosted on an existing home k3s cluster (Intel N100, 16 GB) behind Traefik, against an existing PostgreSQL cluster. Deployment is P0 work and happens before the product is built, not after — the Discord interaction endpoint has to be verified against real HTTPS early.
 
-Self-hosting is not free. _(pending)_ Domain registration and renewal, plus the electricity, network, hardware depreciation and operator effort that the existing cluster absorbs, are documented in the cost analysis.
+Self-hosting is not free. The honest accounting:
+
+| Cost | Amount | Note |
+|---|---|---|
+| Domain `clipendpoint.cc` | **USD 8 / year** | Registered via Cloudflare. The one genuinely new recurring cost. |
+| Incremental compute | ~0 marginal | Absorbed by an existing cluster running at ~1.6 load and ~5% memory. Not free — merely already paid for. |
+| Electricity, network, hardware depreciation | not itemized | Real costs the household absorbs. Treated as sunk for this project rather than claimed as zero. |
+| Operator effort | not itemized | The largest real cost of self-hosting, and the one most often omitted. |
+
+_(pending)_ Observed resource usage replaces the request figures once deployed.
 
 ## Development
 

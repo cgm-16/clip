@@ -44,3 +44,21 @@ https://github.com/discord/discord-api-docs/pull/6818
   duplicating the spec (which would drift), the task files point at `01_CLIP_PRODUCT_SPEC.md`.
 - Screen C's `보관된 메시지 · 47개` count has no defined semantics in any document.
   Decided: counts `ACTIVE` clips only, excluding tombstoned and removed. Revisit if it looks wrong.
+
+### 2026-08-18 — H1 answered
+
+Domain: **`clipendpoint.cc`**, Cloudflare, **USD 8/yr**. Apex, no subdomain.
+`PUBLIC_BASE_URL=https://clipendpoint.cc`. Cost recorded in the README table.
+
+**Recommended DNS-only (grey cloud), not proxied**, at least until `0.3b` passes. Discord
+interaction verification signs the *exact raw request body*; a proxy that buffers or rewrites is
+one more variable in the hardest gate to debug. Turn proxying on afterwards if wanted.
+
+Still open on H1: the A record cannot be pointed until H3 supplies the ingress IP.
+
+### Open question for H3 that no planning doc covered
+
+k3s cannot pull an image from this Mac's Docker daemon, and no document specifies a container
+registry. Options given to Ori: GHCR (recommended — free for public images, `gh` is already
+authed), local `k3s ctr images import`, or an existing cluster registry. This would have blocked
+`0.2` at apply time.
