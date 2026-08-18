@@ -1,0 +1,8 @@
+allowBuilds:
+  '@prisma/engines': true
+  esbuild: true
+  prisma: true
+  # No imagery in P0 (design forbids illustrations and icon sets), so the
+  # image optimizer's native binary is dead weight. Ori's original choice.
+  sharp: false
+  unrs-resolver: true
