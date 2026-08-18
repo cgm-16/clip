@@ -14,6 +14,17 @@ WORKDIR /app
 RUN corepack enable
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# The Prisma client is generated into a git-ignored, docker-ignored directory,
+# so it never exists in the build context. Without this the build cannot
+# typecheck lib/db.ts.
+#
+# prisma.config.ts resolves DATABASE_URL eagerly and `generate` refuses to run
+# without it, even though generating a client never opens a connection. The
+# placeholder satisfies that check at build time; the real URL is injected at
+# runtime. Deliberately not a build arg — nothing here should be able to reach
+# a real database.
+RUN DATABASE_URL=postgresql://generate:generate@127.0.0.1:5432/generate \
+    pnpm prisma generate
 RUN pnpm build
 
 FROM node:24-alpine AS runner
