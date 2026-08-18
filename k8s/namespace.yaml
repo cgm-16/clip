@@ -1,0 +1,7 @@
+# One namespace per app, matching the cluster's existing convention (vridge has
+# its own). Deleting this namespace removes Clip's control plane and nothing
+# else — the Discord archive it points at is untouched.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: clip
