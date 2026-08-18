@@ -256,3 +256,29 @@ URL is absent.
 in the environment that built it proves very little. Both defects were found by
 constructing the *unprepared* environment on purpose — `env -u DATABASE_URL`, and a
 container build from a clean context — not by reading the code.
+
+---
+
+## A concurrency test that could not fail — cold Prisma connection pools serialize callers
+
+Task 1.4's single-use invariant is enforced by a conditional
+`updateMany({ where: { tokenHash, usedAt: null, ... } })` whose count decides the winner.
+To prove the test was worth anything, the implementation was temporarily replaced with the
+exact regression it is supposed to catch — a `findFirst` followed by an unconditional
+`update`. **The test still passed**, with 8 `Promise.allSettled` callers.
+
+The reason is not the database. A cold `pg` pool opens connections lazily, so eight
+simultaneous callers each wait on their own TCP+auth handshake; the first one to connect
+finished its whole read-then-write in ~9ms while the other seven were still connecting
+(~22ms), and they then read the row the winner had already marked used. The interleaving
+the test exists to create never happened.
+
+Confirmed the pool itself is not the serializer: two `pg_sleep(0.5)` queries on one client
+finish in 558ms, so a *warm* client is genuinely parallel. Warming the pool in the test —
+`Promise.all` of N trivial queries before the concurrent section — makes the same
+regression produce 7 winners and 8 sessions, and the test fails as it should.
+
+**Lesson:** a concurrency test asserting "exactly one winner" is worthless until it has
+been shown to fail against the serial implementation. Connection-pool warm-up is part of
+the setup, not an optimisation. Any future test of §9's invariants (simultaneous Clip,
+simultaneous Unclip) must warm the pool the same way and be mutation-checked the same way.
