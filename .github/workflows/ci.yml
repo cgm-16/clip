@@ -1,0 +1,66 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: clip
+          POSTGRES_PASSWORD: clip
+          POSTGRES_DB: clip_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://clip:clip@localhost:5432/clip_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Removed once Wave 0 task 0.1 lands. Until the app is scaffolded there is
+      # nothing to lint, test or build, and this check would fail on docs-only PRs.
+      - id: scaffold
+        run: |
+          if [ -f package.json ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No package.json yet — application not scaffolded (Wave 0, task 0.1). Skipping lint/test/build."
+          fi
+
+      - if: steps.scaffold.outputs.present == 'true'
+        uses: pnpm/action-setup@v4
+
+      - if: steps.scaffold.outputs.present == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - if: steps.scaffold.outputs.present == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - if: steps.scaffold.outputs.present == 'true'
+        run: pnpm lint
+
+      - if: steps.scaffold.outputs.present == 'true'
+        run: pnpm test
+
+      - if: steps.scaffold.outputs.present == 'true'
+        run: pnpm build

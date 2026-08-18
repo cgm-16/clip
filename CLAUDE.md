@@ -49,7 +49,8 @@ Reaction/vote/rank counts anywhere in the web UI. Dark/light theme switcher UI (
 
 ## Workflow
 
-- Tasks live in `docs/tasks/` with a dependency graph in `docs/tasks/00_DAG.md`. Work them in DAG order.
+- `docs/tasks/00_DAG.md` is the ordering map — dependencies, critical path, parallel tracks, cut order. Work in DAG order.
+- Per-task implementer briefs are **GitHub issues**, one per DAG node. Detail lives there, not duplicated in the repo.
 - **One branch and one PR per wave**, not per task: `wave/<n>-<slug>`. Never commit to `main`.
 - Conventional Commits. Commit per task, not per wave — each commit one reviewable logical unit.
 - CI must be green before merge: `pnpm lint`, `pnpm test`, `pnpm build`.
