@@ -55,6 +55,44 @@ describe('logClipEvent', () => {
     expect(payload).toMatchObject({ event: 'clip.created', guildId: 'guild-1' });
   });
 
+  test('drops an allowlisted field whose value is a nested object rather than a string', () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    // The allowlist only checks key names. A message body smuggled in under
+    // an allowlisted key (e.g. a caller mistakenly assigning an object to
+    // userId) must still be dropped, or the allowlist is defeated by shape
+    // rather than by name.
+    const withNestedContent: SafeClipLog = JSON.parse(
+      JSON.stringify({
+        event: 'clip.created',
+        userId: { content: 'THE ACTUAL MESSAGE BODY' },
+      }),
+    );
+
+    logClipEvent(withNestedContent);
+
+    const payload = loggedPayload(spy);
+    expect(payload).toEqual({ event: 'clip.created' });
+  });
+
+  test('drops an allowlisted field whose value is a nested array rather than a string', () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    // Same hazard as the nested-object case above, via an array instead of
+    // an object — the rule is about the value's type, not its shape.
+    const withNestedArray: SafeClipLog = JSON.parse(
+      JSON.stringify({
+        event: 'clip.created',
+        userId: ['THE ACTUAL MESSAGE BODY'],
+      }),
+    );
+
+    logClipEvent(withNestedArray);
+
+    const payload = loggedPayload(spy);
+    expect(payload).toEqual({ event: 'clip.created' });
+  });
+
   test('keeps only allowlisted keys even when the arrival carries other unexpected fields', () => {
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
 

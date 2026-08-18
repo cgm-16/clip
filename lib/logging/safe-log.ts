@@ -38,12 +38,23 @@ const SAFE_KEYS = [
  * can still carry those fields; only reading the allowlisted keys off
  * `entry` is what keeps them out of the log regardless of how the value
  * arrived.
+ *
+ * The allowlist covers key *names* only. A value that arrives under an
+ * allowlisted key but is itself an object or array (e.g. a message body
+ * smuggled in as `{ userId: { content: '...' } }` through an untyped call
+ * site) would otherwise pass straight through JSON.stringify intact — so a
+ * non-string value is dropped rather than logged. Dropping, not coercing:
+ * `String(value)` or a nested `JSON.stringify(value)` would still risk
+ * printing exactly the content this function exists to keep out (e.g. an
+ * array of strings joining into readable text). A missing field just makes
+ * one log line less complete; a leaked one breaks the product's privacy
+ * commitment. Only the cheaper failure is acceptable here.
  */
 export function logClipEvent(entry: SafeClipLog): void {
   const safeEntry: Record<string, string> = {};
   for (const key of SAFE_KEYS) {
     const value = entry[key];
-    if (value !== undefined) {
+    if (typeof value === 'string') {
       safeEntry[key] = value;
     }
   }
