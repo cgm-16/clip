@@ -181,3 +181,43 @@ hosts on one Certificate, and copying that here would be a mistake on the critic
 issues a single Certificate covering every SAN, so an HTTP-01 failure on *either* host yields *no*
 cert, and gate `0.3b` cannot pass without one. Add `clip.orioriori.duckdns.org` as a second SAN only
 after the first certificate issues cleanly, if a fallback hostname is wanted at all.
+
+## 2026-08-18 — standalone container crash: `@swc/handlers` esm/ dropped by file tracing
+
+**Symptom.** The Wave 0 image built and started, then died immediately:
+
+```
+Error: Cannot find module
+'/app/node_modules/.pnpm/next@16.3.1_.../node_modules/@swc/helpers/esm/_interop_require_default.js'
+```
+
+**First hypothesis, wrong.** I blamed pnpm's symlinked `.pnpm` store and added
+`--node-linker=hoisted` to the image's install step, reasoning that Next's file tracing
+does not follow symlinks. That hypothesis was never tested before it was written into a
+Dockerfile comment.
+
+**What the evidence actually showed.** Inspecting the builder stage:
+
+- `node_modules/@swc/helpers` was already a **real directory** containing `esm/` — the
+  hoisted linker worked exactly as asked, and the crash persisted anyway.
+- `.next/standalone/node_modules/@swc/helpers/` contained **only `package.json`**.
+
+So tracing did not fail to *follow* the package; it copied the package and dropped every
+file in it. Next's `require-hook.js` resolves `@swc/helpers/esm/*` at runtime through the
+package's `exports` map, and the tracer cannot see subpaths reached that way.
+
+**Fix.** `outputFileTracingIncludes: { '/**/*': ['./node_modules/@swc/helpers/**'] }` in
+`next.config.ts`. Verified: container starts, `GET /api/health` returns `{"ok":true}`,
+process runs as uid 1001.
+
+`--node-linker=hoisted` stays, but for the honest reason: the include glob resolves
+against real directories rather than symlinks into `.pnpm`. The Dockerfile comment was
+corrected to say that instead of the wrong claim.
+
+**Lesson.** The misleading part was the *path* in the error message. It contained
+`.pnpm/`, which made "pnpm layout problem" feel obvious, and the real defect — an empty
+traced package — was one `ls` away the whole time. Read the artifact, not the path string.
+
+**Unrelated, parked:** the host disk hit 100% mid-build (`input/output error` from
+buildkit). Ori freed space. Docker's build cache still holds ~7 GB reclaimable and there
+is a stale 9.9 GB stopped `ubuntu` container, both Ori's to decide on.

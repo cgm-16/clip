@@ -4,10 +4,9 @@ FROM node:24-alpine AS deps
 WORKDIR /app
 RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-# Flat node_modules for the image only. Next's standalone file tracing does not
-# reliably follow pnpm's symlinked .pnpm store, and misses transitive deps such
-# as @swc/helpers, which then crashes the server at startup. Local development
-# keeps pnpm's default linker.
+# Flat node_modules for the image only, so the outputFileTracingIncludes glob in
+# next.config.ts resolves against real directories instead of pnpm's symlinks
+# into .pnpm. Local development keeps pnpm's default linker.
 RUN pnpm install --frozen-lockfile --node-linker=hoisted
 
 FROM node:24-alpine AS builder
