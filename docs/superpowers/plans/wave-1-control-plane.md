@@ -36,6 +36,9 @@ These bind every task. A reviewer checks each one.
 - Environment access goes through `parseEnv` in `lib/env.ts`. Feature code must not read
   `process.env` directly. Never call `parseEnv` at module top level in a route — it would
   crash the build when env vars are absent in CI.
+  - The single exception is `process.env.NODE_ENV`, which is not in the schema because
+    the framework sets it and it is absent from `.env`. Read it directly where a
+    production-only behaviour depends on it.
 - Use database uniqueness and upsert, **never check-then-insert**. Mutations that depend on
   a clipper count must hold a row lock.
 - Smallest reasonable change. No speculative features (YAGNI). No backward-compatibility
@@ -114,7 +117,8 @@ user-facing promise, and nothing else in the system catches it.
 ## Task 3 — Discord command definitions and registration script
 
 ### Files
-`lib/discord/commands.ts`, `scripts/register-discord-commands.ts`
+`lib/discord/commands.ts`, `scripts/register-discord-commands.ts`,
+`tests/discord/commands.test.ts`
 
 ### Commands
 - `/setup` — chat input
@@ -151,6 +155,10 @@ copy is authoritative over the spec's original 10 minutes. Session is ~30 minute
 refresh.
 
 ### Requirements — tests first, against the real Postgres
+- [ ] `service.ts` owns **both** halves of the token lifecycle: issuing a token for a
+      `(guildId, userId)` pair and exchanging it. Task 5 calls the issuing half; nothing
+      else in the wave creates `SetupToken` rows. Return the bearer value to the caller
+      exactly once, at issue time — it is never recoverable afterwards.
 - [ ] A valid unused token exchanges exactly once
 - [ ] A second exchange of the same token fails
 - [ ] An expired token fails
