@@ -121,3 +121,46 @@ Redeploys become one command over the tunnel:
 
 **Watch for:** the GHCR package defaults to private. It must be flipped to public after the first
 push, or k3s needs an `imagePullSecret` for no good reason.
+
+### 2026-08-18 — cluster facts (measured, not assumed)
+
+Tunnel up, `kubectl get nodes` works. Everything below is measured from the live cluster and
+supersedes the planning documents where they disagree.
+
+| Fact | Value |
+|---|---|
+| Node | `ori`, Ubuntu 24.04.4, k3s **v1.33.4+k3s1**, containerd 2.0.5 |
+| Node LAN IP | `192.168.50.40` |
+| Allocatable | 4 cpu / ~15.4 Gi |
+| Ingress class | `traefik` |
+| TLS | cert-manager, ClusterIssuer **`letsencrypt-http`** (HTTP-01), `READY=True` |
+| Ingress pattern | annotation `cert-manager.io/cluster-issuer: letsencrypt-http` + `spec.tls[].secretName: <app>-tls` |
+| Postgres | **CloudNativePG 1.27.0**, operator in `cnpg-system` |
+| Postgres convention | one CNPG `Cluster` per app in the app's own namespace (`ssemtle-db` in `apps`, `vridge-db` in `vridge`) — **not** one shared cluster |
+| Secrets | plain `Secret`. No sealed-secrets, no external-secrets. |
+| Namespaces | `apps` `cert-manager` `cnpg-system` `data` `default` `vridge` + system |
+
+**The planning documents are stale on capacity.** `00_HANDOFF_INDEX.md` and spec §18 claim "CPU load
+around 1.6" and "memory utilization around 5%". Measured now:
+
+- load average **14.70 / 14.64 / 14.13** on 4 cores — sustained, not a spike
+- memory 47%
+- node CPU *requests* only 47% committed; *limits* 165% (overcommitted)
+
+Cause: the two `ssemtle` pods consume 3.24 cores between them and declare
+`resources: {}` — **no requests, no limits**, so they are BestEffort and soak every idle cycle.
+
+**Why this is less alarming than it looks.** BestEffort pods rank below anything with explicit
+requests for both CPU shares and eviction. A Clip pod that declares requests will be scheduled
+(2100m of requestable CPU remains) and will preempt ssemtle under contention. The load average
+measures ssemtle burning otherwise-idle time, not genuine starvation.
+
+**But two consequences are real:**
+
+1. **Raise the planned resource request.** Spec §18 suggests `100m / 256Mi`. On a contended node
+   running Next.js SSR that is too thin. Use `requests: 500m / 512Mi`, `limits: 2 / 1Gi`.
+2. **Discord's 3-second interaction deadline gets riskier.** Under contention, a cold SSR path can
+   plausibly exceed it. The deferred-response pattern already noted in task `3.4` moves from
+   good practice to mandatory — acknowledge immediately, do the REST work in the follow-up.
+
+Corrected the README cost table, which asserted the stale 1.6/5% figures.
