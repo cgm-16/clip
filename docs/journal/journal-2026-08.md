@@ -221,3 +221,38 @@ traced package — was one `ls` away the whole time. Read the artifact, not the 
 **Unrelated, parked:** the host disk hit 100% mid-build (`input/output error` from
 buildkit). Ori freed space. Docker's build cache still holds ~7 GB reclaimable and there
 is a stale 9.9 GB stopped `ubuntu` container, both Ori's to decide on.
+
+## 2026-08-19 — Prisma 7 on Next 16: three things that only fail outside your shell
+
+Task 1.1 (control-plane schema) passed lint, tests and build locally while being broken
+in two environments nobody had exercised yet. All three problems share a shape: a
+dependency that is satisfied *by the developer's shell* rather than by the repository.
+
+**1. Vitest does not read `.env`.** The schema-invariant tests need a real Postgres, so
+they resolved `DATABASE_URL` through `parseEnv` and threw without it. It looked green
+only because every run so far had passed the variable inline. Fixed with a setup file
+that **defaults** rather than overrides (`??=`), so an explicit value from a shell or CI
+always wins — these tests call `deleteMany`, and a setup file that overrode the
+environment could point that at a database the developer did not intend.
+
+**2. Prisma 7 generates the client into a git-ignored directory.** `output = "../generated/prisma"`
+means a fresh clone has no client at all, and `lib/db.ts` imports from it, so nothing
+typechecks. CI needed explicit `prisma generate` and `prisma migrate deploy` steps ahead
+of lint/test/build.
+
+**3. The same directory was git-ignored but not docker-ignored** — the worst of the
+three, because it fails *silently in the right direction*. The image was copying in
+whatever stale client happened to sit on the build machine, so it built fine here and
+would have had no client at all in CI. Added to `.dockerignore` and regenerated in the
+builder stage.
+
+**Then the regeneration failed on its own:** `prisma.config.ts` resolves `DATABASE_URL`
+eagerly, and `generate` refuses to start without it, even though generating a client
+never opens a connection. Resolved by giving the generate step an unroutable placeholder
+rather than loosening the config — `migrate deploy` must still fail loudly when the real
+URL is absent.
+
+**Lesson, and it is the same one as the `@swc/helpers` entry above:** "it works" measured
+in the environment that built it proves very little. Both defects were found by
+constructing the *unprepared* environment on purpose — `env -u DATABASE_URL`, and a
+container build from a clean context — not by reading the code.
