@@ -559,3 +559,66 @@ re-enter. Wider than Task 3; a half-applied version repeats the bug above.
 `k8s/deployment.yaml:19-25` carries a comment saying "Wave 0 ships no Prisma schema, so there is
 nothing to migrate". False since Wave 1. The migration is still applied by hand; the `migrator`
 Dockerfile stage running `prisma migrate deploy` as an initContainer is the carried-forward fix.
+
+## 2026-08-19 — Wave 2 review: mutation 4, and the deferred work it uncovered
+
+### Mutation 4 was a false pass, and why that was structural
+
+Plan mutation 4: *delete `clearArchiveMessageIds` from the finalizer → the revival race
+test must fail.* It passed **22/22**. Every finalizer outcome hides that line:
+
+| outcome | why the clear is invisible |
+|---|---|
+| tombstoned | `removeByAuthorOrAdmin` clears the ids itself, from inside the hook |
+| revived successfully | `markActive` overwrites both ids anyway |
+| deleted | the row is gone |
+| ACTIVE won the race | (post-fix) the clear is skipped by design |
+
+The only surviving state that exposes it is a revival whose **rebuild fails**: the Clip
+stays `DELETING` with a clipper and no archive, so stale ids would be the §9.3
+"already deleted vs. never attempted" ambiguity the first CHECK constraint exists for.
+`tests/clip/service.test.ts` now pins exactly that; M4 fails 1/23 against it.
+
+Worth generalizing: a mutation is only a real check if some *observable* state depends
+on the mutated line. Three of this wave's four mutations were decisive on the first try
+(3, 16 and 3 failures); the fourth targeted a line every code path overwrote or
+discarded. Writing the mutation list at plan time — before the code exists — is what
+produced that mismatch, and it is not avoidable, so the discipline is to treat a
+mutation that passes as a finding about coverage rather than as a passed check.
+
+### The finalizer had two decisions and one guard
+
+`finalizeDeletion`'s callback decides two things from one locked row — whether to clear
+the ids, and whether to delete the row. The tombstone fix earlier today guarded the
+second and not the first, four lines apart. A concurrent `publishArchive` then makes the
+row ACTIVE, and clearing ids on an ACTIVE row violates `clips_active_requires_archive`,
+which surfaces as a raw Prisma rejection out of `unclip` — `UnclipResult` declares a
+`FAILED` member but neither `unclip` nor `removeByAuthorOrAdmin` has a `try`/`catch`, so
+those union members are unreachable and the error was never designed for.
+
+The callback now branches by case, and `deleteArchiveQuietly`'s boolean is load-bearing:
+
+```
+ACTIVE won the race        -> touch nothing (ids belong to that publish)
+delete succeeded           -> clear ids
+  tombstoned               -> keep the row (§7.4 outranks the deletion)
+  clippers == 0            -> delete the row
+  clippers  > 0            -> revive
+delete failed / no channel -> keep ids AND row, leave DELETING for reconciliation
+```
+
+### Carried to Wave 5 reconciliation — do not fix here
+
+- **A Clip stranded `PENDING` has no retry path.** If the process dies between
+  `claimClip` and `recordArchiveFailure` (real on a 3s interaction ack budget), the row
+  stays `PENDING` with no archive and every later clip returns `CLIPPER_ADDED` with
+  `archive: null` forever. **Do not fix by adding `PENDING` to `mustCreateArchive`** —
+  that breaks §9.4 for a second clipper landing mid-round-trip. Needs a lease or an
+  `updatedAt` staleness heuristic.
+- **Revival in a guild that lost its config dead-ends.** `finalizeDeletion` returns early
+  when `archiveChannelId` is null, leaving the Clip `DELETING` with clippers > 0; a later
+  unclip hits `ALREADY_DELETING` and returns without finalizing, so the row is stuck.
+- `CONCURRENT_CLAIMERS = 10` in `tests/clip/repository.test.ts` silently equals
+  node-postgres' undeclared default `max`. Raising it turns the race into a queue with no
+  test failure. Set `max` explicitly in the test setup, or assert the relationship.
+- `TOMBSTONE_STATUSES` in `lib/clip/repository.ts` is a mutable module-level array.
