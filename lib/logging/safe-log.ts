@@ -2,12 +2,17 @@
  * Structured log shape for Clip events. Deliberately excludes any field that
  * could carry Discord message content (`content`, `embeds`, `attachments`):
  * operational logs must never dump message bodies (product spec §12).
+ *
+ * The archive is two messages -- a provenance line and the forward it
+ * describes -- so it is two keys. A single `archiveMessageId` would let a call
+ * site log one of the pair and believe it had identified the entry.
  */
 export type SafeClipLog = {
   event: string;
   guildId?: string;
   sourceMessageId?: string;
-  archiveMessageId?: string;
+  archiveProvenanceMessageId?: string;
+  archiveForwardMessageId?: string;
   userId?: string;
   stateFrom?: string;
   stateTo?: string;
@@ -22,7 +27,8 @@ const SAFE_KEYS = [
   'event',
   'guildId',
   'sourceMessageId',
-  'archiveMessageId',
+  'archiveProvenanceMessageId',
+  'archiveForwardMessageId',
   'userId',
   'stateFrom',
   'stateTo',

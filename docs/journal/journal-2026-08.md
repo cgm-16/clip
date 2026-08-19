@@ -453,3 +453,245 @@ The new test uses a genuine primary-key collision on `admin_sessions.token_hash`
 table's `@id`) to make the insert fail — a real Postgres unique violation, no mocks, per the
 real-data rule. It is decisive: reverting the `$transaction` to two bare statements fails it on
 `expected 2026-08-19T04:50:28.277Z to be null`.
+
+## 2026-08-19 — Wave 2 task 2: the clip repository
+
+### `?connection_limit=N` in `DATABASE_URL` does nothing under the pg driver adapter
+
+Wave 1 recorded pinning `connection_limit` to 2 as evidence that interactive transactions do not
+starve the pool. Measured today: that knob is inert in this stack.
+
+`@prisma/adapter-pg` builds `new pg.Pool({ connectionString })`. `pg.Pool` reads its ceiling from
+`options.max`; the connection string is parsed by the `Client`, and `pg-connection-string` copies
+unknown query parameters onto the config verbatim, so `connection_limit` lands in the config as a
+string nobody reads. Timed four concurrent `SELECT pg_sleep(0.3)` on one client:
+
+| pool config                     | wall time |
+| ------------------------------- | --------- |
+| `?connection_limit=1` in the URL | 306 ms    |
+| `new PrismaPg({ …, max: 1 })`    | 1224 ms   |
+| unconstrained                    | 305 ms    |
+
+Only `max` constrains anything. The real check is to set `max` on the adapter in `lib/db.ts`
+temporarily. Done for this task at `max: 2` and `max: 1` — 96/96 both times, five and three runs
+respectively — which is a much stronger result than the vacuous one, since at `max: 1` any code
+that checked out a second connection inside a transaction would deadlock outright.
+
+### The pool warm-up did not change these two race outcomes
+
+The mandated warm-up before a race is real advice, but for the two races in
+`tests/clip/repository.test.ts` it turned out not to be the deciding factor: with the warm-up
+deleted, the check-then-insert regression still produced 9 rejected claims out of 10 (five runs,
+test run in isolation so no earlier test could warm the pool), and the dropped-`FOR UPDATE`
+regression still produced `[1, 1]` instead of `[0, 1]` (five runs). node-postgres opens up to
+`max` connections concurrently, so N ≤ 10 cold callers all finish their handshakes at roughly the
+same moment and do overlap. Wave 1's false positive presumably needed more round trips per caller
+to hide behind. The warm-up stays — it removes a genuine confound and costs nothing — but its
+comment no longer claims more than was observed.
+
+### Unrelated, do not fix here
+
+`.env` in the worktree still points at `postgresql://clip:clip@localhost:5432/clip`, while the
+running container is `clip-pg` on **5433/clip_dev**. Every `prisma` CLI invocation therefore needs
+`DATABASE_URL=…5433/clip_dev` in front of it, and `set -a && . ./.env && set +a` sends the CLI at
+a dead port. `.env` is gitignored, so this is a local-machine fix for Ori rather than a repo change.
+
+## 2026-08-19 — Task 2.3: the deletion window, and what a half-applied ruling looks like
+
+### The two-instruction composition bug
+
+The Task 3 dispatch carried seven pre-settled rulings. Two of them, both individually correct:
+
+- **F** — tombstoning deletes every clipper row (§7.4: removal overrides all preservation signals).
+- **A** — the deletion finalizer branches on the freshly-locked status: tombstoned → clear the
+  archive ids and keep the row; `DELETING` with zero clippers → delete the row.
+
+F was implemented. A was implemented *only for the revival branch*. The result:
+
+```
+A clips             -> ACTIVE, 1 clipper
+A unclips           -> removeClipper (0 left) -> markDeleting -> DELETING, lock released
+                       [ Discord delete in flight — the window ]
+author removes      -> REMOVED_BY_AUTHOR + deleteClippers   (F)
+finalizer relocks   -> countClippers == 0 -> deleteClipWithClippers   <-- tombstone destroyed
+```
+
+The clipper count cannot tell "the last clipper left" from "removal wiped the clippers" — both read
+zero. Only the status can, which is exactly what ruling A said. Recreation was unblocked for a
+message whose author had explicitly removed it, which is the harassment loop §7.4 exists to stop.
+
+What makes this worth writing down is that it violates no CHECK, satisfies every type, and passed
+all 19 of the implementer's own tests. It was found by reading the window against the ruling that
+named it. The lesson for future dispatches: **audit each numbered ruling against the diff
+individually before reviewing the code as a whole.** A skipped ruling (G, the safe-log allowlist)
+shows up in a grep. A half-applied one leaves no artifact distinguishing it from a finished one.
+
+### The delete hook is what makes these races testable
+
+`tests/clip/fake-gateway.ts` `onNextDelete(hook)` runs an arbitrary async function *inside*
+`deleteArchiveMessage`, i.e. exactly in the window between "Discord messages gone" and "finalizer
+retakes the lock". Both window tests (revival, and now tombstone) are fully deterministic with no
+sleeps. It is one-shot on purpose: a hook that fired again on the delete the concurrent request
+itself triggers would recurse.
+
+### Parked, then unparked and fixed: `ACTIVE` with zero clippers
+
+**Ori unparked this on 2026-08-20; fixed in `0793757`.** The sequence and the reasoning below are
+kept as written — the parking argument is the evidence, and the fix is at the end of this section.
+The dangling "SDD ledger under PARKED" pointer is noted further down; the substance is all here.
+
+```
+A unclips    -> DELETING, delete in flight
+B clips      -> count 1
+finalizer    -> relocks, reads count 1 -> "revived", releases lock
+B unclips    -> sees DELETING -> ALREADY_DELETING, returns
+finalizer    -> recreates archive, publishArchive: DELETING -> ACTIVE is legal
+             -> ACTIVE, zero clippers, live archive no unclip can remove
+```
+
+`service.ts` claims the finalizer's count re-read makes this converge, but the lock does not order
+that read after B's `removeClipper` — only one of the two interleavings is safe. Not reproducible
+with a single `onNextDelete` hook (B's clip must land before the count read, B's unclip after it).
+The right repair is an "ACTIVE requires ≥1 clipper" guard inside `publishArchive`'s lock, which
+then strands the row `DELETING` with no finalizer and so needs `finalizeDeletion` restructured to
+re-enter. Wider than Task 3; a half-applied version repeats the bug above.
+
+**The fix as built.** Both halves, exactly as sketched:
+
+- `publishArchive` reads `countClippers` **inside the lock that writes ACTIVE**. Reading it outside
+  was the whole bug. Verified this is not inert before writing it: `lockClip` uses
+  `prisma.$transaction` with no `isolationLevel`, and the container reports
+  `default_transaction_isolation = read committed`, so the count taken after `SELECT … FOR UPDATE`
+  acquires sees the withdrawing unclip's commit. Under `REPEATABLE READ` it would have read a
+  pre-withdrawal snapshot and the guard would never have fired — a silent no-op of exactly the
+  `connection_limit` kind.
+- `finalizeDeletion` re-enters. `clip()`'s caller needed nothing: it already takes down an archive
+  whose publish was declined, and the withdrawing unclip's own finalizer reaps the row in either
+  interleaving. The finalizer's own publish is different — its archive is *already rebuilt* when the
+  publish is declined, so the loop feeds the new pair back through the same delete-and-re-decide the
+  original went through. It terminates on member actions, not retries: another pass needs a
+  withdrawal during the rebuild **and** a fresh clip before the next lock.
+
+The earlier claim that this was not deterministically testable was wrong. It needs a hook inside
+`createArchiveMessage`, not inside the delete — `onNextCreate` on the fake gateway lands B's unclip
+in the rebuild window, which is the window that matters. Three mutations pin it, each decisive at
+1 failure: drop the count guard, drop the re-entry, and the older "drop the finalizer's id clear",
+re-run because the loop restructured the function it targets.
+
+### Unrelated, do not fix here
+
+`k8s/deployment.yaml:19-25` carries a comment saying "Wave 0 ships no Prisma schema, so there is
+nothing to migrate". False since Wave 1. The migration is still applied by hand; the `migrator`
+Dockerfile stage running `prisma migrate deploy` as an initContainer is the carried-forward fix.
+
+## 2026-08-19 — Wave 2 review: mutation 4, and the deferred work it uncovered
+
+### Mutation 4 was a false pass, and why that was structural
+
+Plan mutation 4: *delete `clearArchiveMessageIds` from the finalizer → the revival race
+test must fail.* It passed **22/22**. Every finalizer outcome hides that line:
+
+| outcome | why the clear is invisible |
+|---|---|
+| tombstoned | `removeByAuthorOrAdmin` clears the ids itself, from inside the hook |
+| revived successfully | `markActive` overwrites both ids anyway |
+| deleted | the row is gone |
+| ACTIVE won the race | (post-fix) the clear is skipped by design |
+
+The only surviving state that exposes it is a revival whose **rebuild fails**: the Clip
+stays `DELETING` with a clipper and no archive, so stale ids would be the §9.3
+"already deleted vs. never attempted" ambiguity the first CHECK constraint exists for.
+`tests/clip/service.test.ts` now pins exactly that; M4 fails 1/23 against it.
+
+Worth generalizing: a mutation is only a real check if some *observable* state depends
+on the mutated line. Three of this wave's four mutations were decisive on the first try
+(3, 16 and 3 failures); the fourth targeted a line every code path overwrote or
+discarded. Writing the mutation list at plan time — before the code exists — is what
+produced that mismatch, and it is not avoidable, so the discipline is to treat a
+mutation that passes as a finding about coverage rather than as a passed check.
+
+### The finalizer had two decisions and one guard
+
+`finalizeDeletion`'s callback decides two things from one locked row — whether to clear
+the ids, and whether to delete the row. The tombstone fix earlier today guarded the
+second and not the first, four lines apart. A concurrent `publishArchive` then makes the
+row ACTIVE, and clearing ids on an ACTIVE row violates `clips_active_requires_archive`,
+which surfaces as a raw Prisma rejection out of `unclip` — `UnclipResult` declares a
+`FAILED` member but neither `unclip` nor `removeByAuthorOrAdmin` has a `try`/`catch`, so
+those union members are unreachable and the error was never designed for.
+
+The callback now branches by case, and `deleteArchiveQuietly`'s boolean is load-bearing:
+
+```
+ACTIVE won the race        -> touch nothing (ids belong to that publish)
+delete succeeded           -> clear ids
+  tombstoned               -> keep the row (§7.4 outranks the deletion)
+  clippers == 0            -> delete the row
+  clippers  > 0            -> revive
+delete failed / no channel -> keep ids AND row, leave DELETING for reconciliation
+```
+
+### Carried to Wave 5 reconciliation — do not fix here
+
+- **A Clip stranded `PENDING` has no retry path.** If the process dies between
+  `claimClip` and `recordArchiveFailure` (real on a 3s interaction ack budget), the row
+  stays `PENDING` with no archive and every later clip returns `CLIPPER_ADDED` with
+  `archive: null` forever. **Do not fix by adding `PENDING` to `mustCreateArchive`** —
+  that breaks §9.4 for a second clipper landing mid-round-trip. Needs a lease or an
+  `updatedAt` staleness heuristic.
+- **Revival in a guild that lost its config dead-ends.** `finalizeDeletion` returns early
+  when `archiveChannelId` is null, leaving the Clip `DELETING` with clippers > 0; a later
+  unclip hits `ALREADY_DELETING` and returns without finalizing, so the row is stuck.
+- `CONCURRENT_CLAIMERS = 10` in `tests/clip/repository.test.ts` silently equals
+  node-postgres' undeclared default `max`. Raising it turns the race into a queue with no
+  test failure. Set `max` explicitly in the test setup, or assert the relationship.
+- `TOMBSTONE_STATUSES` in `lib/clip/repository.ts` is a mutable module-level array.
+
+## 2026-08-19 — CodeRabbit on PR #47: the false comment was the defect
+
+### A removal retry could not clean up an archive whose first delete failed
+
+`removeByAuthorOrAdmin` commits the tombstone, then deletes the two Discord messages, and
+keeps the ids when that delete fails — deliberately, since they are the only handle on
+content still up in the archive channel. Nothing ever used that handle: a second removal
+matched `isTerminalStatus` and returned before reaching the delete. The pair stayed up
+with no retry path, and only Wave 5 reconciliation would ever have noticed.
+
+The tell was a comment, not the control flow: *"the archive it pointed at is already
+gone"* was simply false on the failed-delete path. The branch was written for a tombstone
+whose ids had been cleared, and the failed-delete case — added later, correctly — made
+that premise conditional without anyone revisiting the sentence that asserted it.
+
+The fix returns `archiveOf(locked)` from the terminal branch so the caller re-enters the
+same delete-and-clear path. What makes that safe is worth keeping: **ids on a terminal
+row can only be the pair the removal was meant to delete.** `markActive` is their only
+writer, `publishArchive` gates it on `canTransition`, and `LEGAL_TRANSITIONS` gives the
+tombstones no outgoing edges — so nothing can put a *different* archive's ids there. The
+retry deletes and clears; it does not re-tombstone, so `removedAt` keeps naming the
+removal that actually happened. Falling through to a second transition would throw, and
+the test pins `removedAt` unchanged to catch exactly that mis-wiring.
+
+Two consequences, both acceptable. Concurrent removals can now both issue a delete for
+the same pair — a no-op for an absent message under the gateway contract the orphaned-
+provenance cleanup already relies on. And a removal in a guild with no archive channel
+now cleans up once the guild is configured, which it previously never did.
+
+### The `ACTIVE` with zero clippers defect, found independently
+
+CodeRabbit reached the same reachable sequence as `### Parked` above, from the code
+alone. Third independent confirmation — and Ori unparked it on the strength of that;
+fixed in `0793757`, written up at the end of that section. Its proposed sketch takes the archive back down after a successful publish and says it "still
+needs the follow-up transition out of `ACTIVE`" — that follow-up is the load-bearing
+half. Deleting the messages does not trip `clips_active_requires_archive`, because the
+CHECK reads the row and not Discord; clearing the ids afterwards does, which is the
+failure already fixed in `2a8abdc` and written up above.
+
+### The `PARKED` pointer was dangling
+
+The section now carries its own substance, but the diagnosis is worth keeping.
+`### Parked: ACTIVE with zero clippers` pointed at "the SDD ledger under PARKED".
+`.superpowers/sdd/` holds only `wave-0-remainder` in the main checkout and nothing at all
+in the wave-2 worktree (the directory is git-ignored, so a worktree never carries it).
+The reasoning survives in this journal and in the PR body; the cross-reference does not.
+Ledger paths are ignored and per-checkout, so a journal entry should carry the substance
+rather than point at one.
