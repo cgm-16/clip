@@ -58,7 +58,7 @@ These bind every task. A reviewer checks each one.
 per `docs/01_CLIP_PRODUCT_SPEC.md` §8.3. Read that section; it is settled, do not redesign it.
 
 ### Enums
-```
+```text
 ClipStatus: PENDING ACTIVE DELETING FAILED REMOVED_BY_AUTHOR REMOVED_BY_ADMIN
 AuthorNotificationStatus: PENDING DELIVERED UNDELIVERABLE
 ```
