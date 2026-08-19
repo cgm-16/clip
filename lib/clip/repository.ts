@@ -68,12 +68,30 @@ export async function claimClip(input: {
  * Runs `fn` with the canonical Clip row locked `FOR UPDATE` for the duration of
  * the transaction. Resolves to null without calling `fn` if the Clip is absent.
  *
+ * `null` is therefore ambiguous: it means "no such Clip" *or* "the callback
+ * returned null". A callback that needs the two told apart must resolve to
+ * something else -- every mutation below returns a record or a flag object, so
+ * no current caller can hit the ambiguity.
+ *
+ * Do no external I/O inside `fn`. The row lock is held until the transaction
+ * commits, so a Discord round-trip in the callback blocks every other caller
+ * for that message and shows up as an intermittent Prisma interactive
+ * transaction timeout, which names nothing about the real cause. Fetch first,
+ * then lock.
+ *
  * The transaction client is handed to the callback as a parameter rather than
  * left for it to reach through the module-level `prisma`: a callback that used
  * the singleton would check out a second pool connection while holding the
- * first, which deadlocks under load rather than merely running slowly. Every
- * mutation below therefore takes `tx` first, so none of them is callable
- * outside a lock.
+ * first, which deadlocks under load rather than merely running slowly.
+ *
+ * The `tx`-first parameter on every mutation below is a convention, not an
+ * enforcement. `TxClient` is `Omit<PrismaClient, ITXClientDenyList>`, which any
+ * `prisma.$transaction` client satisfies without holding this row's lock, so
+ * the compiler cannot tell a locked client from an unlocked one. It makes the
+ * requirement visible at every call site; honouring it is the caller's
+ * obligation, and the count-dependent ones -- `removeClipper` and
+ * `countClippers` -- return answers that are simply wrong if it is not
+ * honoured.
  */
 export function lockClip<T>(
   guildId: string,
@@ -98,11 +116,24 @@ export function lockClip<T>(
   });
 }
 
+/**
+ * Records one clipper's preservation signal. The insert is conditional in the
+ * database, so simultaneous callers cannot each observe "absent" and both write.
+ *
+ * The fields are destructured rather than forwarded as `input`: a caller that
+ * built its argument with a spread can carry extra keys that TypeScript's
+ * excess-property check does not see through, and Prisma then rejects them at
+ * runtime with "Unknown argument".
+ */
 export async function addClipper(
   tx: TxClient,
   input: { guildId: string; sourceMessageId: string; clipperUserId: string },
 ): Promise<{ added: boolean }> {
-  const { count } = await tx.clipper.createMany({ data: [input], skipDuplicates: true });
+  const { guildId, sourceMessageId, clipperUserId } = input;
+  const { count } = await tx.clipper.createMany({
+    data: [{ guildId, sourceMessageId, clipperUserId }],
+    skipDuplicates: true,
+  });
   return { added: count === 1 };
 }
 
@@ -116,8 +147,11 @@ export async function removeClipper(
   tx: TxClient,
   input: { guildId: string; sourceMessageId: string; clipperUserId: string },
 ): Promise<{ removed: boolean; remaining: number }> {
-  const { count } = await tx.clipper.deleteMany({ where: input });
-  const remaining = await countClippers(tx, input.guildId, input.sourceMessageId);
+  const { guildId, sourceMessageId, clipperUserId } = input;
+  const { count } = await tx.clipper.deleteMany({
+    where: { guildId, sourceMessageId, clipperUserId },
+  });
+  const remaining = await countClippers(tx, guildId, sourceMessageId);
   return { removed: count === 1, remaining };
 }
 
@@ -130,40 +164,91 @@ export function countClippers(
 }
 
 /**
- * Publishes the archive and the status in one statement. The
- * `clips_active_requires_archive` CHECK rejects any attempt to split them, so a
- * Clip can never reach `ACTIVE` with a missing or partial Discord archive.
+ * The states no caller may move a Clip out of. Author or admin removal
+ * overrides every other signal and its tombstone blocks recreation (spec §7.4),
+ * so a caller acting on a decision it took before the removal must not write
+ * over it.
  */
-export async function markActive(
+const TOMBSTONE_STATUSES: ClipStatus[] = ['REMOVED_BY_AUTHOR', 'REMOVED_BY_ADMIN'];
+
+/**
+ * Advances a live Clip's workflow state, reporting whether it applied.
+ *
+ * The tombstone predicate lives in the UPDATE, never in a preceding read. Each
+ * of these transitions is decided across a Discord round-trip that is seconds
+ * wide and runs outside any lock, so by the time the lock is taken the author
+ * may already have removed the Clip; a read-then-write would only re-examine a
+ * value it had already lost the race for. `applied: false` is the caller's
+ * signal that the Clip was tombstoned while it worked, and that whatever it
+ * built on Discord needs cleaning up rather than publishing.
+ *
+ * Called under `lockClip` the row is known to exist, so `applied: false` can
+ * only mean "tombstoned", never "no such Clip".
+ *
+ * Only the workflow transitions are guarded this way. `clearArchiveMessageIds`
+ * and `deleteClippers` must keep working on a tombstoned Clip: recording the
+ * Discord delete and dropping the preservation signals is precisely what
+ * tombstoning consists of.
+ */
+async function advanceLiveClip(
+  tx: TxClient,
+  guildId: string,
+  sourceMessageId: string,
+  data: Prisma.ClipUpdateManyMutationInput,
+): Promise<{ applied: boolean }> {
+  const { count } = await tx.clip.updateMany({
+    where: { guildId, sourceMessageId, status: { notIn: TOMBSTONE_STATUSES } },
+    data,
+  });
+  return { applied: count === 1 };
+}
+
+/**
+ * Publishes the archive and the status in one statement, unless the Clip was
+ * tombstoned while the archive was being built.
+ *
+ * Two database guards stand behind the predicate, and both hold against code
+ * that has not been written yet: `clips_active_requires_archive` rejects an
+ * ACTIVE Clip whose archive is missing or partial, and `clips_active_not_removed`
+ * rejects one carrying a removal timestamp. The predicate is what turns the
+ * second of those from a raised constraint violation into an outcome the caller
+ * can act on.
+ */
+export function markActive(
   tx: TxClient,
   guildId: string,
   sourceMessageId: string,
   archive: ArchiveMessageIds,
-): Promise<void> {
-  await tx.clip.update({
-    where: clipKey(guildId, sourceMessageId),
-    data: {
-      status: 'ACTIVE',
-      archiveProvenanceMessageId: archive.provenanceMessageId,
-      archiveForwardMessageId: archive.forwardMessageId,
-    },
+): Promise<{ applied: boolean }> {
+  return advanceLiveClip(tx, guildId, sourceMessageId, {
+    status: 'ACTIVE',
+    archiveProvenanceMessageId: archive.provenanceMessageId,
+    archiveForwardMessageId: archive.forwardMessageId,
   });
 }
 
-export async function markDeleting(
+/**
+ * Opens the teardown window, unless the Clip was tombstoned meanwhile.
+ *
+ * No CHECK can stand behind this one: overwriting a tombstone's status with a
+ * non-terminal one leaves a row that is still perfectly valid, just no longer a
+ * tombstone. The predicate is the only guard there is.
+ */
+export function markDeleting(
   tx: TxClient,
   guildId: string,
   sourceMessageId: string,
-): Promise<void> {
-  await tx.clip.update({ where: clipKey(guildId, sourceMessageId), data: { status: 'DELETING' } });
+): Promise<{ applied: boolean }> {
+  return advanceLiveClip(tx, guildId, sourceMessageId, { status: 'DELETING' });
 }
 
-export async function markFailed(
+/** Records a failed archive attempt. Guarded for the same reason as `markDeleting`. */
+export function markFailed(
   tx: TxClient,
   guildId: string,
   sourceMessageId: string,
-): Promise<void> {
-  await tx.clip.update({ where: clipKey(guildId, sourceMessageId), data: { status: 'FAILED' } });
+): Promise<{ applied: boolean }> {
+  return advanceLiveClip(tx, guildId, sourceMessageId, { status: 'FAILED' });
 }
 
 export async function markRemovedByAuthor(

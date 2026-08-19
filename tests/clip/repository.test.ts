@@ -65,13 +65,17 @@ describe('clip repository', () => {
   /**
    * Opens `callers` pool connections before a race.
    *
-   * This is load-bearing, not boilerplate. node-postgres connects lazily, so
-   * promises issued against a cold pool can serialize on connection
-   * establishment: whoever wins the handshake finishes its whole operation
-   * while the rest are still connecting, and the race never happens. Wave 1
-   * shipped a concurrency test that was green against its own regression for
-   * exactly that reason. Do not remove -- a race test that does not race
-   * reports nothing, and it reports it as a pass.
+   * node-postgres connects lazily, so promises issued against a cold pool can
+   * serialize on connection establishment: whoever wins the handshake finishes
+   * its whole operation while the rest are still connecting, and the race never
+   * happens. Wave 1 shipped a concurrency test that was green against its own
+   * regression, and a cold pool is one candidate explanation.
+   *
+   * Removing this was measured against every race in this file and did not
+   * change a single outcome -- see docs/journal/journal-2026-08.md, 2026-08-19.
+   * It stays because it removes a confound cheaply, not because it was observed
+   * to bite here. A race test that does not race reports nothing, and reports
+   * it as a pass.
    */
   async function warmConnectionPool(callers: number): Promise<void> {
     await Promise.all(Array.from({ length: callers }, () => prisma.$queryRaw`SELECT 1`));
@@ -147,9 +151,11 @@ describe('clip repository', () => {
 
     await warmConnectionPool(CONCURRENT_CLIPPERS);
 
-    // More callers than the two a double-click produces: every extra caller
-    // widens the window in which a check-then-write could interleave a read
-    // before the winner's write lands.
+    // Every caller enters through `lockClip`, which holds `FOR UPDATE` on the
+    // one row to commit, so they serialize: this pins the end-to-end property a
+    // double-click must have, but it cannot tell `addClipper`'s conditional
+    // insert apart from a check-then-insert. The unlocked race below is what
+    // covers that.
     const attempts = await Promise.allSettled(
       Array.from({ length: CONCURRENT_CLIPPERS }, () =>
         lockClip(input.guildId, input.sourceMessageId, (tx) =>
@@ -168,6 +174,30 @@ describe('clip repository', () => {
       (attempt) => attempt.status === 'fulfilled' && attempt.value?.added === true,
     );
     expect(added).toHaveLength(1);
+    expect(await prisma.clipper.count({ where: { guildId: input.guildId } })).toBe(1);
+  });
+
+  test('addClipper de-duplicates in the database, not in its caller', async () => {
+    const input = newClipInput();
+    const clipperUserId = fakeSnowflake();
+    await claimClip(input);
+
+    await warmConnectionPool(CONCURRENT_CLIPPERS);
+
+    // Deliberately not through `lockClip`: these transactions take no clip lock,
+    // so they genuinely overlap and `addClipper`'s own `ON CONFLICT DO NOTHING`
+    // is the only thing deciding the winner. A check-then-insert loses this race
+    // with a unique violation instead of a quiet `added: false`.
+    const attempts = await Promise.allSettled(
+      Array.from({ length: CONCURRENT_CLIPPERS }, () =>
+        prisma.$transaction((tx) => addClipper(tx, clipperInput(input, clipperUserId))),
+      ),
+    );
+
+    expect(attempts.filter((attempt) => attempt.status === 'rejected')).toHaveLength(0);
+    expect(
+      attempts.filter((attempt) => attempt.status === 'fulfilled' && attempt.value.added),
+    ).toHaveLength(1);
     expect(await prisma.clipper.count({ where: { guildId: input.guildId } })).toBe(1);
   });
 
@@ -250,6 +280,94 @@ describe('clip repository', () => {
     const reclaim = await claimClip(input);
     expect(reclaim.created).toBe(false);
     expect(reclaim.clip.status).toBe('REMOVED_BY_ADMIN');
+  });
+
+  test('a removal during the archive round-trip stops the activation that follows', async () => {
+    const input = newClipInput();
+    const archive = {
+      provenanceMessageId: fakeSnowflake(),
+      forwardMessageId: fakeSnowflake(),
+    };
+    const removedAt = new Date();
+
+    // 1. A clipper claims the Clip.
+    await claimClip(input);
+    // 2. Discord builds the archive. Seconds wide, and held under no lock --
+    //    which is the entire reason the rest of this sequence is reachable.
+    // 3. The author removes the Clip before that round-trip returns.
+    await lockClip(input.guildId, input.sourceMessageId, (tx) =>
+      markRemovedByAuthor(tx, input.guildId, input.sourceMessageId, removedAt),
+    );
+    // 4. The clipper's call finally takes the lock and tries to publish.
+    const outcome = await lockClip(input.guildId, input.sourceMessageId, (tx) =>
+      markActive(tx, input.guildId, input.sourceMessageId, archive),
+    );
+
+    expect(outcome).toEqual({ applied: false });
+
+    // The tombstone survives intact, and the archive it would have published is
+    // still unrecorded -- so the caller can tell it must delete it on Discord.
+    const row = await prisma.clip.findUniqueOrThrow({ where: clipKey(input) });
+    expect(row).toMatchObject({
+      status: 'REMOVED_BY_AUTHOR',
+      archiveProvenanceMessageId: null,
+      archiveForwardMessageId: null,
+    });
+    expect(row.removedAt?.getTime()).toBe(removedAt.getTime());
+  });
+
+  test('a tombstone refuses every later workflow transition', async () => {
+    const input = newClipInput();
+    await claimClip(input);
+    await lockClip(input.guildId, input.sourceMessageId, (tx) =>
+      markRemovedByAdmin(tx, input.guildId, input.sourceMessageId, new Date()),
+    );
+
+    // No CHECK stands behind these two: overwriting a tombstone's status with a
+    // non-terminal one leaves a row that is still valid, merely no longer a
+    // tombstone. The predicate in the UPDATE is the only guard there is.
+    expect(
+      await lockClip(input.guildId, input.sourceMessageId, (tx) =>
+        markDeleting(tx, input.guildId, input.sourceMessageId),
+      ),
+    ).toEqual({ applied: false });
+    expect(
+      await lockClip(input.guildId, input.sourceMessageId, (tx) =>
+        markFailed(tx, input.guildId, input.sourceMessageId),
+      ),
+    ).toEqual({ applied: false });
+
+    expect((await prisma.clip.findUniqueOrThrow({ where: clipKey(input) })).status).toBe(
+      'REMOVED_BY_ADMIN',
+    );
+  });
+
+  test('the database rejects an ACTIVE Clip carrying a removal timestamp', async () => {
+    const input = newClipInput();
+    await claimClip(input);
+    await prisma.clip.update({
+      where: clipKey(input),
+      data: { status: 'REMOVED_BY_AUTHOR', removedAt: new Date() },
+    });
+
+    // Written through the client rather than the repository, so the guard being
+    // tested is the database's and not `markActive`'s predicate. Both archive
+    // ids are supplied, so `clips_active_requires_archive` is satisfied and
+    // `clips_active_not_removed` is the only constraint left to reject it.
+    await expect(
+      prisma.clip.update({
+        where: clipKey(input),
+        data: {
+          status: 'ACTIVE',
+          archiveProvenanceMessageId: fakeSnowflake(),
+          archiveForwardMessageId: fakeSnowflake(),
+        },
+      }),
+    ).rejects.toThrow(/clips_active_not_removed/);
+
+    expect((await prisma.clip.findUniqueOrThrow({ where: clipKey(input) })).status).toBe(
+      'REMOVED_BY_AUTHOR',
+    );
   });
 
   test('the database rejects an ACTIVE Clip with missing archive ids', async () => {
