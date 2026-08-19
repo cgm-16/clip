@@ -282,3 +282,52 @@ regression produce 7 winners and 8 sessions, and the test fails as it should.
 been shown to fail against the serial implementation. Connection-pool warm-up is part of
 the setup, not an optimisation. Any future test of §9's invariants (simultaneous Clip,
 simultaneous Unclip) must warm the pool the same way and be mutation-checked the same way.
+
+## 2026-08-19 — Wave 1: three defects that only mutation testing found
+
+Wave 1 shipped five tasks. Every one passed its implementer's self-review, and the suite was
+green at every point. Three separate security defects were nevertheless present, and all three
+were found the same way: break the code, re-run the tests, see whether anything notices.
+
+1. **Task 2, `safe-log.ts`.** The allowlist filtered key *names* but not value *types*, so
+   `logClipEvent({ userId: { content: 'BODY' } })` logged a message body verbatim — against the
+   invariant that exists specifically to prevent that.
+2. **Task 4, the concurrency test.** Substituting the exact check-then-write regression it
+   claimed to catch still passed. Root cause: node-postgres opens pool connections lazily, so
+   caller 1 finished its read-then-write in ~9ms while the others were still handshaking at
+   ~22ms. A `Promise.all` warm-up fixes it, and that warm-up is load-bearing — deleting it
+   gives 5/5 false passes with the regression in place. Reproduced twice, independently.
+3. **Task 5, the interaction endpoint.** No test required `/setup` to sit downstream of the
+   Ed25519 check. Moving the branch above `verifyInteractionRequest` left all 71 tests green,
+   in a build where an unauthenticated POST mints a live admin token for any guild.
+
+Plus two more at the whole-branch review: a cross-origin POST to `/api/setup/exchange` returned
+204 with a `Set-Cookie`, and `content String?` could be added to the `Clip` table without a
+single test failing — the "never persist message bodies in Postgres" invariant had no
+deliberate protection whatsoever, only the absence of columns.
+
+The transferable finding: **a green suite is evidence about the tests, not about the code.**
+AI-authored tests cluster densely on the behaviour the author was thinking about and leave the
+adjacent boundary — authentication, storage shape, request origin — entirely unnamed. Reading
+the tests does not reveal this; only mutating the code does. Wave 2 should mutate every
+invariant it claims to protect, and treat "I read it and it looks right" as worthless for this
+class of bug.
+
+### Two traps that cost time
+
+- **`tsconfig.tsbuildinfo` does not invalidate on a tsconfig change.** After bumping `target`
+  ES2017 → ES2020, `tsc` kept reporting `TS2737` against the *old* target. Delete the buildinfo
+  whenever a tsconfig edit appears not to take effect.
+- **The test Postgres is on port 5433, not 5432** (`tests/setup/database-url.ts` defaults to the
+  `clip-pg` container). A reviewer concluded from a closed 5432 that the DB tests were silently
+  skipping and that Task 4's evidence was void. They were not skipping: pointing `DATABASE_URL`
+  at a dead port makes them *fail*. Check the default before concluding a suite is inert.
+
+### Deferred deliberately, with reasons
+
+`X-Signature-Timestamp` has no replay window, so a captured signed body mints setup tokens
+forever. Deferred to Wave 2 because exploitability requires capturing a signed body and that is
+not established here — Traefik runs without `--accesslog` and never logs bodies regardless, and
+the route does not log the body. Adding it now would deviate from Discord's documented procedure
+on the only Discord-facing surface, with no live-guild coverage, where clock skew past the
+window silently 401s every interaction and presents as a signature bug.
