@@ -1,4 +1,4 @@
-import type { ClipStatus, Prisma } from '@/generated/prisma/client';
+import type { AuthorNotificationStatus, ClipStatus, Prisma } from '@/generated/prisma/client';
 import type { ArchiveMessageIds } from '@/lib/clip/types';
 import { prisma } from '@/lib/db';
 
@@ -326,4 +326,61 @@ export async function findGuildArchiveConfig(
     archiveChannelId: config.archiveChannelId,
     allowedRoleIds: config.allowedRoles.map((role) => role.roleId),
   };
+}
+
+/**
+ * Claims the first-clip author DM for the caller, atomically.
+ *
+ * The claim writes `UNDELIVERABLE`, not `DELIVERED`: the send has not
+ * happened yet, and a process that dies between the claim and the Discord
+ * round-trip must not leave a row that lies about delivery. `UNDELIVERABLE`
+ * is always a safe thing for that row to say -- worst case a member never
+ * gets the DM, which spec §11.1 already treats as best-effort -- where
+ * `DELIVERED` would be an unrecoverable false claim. A successful send flips
+ * it forward with `markAuthorNotificationDelivered` below.
+ *
+ * The conditional `updateMany` is the whole guard: Postgres serializes two
+ * concurrent updates to the same row, so at most one caller ever observes
+ * `count === 1` and only that caller may send. A retry or a restart that
+ * calls this again after the first claim finds the row already
+ * non-`PENDING` and gets `null`, which is this function's "do not send"
+ * answer -- the persisted status is the guard, not anything held in memory.
+ *
+ * Returns null when there is nothing to claim, whether because the Clip does
+ * not exist or because a DM was already claimed for it.
+ */
+export async function claimAuthorNotification(
+  guildId: string,
+  sourceMessageId: string,
+): Promise<{ authorUserId: string; sourceChannelId: string } | null> {
+  const { count } = await prisma.clip.updateMany({
+    where: { guildId, sourceMessageId, authorNotificationStatus: 'PENDING' satisfies AuthorNotificationStatus },
+    data: { authorNotificationStatus: 'UNDELIVERABLE' satisfies AuthorNotificationStatus },
+  });
+  if (count !== 1) {
+    return null;
+  }
+  const clip = await prisma.clip.findUniqueOrThrow({
+    where: clipKey(guildId, sourceMessageId),
+    select: { authorUserId: true, sourceChannelId: true },
+  });
+  return clip;
+}
+
+/**
+ * Records that the DM claimed by `claimAuthorNotification` was sent.
+ *
+ * Guarded the same way `claimAuthorNotification` claims: only a row this
+ * caller's own claim left at `UNDELIVERABLE` moves to `DELIVERED`, so a
+ * caller that lost the claim (and therefore never sent) cannot overwrite a
+ * status some other request already settled.
+ */
+export async function markAuthorNotificationDelivered(
+  guildId: string,
+  sourceMessageId: string,
+): Promise<void> {
+  await prisma.clip.updateMany({
+    where: { guildId, sourceMessageId, authorNotificationStatus: 'UNDELIVERABLE' satisfies AuthorNotificationStatus },
+    data: { authorNotificationStatus: 'DELIVERED' satisfies AuthorNotificationStatus },
+  });
 }
