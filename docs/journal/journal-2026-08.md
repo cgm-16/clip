@@ -534,9 +534,11 @@ retakes the lock". Both window tests (revival, and now tombstone) are fully dete
 sleeps. It is one-shot on purpose: a hook that fired again on the delete the concurrent request
 itself triggers would recurse.
 
-### Parked: `ACTIVE` with zero clippers
+### Parked, then unparked and fixed: `ACTIVE` with zero clippers
 
-Not fixed, deliberately — full reasoning and a fix sketch are in the SDD ledger under PARKED.
+**Ori unparked this on 2026-08-20; fixed in `0793757`.** The sequence and the reasoning below are
+kept as written — the parking argument is the evidence, and the fix is at the end of this section.
+The dangling "SDD ledger under PARKED" pointer is noted further down; the substance is all here.
 
 ```
 A unclips    -> DELETING, delete in flight
@@ -553,6 +555,28 @@ with a single `onNextDelete` hook (B's clip must land before the count read, B's
 The right repair is an "ACTIVE requires ≥1 clipper" guard inside `publishArchive`'s lock, which
 then strands the row `DELETING` with no finalizer and so needs `finalizeDeletion` restructured to
 re-enter. Wider than Task 3; a half-applied version repeats the bug above.
+
+**The fix as built.** Both halves, exactly as sketched:
+
+- `publishArchive` reads `countClippers` **inside the lock that writes ACTIVE**. Reading it outside
+  was the whole bug. Verified this is not inert before writing it: `lockClip` uses
+  `prisma.$transaction` with no `isolationLevel`, and the container reports
+  `default_transaction_isolation = read committed`, so the count taken after `SELECT … FOR UPDATE`
+  acquires sees the withdrawing unclip's commit. Under `REPEATABLE READ` it would have read a
+  pre-withdrawal snapshot and the guard would never have fired — a silent no-op of exactly the
+  `connection_limit` kind.
+- `finalizeDeletion` re-enters. `clip()`'s caller needed nothing: it already takes down an archive
+  whose publish was declined, and the withdrawing unclip's own finalizer reaps the row in either
+  interleaving. The finalizer's own publish is different — its archive is *already rebuilt* when the
+  publish is declined, so the loop feeds the new pair back through the same delete-and-re-decide the
+  original went through. It terminates on member actions, not retries: another pass needs a
+  withdrawal during the rebuild **and** a fresh clip before the next lock.
+
+The earlier claim that this was not deterministically testable was wrong. It needs a hook inside
+`createArchiveMessage`, not inside the delete — `onNextCreate` on the fake gateway lands B's unclip
+in the rebuild window, which is the window that matters. Three mutations pin it, each decisive at
+1 failure: drop the count guard, drop the re-entry, and the older "drop the finalizer's id clear",
+re-run because the loop restructured the function it targets.
 
 ### Unrelated, do not fix here
 
@@ -655,16 +679,17 @@ now cleans up once the guild is configured, which it previously never did.
 ### The `ACTIVE` with zero clippers defect, found independently
 
 CodeRabbit reached the same reachable sequence as `### Parked` above, from the code
-alone. Third independent confirmation; still parked, still Ori's call to unpark. Its
-proposed sketch takes the archive back down after a successful publish and says it "still
+alone. Third independent confirmation — and Ori unparked it on the strength of that;
+fixed in `0793757`, written up at the end of that section. Its proposed sketch takes the archive back down after a successful publish and says it "still
 needs the follow-up transition out of `ACTIVE`" — that follow-up is the load-bearing
 half. Deleting the messages does not trip `clips_active_requires_archive`, because the
 CHECK reads the row and not Discord; clearing the ids afterwards does, which is the
 failure already fixed in `2a8abdc` and written up above.
 
-### The `PARKED` pointer above is dangling
+### The `PARKED` pointer was dangling
 
-`### Parked: ACTIVE with zero clippers` points at "the SDD ledger under PARKED".
+The section now carries its own substance, but the diagnosis is worth keeping.
+`### Parked: ACTIVE with zero clippers` pointed at "the SDD ledger under PARKED".
 `.superpowers/sdd/` holds only `wave-0-remainder` in the main checkout and nothing at all
 in the wave-2 worktree (the directory is git-ignored, so a worktree never carries it).
 The reasoning survives in this journal and in the PR body; the cross-reference does not.
