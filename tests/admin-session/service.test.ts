@@ -13,6 +13,7 @@ import {
   exchangeSetupToken,
   issueSetupToken,
 } from '@/lib/admin-session/service';
+import { exchangeSetupTokenForSession } from '@/lib/admin-session/repository';
 
 const SESSION_SECRET = 'x'.repeat(32);
 const CONCURRENT_CALLERS = 8;
@@ -157,6 +158,38 @@ describe('admin session service', () => {
 
     // The decisive assertion: a losing caller must not have minted a session.
     expect(await prisma.adminSession.count({ where: { guildId } })).toBe(1);
+  });
+
+  test('a token survives a failed session insert and can be exchanged again', async () => {
+    const guildId = trackedGuildId();
+    const userId = fakeSnowflake();
+    const issued = await issueSetupToken(guildId, userId);
+    const setupTokenHash = hashBearerToken(issued.token, SESSION_SECRET);
+    const expiresAt = new Date(Date.now() + ADMIN_SESSION_TTL_MS);
+
+    // A real primary key collision rather than a stubbed failure:
+    // `admin_sessions.token_hash` is the table's id, so the insert fails inside
+    // the transaction exactly as any genuine write failure would.
+    const collidingHash = hashBearerToken('a-session-token-already-minted', SESSION_SECRET);
+    await prisma.adminSession.create({
+      data: { tokenHash: collidingHash, guildId, userId, expiresAt },
+    });
+
+    await expect(
+      exchangeSetupTokenForSession(
+        setupTokenHash,
+        { tokenHash: collidingHash, expiresAt },
+        new Date(),
+      ),
+    ).rejects.toThrow();
+
+    // The consumption rolled back with the insert, so the token is still live
+    // for the rest of its TTL and the admin can simply retry the link.
+    const row = await prisma.setupToken.findUniqueOrThrow({
+      where: { tokenHash: setupTokenHash },
+    });
+    expect(row.usedAt).toBeNull();
+    expect(await exchangeSetupToken(issued.token)).toMatchObject({ guildId, userId });
   });
 
   test('an expired session fails', async () => {

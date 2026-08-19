@@ -1,8 +1,7 @@
 import { parseEnv } from '@/lib/env';
 import {
-  consumeSetupToken,
+  exchangeSetupTokenForSession,
   findLiveAdminSession,
-  insertAdminSession,
   insertSetupToken,
   type AdminIdentity,
 } from '@/lib/admin-session/repository';
@@ -67,19 +66,20 @@ export async function exchangeSetupToken(
 ): Promise<AdminSessionGrant | null> {
   const secret = sessionSecret();
 
-  const identity = await consumeSetupToken(hashBearerToken(setupToken, secret), now);
+  // Minted before the outcome is known so that both writes fit in one
+  // transaction. A token discarded because the exchange failed costs nothing:
+  // it is entropy that never reached the database or the caller.
+  const token = generateBearerToken();
+  const expiresAt = new Date(now.getTime() + ADMIN_SESSION_TTL_MS);
+
+  const identity = await exchangeSetupTokenForSession(
+    hashBearerToken(setupToken, secret),
+    { tokenHash: hashBearerToken(token, secret), expiresAt },
+    now,
+  );
   if (!identity) {
     return null;
   }
-
-  const token = generateBearerToken();
-  const expiresAt = new Date(now.getTime() + ADMIN_SESSION_TTL_MS);
-  await insertAdminSession({
-    tokenHash: hashBearerToken(token, secret),
-    guildId: identity.guildId,
-    userId: identity.userId,
-    expiresAt,
-  });
 
   return { token, expiresAt, ...identity };
 }

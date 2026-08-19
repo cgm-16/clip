@@ -415,3 +415,41 @@ not established here — Traefik runs without `--accesslog` and never logs bodie
 the route does not log the body. Adding it now would deviate from Discord's documented procedure
 on the only Discord-facing surface, with no live-guild coverage, where clock skew past the
 window silently 401s every interaction and presents as a signature bug.
+
+## 2026-08-19 — PR 46 review: the two-write exchange was not atomic
+
+CodeRabbit found what 12 mutations did not: `exchangeSetupToken` consumed the setup token and
+inserted the admin session as two independent statements. If the insert failed, `used_at` was
+already committed and the admin was stranded on a dead link — a burned token, recoverable only
+by re-running `/setup`. Not a security hole (at most one session per token held either way,
+which is why the mutation pass never flagged it), but a real availability defect.
+
+Why the mutation regime missed it: every mutation asked *"can this invariant be violated?"*.
+Non-atomicity violates no invariant — it fails **safe**, in the direction of doing less. The
+transferable point is that mutation testing finds tests too weak to catch a *stronger* wrong
+behaviour, and is structurally blind to failure modes that are merely *worse for the user*.
+
+The fix folds both writes into `exchangeSetupTokenForSession`, one `prisma.$transaction`. The
+session's guild and user now come from the consumed token row rather than from the caller, so a
+session cannot be scoped to a pair its token was not issued for. The one-winner property is
+strengthened, not weakened: the row lock is now held to commit instead of being released at the
+end of the UPDATE.
+
+### The pool-exhaustion risk that did not materialize (measured)
+
+An interactive transaction holds a pool connection for its whole duration, and the concurrency
+test fires 8 overlapping callers while asserting **zero** rejections. Prisma's default
+`connection_limit` is `physical_cpus * 2 + 1` — about 5 on a 2-core runner — so the worry was 8
+transactions against 5 connections blowing the 2s `maxWait` and rejecting in CI only, on a
+machine with 10 physical cores that would never reproduce locally.
+
+It does not happen. Pinned `connection_limit` to 5, 3 and finally **2** — stricter than any
+realistic runner — and ran the file **12 consecutive times at limit 2: 78/78, zero rejections**.
+The transactions are sub-millisecond, so queued callers get a connection far inside `maxWait`.
+No `connection_limit` was added to the test URL: it would have been a harness change with no
+evidence behind it. If this ever does go flaky in CI, this is the first thing to suspect.
+
+The new test uses a genuine primary-key collision on `admin_sessions.token_hash` (it is the
+table's `@id`) to make the insert fail — a real Postgres unique violation, no mocks, per the
+real-data rule. It is decisive: reverting the `$transaction` to two bare statements fails it on
+`expected 2026-08-19T04:50:28.277Z to be null`.
