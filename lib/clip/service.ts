@@ -315,21 +315,43 @@ export function createClipService(gateway: DiscordArchiveGateway) {
     archive: ArchiveMessageIds | null;
   }): Promise<void> {
     const { key, archiveChannelId, archive } = context;
+    // Whether Discord is done with the pair this finalizer was sent to remove.
+    // A Clip with no archive has nothing outstanding; one whose guild lost its
+    // configuration has two messages nobody can address, which is the same
+    // position as a delete that failed.
+    let archiveRemoved = archive === null;
     if (archive !== null && archiveChannelId !== null) {
-      await deleteArchiveQuietly(key, archiveChannelId, archive);
+      archiveRemoved = await deleteArchiveQuietly(key, archiveChannelId, archive);
     }
 
     const outcome = await lockClip(key.guildId, key.sourceMessageId, async (tx, locked) => {
-      // The Discord messages are gone; the row must say so before the lock is
-      // released, or a concurrent revival cannot tell whether the archive still
-      // exists.
-      await clearArchiveMessageIds(tx, key.guildId, key.sourceMessageId);
+      if (locked.status === 'ACTIVE') {
+        // A concurrent publish won the row while the delete was in flight. Its
+        // ids are that publish's, not the pair taken down here, so neither
+        // clearing them nor deleting the row is this finalizer's to do --
+        // and clearing them would violate `clips_active_requires_archive` and
+        // reject the caller's whole unclip.
+        return { revived: false as const };
+      }
+      if (archiveRemoved) {
+        // Discord is done with the pair, so the row must say so before the lock
+        // is released, or a concurrent revival cannot tell whether the archive
+        // still exists.
+        await clearArchiveMessageIds(tx, key.guildId, key.sourceMessageId);
+      }
       if (isTerminalStatus(locked.status)) {
         // A removal landed in the window. The row this finalizer was sent to
         // delete is now a tombstone, and §7.4 puts that above the deletion:
         // dropping it would unblock recreation of a message its author
         // explicitly removed. The clipper count cannot decide this -- removal
         // drops every clipper row, so a tombstone always reads as zero.
+        return { revived: false as const };
+      }
+      if (!archiveRemoved) {
+        // Two messages are still up and the row's ids are the only handle on
+        // them. Leaving the Clip DELETING keeps it visible to reconciliation;
+        // deleting the row would strand published content with nothing left to
+        // match it against.
         return { revived: false as const };
       }
       if ((await countClippers(tx, key.guildId, key.sourceMessageId)) === 0) {

@@ -12,6 +12,8 @@ export type FakeDiscordArchiveGateway = DiscordArchiveGateway & {
   readonly deleteCalls: readonly DeleteCall[];
   /** Makes the next `createArchiveMessage` throw `error` instead of posting. */
   failNextCreate(error: Error): void;
+  /** Makes the next `deleteArchiveMessage` throw `error`, leaving both messages up. */
+  failNextDelete(error: Error): void;
   /** Runs `hook` inside the next `deleteArchiveMessage`, before it resolves. */
   onNextDelete(hook: () => Promise<void>): void;
 };
@@ -33,6 +35,7 @@ export function createFakeGateway(): FakeDiscordArchiveGateway {
   const deleteCalls: DeleteCall[] = [];
   let archivesPosted = 0;
   let nextCreateError: Error | null = null;
+  let nextDeleteError: Error | null = null;
   let deleteHook: (() => Promise<void>) | null = null;
 
   return {
@@ -41,6 +44,10 @@ export function createFakeGateway(): FakeDiscordArchiveGateway {
 
     failNextCreate(error: Error): void {
       nextCreateError = error;
+    },
+
+    failNextDelete(error: Error): void {
+      nextDeleteError = error;
     },
 
     onNextDelete(hook: () => Promise<void>): void {
@@ -63,6 +70,11 @@ export function createFakeGateway(): FakeDiscordArchiveGateway {
 
     async deleteArchiveMessage(archiveChannelId: string, ids: ArchiveMessageIds): Promise<void> {
       deleteCalls.push({ archiveChannelId, ids });
+      if (nextDeleteError !== null) {
+        const error = nextDeleteError;
+        nextDeleteError = null;
+        throw error;
+      }
       // One-shot: the hook exists to land one concurrent request in the
       // deletion window. A hook that fired again on the delete that the
       // concurrent request itself triggers would recurse.

@@ -531,6 +531,106 @@ describe('clip service', () => {
     expect((await readClip(fixture))?.status).toBe('REMOVED_BY_AUTHOR');
   });
 
+  test('a failed Discord delete keeps the row and its ids rather than losing the archive', async () => {
+    // The ids are the control plane's only handle on two messages that are
+    // still up. Deleting the row here would strand published content in the
+    // archive channel with nothing left to reconcile it against.
+    const fixture = await seedConfiguredGuild();
+    const first = fakeSnowflake();
+    await service.clip(clipInput(fixture, first));
+    gateway.failNextDelete(new Error('discord unavailable'));
+
+    const result = await service.unclip({
+      guildId: fixture.guildId,
+      sourceMessageId: fixture.sourceMessageId,
+      clipperUserId: first,
+    });
+
+    expect(result).toEqual({ kind: 'UNCLIPPED', remaining: 0 });
+    const clip = await readClip(fixture);
+    expect(clip).not.toBeNull();
+    expect(clip?.status).toBe('DELETING');
+    expect(clip?.archiveProvenanceMessageId).toBe('provenance-1');
+    expect(clip?.archiveForwardMessageId).toBe('forward-1');
+    expect(await countClipperRows(fixture)).toBe(0);
+  });
+
+  test('a publish that wins the deletion window is left alone, not cleared', async () => {
+    // The end state of a concurrent `publishArchive`: the row is ACTIVE again
+    // and its ids are that publish's, not the pair this finalizer took down.
+    // Written directly under the delete hook rather than raced for -- the
+    // interleaving that produces it is real but not deterministically
+    // reachable, while the state it produces is exactly this.
+    // Clearing here violates `clips_active_requires_archive` and rejects the
+    // whole unclip; the ids are also not this finalizer's to clear.
+    const fixture = await seedConfiguredGuild();
+    const first = fakeSnowflake();
+    await service.clip(clipInput(fixture, first));
+    gateway.onNextDelete(async () => {
+      await prisma.clip.update({
+        where: {
+          guildId_sourceMessageId: {
+            guildId: fixture.guildId,
+            sourceMessageId: fixture.sourceMessageId,
+          },
+        },
+        data: {
+          status: 'ACTIVE',
+          archiveProvenanceMessageId: 'provenance-9',
+          archiveForwardMessageId: 'forward-9',
+        },
+      });
+    });
+
+    const result = await service.unclip({
+      guildId: fixture.guildId,
+      sourceMessageId: fixture.sourceMessageId,
+      clipperUserId: first,
+    });
+
+    expect(result).toEqual({ kind: 'UNCLIPPED', remaining: 0 });
+    const clip = await readClip(fixture);
+    expect(clip?.status).toBe('ACTIVE');
+    expect(clip?.archiveProvenanceMessageId).toBe('provenance-9');
+    expect(clip?.archiveForwardMessageId).toBe('forward-9');
+  });
+
+  test('a revival whose archive cannot be rebuilt keeps no ids for the pair it deleted', async () => {
+    // The one surviving state that exposes the finalizer's id clear. Every
+    // other outcome hides it: a tombstone clears the ids on its own path, a
+    // successful revival overwrites them via `markActive`, and a completed
+    // deletion takes the row with it. Here the Clip stays DELETING with a
+    // clipper, so ids pointing at two messages Discord no longer has would be
+    // the "already deleted vs. never attempted" ambiguity §9.3 forbids -- and
+    // the state the eventual reconciliation has to read.
+    const fixture = await seedConfiguredGuild();
+    const first = fakeSnowflake();
+    const reviver = fakeSnowflake();
+    await service.clip(clipInput(fixture, first));
+    gateway.onNextDelete(async () => {
+      const revival = await service.clip(clipInput(fixture, reviver));
+      expect(revival.kind).toBe('CLIPPER_ADDED');
+      // Applies to the finalizer's rebuild, which is the next create: the
+      // reviving clip does not create a second archive.
+      gateway.failNextCreate(new ArchiveTargetUnavailableError('source gone'));
+    });
+
+    const result = await service.unclip({
+      guildId: fixture.guildId,
+      sourceMessageId: fixture.sourceMessageId,
+      clipperUserId: first,
+    });
+
+    expect(result).toEqual({ kind: 'UNCLIPPED', remaining: 0 });
+    const clip = await readClip(fixture);
+    expect(clip?.status).toBe('DELETING');
+    expect(clip?.archiveProvenanceMessageId).toBeNull();
+    expect(clip?.archiveForwardMessageId).toBeNull();
+    expect(await countClipperRows(fixture)).toBe(1);
+    expect(gateway.createCalls).toHaveLength(2);
+    expect(gateway.deleteCalls).toHaveLength(1);
+  });
+
   test('deletion with nothing arriving in the window removes the Clip once', async () => {
     const fixture = await seedConfiguredGuild();
     const first = fakeSnowflake();
