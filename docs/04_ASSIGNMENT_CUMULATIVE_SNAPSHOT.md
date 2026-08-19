@@ -663,3 +663,15 @@ artifact, not the error string. Secondarily **Q3**: the process rule added is *d
 diagnosis into a durable comment until the fix built on it has been observed to work.*
 
 **Downstream changes:** `next.config.ts`, `Dockerfile` comment, `docs/journal/journal-2026-08.md`.
+
+[2026-08-19 13:20 KST] [REVIEW]
+Task: Wave 1 / Task 5 — `/setup` Discord interaction.
+AI/tool used: Claude Opus 5 implementer subagent; Claude Opus 5 reviewer subagent; controller re-verification.
+Human instruction/constraint: Ori requires TDD and treats the setup link as an admin credential. `CLAUDE.md` forbids weakening the Ed25519 verification on the interaction endpoint.
+AI proposal/output: `AI_PROPOSAL` The implementer produced a working `/setup` handler with 7 dedicated tests, self-reviewed as complete. Correct code: authorization read from the signed payload, `MANAGE_GUILD` parsed as BigInt, both replies ephemeral.
+Accepted: The implementation itself, unchanged.
+Rejected/changed: `FAILED` The test suite. It contained no test requiring `/setup` to sit downstream of signature verification.
+Why: The reviewer did not read the tests, it *mutated the code and re-ran them*. Moving the `/setup` branch above `verifyInteractionRequest` left all 71 tests green — a build where an unauthenticated POST mints a live admin setup token for any `guild_id`/`user_id`, a complete admin-session bootstrap bypass. The pre-existing 401 tests missed it because they send `{type: 1}`, which never enters the setup branch. A second mutation (build the link from `new URL(request.url).origin` instead of `PUBLIC_BASE_URL`) also passed 71/71, because the test reused one string for both the request host and the env var.
+Validation/evidence: `TESTED` Controller independently re-ran both mutations after the fix: mutation 1 now produces 8 failures, mutation 2 produces 3 (both previously 0). Gate green: lint clean, 73/73, build OK. A third reviewer claim — that the 370ms suite could not be reaching real Postgres — was investigated and dismissed: the setup file defaults to port 5433, the `clip-pg` container listens there, and pointing `DATABASE_URL` at a dead port makes those tests fail rather than skip.
+Relevant commit/PR/screenshot/test: `3cc41a9` (implementation), `8a0f906` (test fix), `tests/discord/setup-command.test.ts`.
+Impact on Q1/Q2/Q3/Q4: Q4. This is the third instance in one wave of the same failure mode: Task 2 leaked message bodies past a key-name allowlist, Task 4 shipped a concurrency test that passed against the exact regression it claimed to catch, Task 5 left its authentication boundary unpinned. All three were written by a capable model, all three passed the author's own review, and all three were caught only by deliberately breaking the code and checking whether the tests noticed. The transferable finding is that a green suite is evidence about the tests, not about the code, and that AI-authored tests cluster their coverage on the behaviour the author was thinking about while leaving the adjacent security boundary unnamed. Mutation testing is the cheap control that converts an untested assumption into a measurement.
