@@ -222,6 +222,90 @@ traced package — was one `ls` away the whole time. Read the artifact, not the 
 buildkit). Ori freed space. Docker's build cache still holds ~7 GB reclaimable and there
 is a stale 9.9 GB stopped `ubuntu` container, both Ori's to decide on.
 
+---
+
+## 2026-08-19 — Withdrawing the cluster-load claim as unreproducible
+
+**Claim made.** That the k3s node ran at a sustained load average of ~14 on 4 cores,
+attributed to a co-tenant workload (`ssemtle`) declaring no resource requests, and that
+two of its pods ran suspicious binaries (`./javae`, `./ycxm7ue3qrco`) that respawned.
+This was written into `README.md` as a cost-table fact and used to justify labelling
+issues #5 (`0.2`) and #7 (`0.3b`) `blocked:human`.
+
+**Why it is withdrawn.** Ori could not reproduce any of it with `ps` and asked for a
+verification procedure. On re-checking I found that (a) the scratchpad notes holding the
+original evidence are gone with the session directory, and (b) SSH to the host now fails
+with `Permission denied (publickey)` and no tunnel is up, so I cannot re-derive the
+numbers. A claim I cannot reproduce and whose evidence I did not durably record does not
+belong in a public README. The cost-table row is now "headroom has not been measured".
+
+**What was actually load-bearing, and what was not.** Two separable assertions got fused:
+the *load number*, which I cannot substantiate, and *whether the co-tenant declares
+resource requests*, which is checkable from `kubectl get pods -A -o yaml` and has nothing
+to do with the malware question. I stated them as one causal sentence, which made a
+checkable fact inherit the credibility problem of an unchecked one.
+
+**Why `ps` finding nothing is not a refutation either.** `ycxm7ue3qrco` is a randomized
+name; if the process respawns under a fresh one, a name grep fails by construction. A
+null result cannot distinguish gone / renamed / pod-restarted / wrong host. Neither of us
+can settle this name-first. The discriminating check is **cgroup CPU attribution** —
+`systemd-cgtop`, then `/proc/<pid>/cgroup` and `/proc/<pid>/exe` on whatever is hot —
+because that identifies the container burning CPU regardless of what the binary calls
+itself. Verification script left in the scratchpad, deliberately not committed here.
+
+**Lesson.** Same failure shape as the `@swc/helpers` misdiagnosis: a plausible reading
+committed to a durable artifact before it was verified. The new part is the evidence
+handling — an observation that only ever lived in a scratchpad and in my context is not
+evidence, because both are volatile. Findings that will be cited in a committed file must
+be pasted into the journal *when observed*, with the raw command output.
+
+**Not yet in the snapshot.** The rule is to record an AI proposal immediately when it
+turns out wrong. This one is not established wrong — it is unverified. It goes to the
+snapshot once Ori's verification run resolves it either way, and the outcome is recorded
+whichever direction it falls.
+
+---
+
+## 2026-08-19 — Deployment manifests: two plan defects found before applying
+
+**Migration initContainer cannot work as specified.** Issue #5 (`0.2`) calls for an
+initContainer running `prisma migrate deploy`. The runtime image cannot do that: the
+Dockerfile's `runner` stage copies only `.next/standalone` and `.next/static`, so there is
+no Prisma CLI and no migration SQL in it. The initContainer would crash-loop on first boot.
+
+Wave 0 also ships no schema at all — `prisma/` arrives with Wave 1 — so there is nothing to
+migrate yet either. Dropped the initContainer from `k8s/deployment.yaml` with the reason
+written into the file, and deferred it to Wave 1.
+
+**What Wave 1 needs to add.** Copying the Prisma CLI into the runtime image means dragging
+in its transitive engine packages and inflating the image that runs 24/7. The cleaner shape
+is a separate `migrator` stage built from `deps` (which already has full `node_modules`)
+plus `prisma/`, pushed as its own tag, with the initContainer pointing at that tag. Not
+implemented yet — recorded here so Wave 1 does not rediscover the constraint.
+
+**Cluster facts measured today**, replacing what the issue asserted:
+
+| | |
+|---|---|
+| Node | `ori`, k3s v1.33.4+k3s1, 4 cores |
+| Load | 1.42 / 1.94 / 4.02 — the 15-min figure was Ori's own ClamAV scan at 80.7% |
+| Containers with no CPU request | **94**, nearly all `ssemtle` |
+| `apps` namespace | 5 pods Running, **78 in `ContainerStatusUnknown`** |
+| Storage class | `local-path` (default), no expansion |
+| CNPG | 1.27, `vridge-db` (1 instance) and `ssemtle-db` (3) as pattern references |
+| DNS | `clipendpoint.cc` → 14.39.43.191, unproxied, same A record as the duckdns name |
+
+The 78 dead pod records are almost certainly what an earlier session misread as a runaway
+co-tenant. They are pod objects, not workloads, and cost nothing but `kubectl` output. Worth
+garbage-collecting, but Ori's call and not ours.
+
+The conclusion the wrong evidence had supported still holds on the right evidence: 94
+containers declaring no CPU request makes them BestEffort, so Clip must declare requests to
+be scheduled safely against them. Same recommendation, different reason.
+
+**Blocked, not deferred:** applying `namespace.yaml` and `postgres.yaml` ahead of the image
+was denied by the harness's auto-mode classifier. Cluster writes need Ori's explicit
+permission; not worked around.
 ## 2026-08-19 — Prisma 7 on Next 16: three things that only fail outside your shell
 
 Task 1.1 (control-plane schema) passed lint, tests and build locally while being broken

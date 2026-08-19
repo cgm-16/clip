@@ -129,7 +129,7 @@ Self-hosting is not free. The honest accounting:
 | Cost | Amount | Note |
 |---|---|---|
 | Domain `clipendpoint.cc` | **USD 8 / year** | Registered via Cloudflare. The one genuinely new recurring cost. |
-| Incremental compute | ~0 marginal cash | Absorbed by an existing cluster. Not free — merely already paid for, and the headroom is thinner than planning assumed: the node runs at a sustained load average of ~14 on 4 cores because a co-tenant workload declares no resource requests. |
+| Incremental compute | ~0 marginal cash | Absorbed by an existing cluster. Not free — merely already paid for. The node is shared with co-tenant workloads and the headroom available to Clip has not been measured. |
 | Electricity, network, hardware depreciation | not itemized | Real costs the household absorbs. Treated as sunk for this project rather than claimed as zero. |
 | Operator effort | not itemized | The largest real cost of self-hosting, and the one most often omitted. |
 

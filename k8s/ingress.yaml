@@ -1,0 +1,27 @@
+# Scoped to the one hostname Discord will hold as the interaction endpoint.
+# HTTP-01 needs clipendpoint.cc to reach Traefik on port 80, so the Cloudflare
+# record must stay DNS-only — proxying breaks the challenge.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: clip
+  namespace: clip
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-http
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: clipendpoint.cc
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: clip
+                port:
+                  number: 80
+  tls:
+    - hosts:
+        - clipendpoint.cc
+      secretName: clip-tls
