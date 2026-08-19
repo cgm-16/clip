@@ -465,8 +465,13 @@ export function createClipService(gateway: DiscordArchiveGateway) {
       }
       if (isTerminalStatus(locked.status)) {
         // Already tombstoned: removal is idempotent (§9.3 of the invariants),
-        // and the archive it pointed at is already gone.
-        return { kind: 'ALREADY_REMOVED' as const };
+        // so the tombstone stands as written and `removedAt` keeps naming the
+        // removal that made it. Ids can still be on it, though: `markActive`
+        // is their only writer and `publishArchive` gates it on a transition
+        // no tombstone has, so ids here are the pair an earlier Discord delete
+        // failed to take down. Returning them makes this call retry that
+        // delete rather than report a cleanup that never happened.
+        return { kind: 'REMOVED' as const, archive: archiveOf(locked) };
       }
 
       const next = isAuthor ? 'REMOVED_BY_AUTHOR' : 'REMOVED_BY_ADMIN';
@@ -490,10 +495,6 @@ export function createClipService(gateway: DiscordArchiveGateway) {
     if (outcome.kind === 'NOT_AUTHORIZED') {
       return { kind: 'NOT_AUTHORIZED' };
     }
-    if (outcome.kind === 'ALREADY_REMOVED') {
-      return { kind: 'REMOVED' };
-    }
-
     if (outcome.archive !== null && config !== null) {
       // The tombstone is committed before the Discord delete is attempted. If
       // the delete fails, the tombstone keeps ids that may still address live

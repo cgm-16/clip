@@ -387,6 +387,45 @@ describe('clip service', () => {
     expect(await countClipperRows(fixture)).toBe(1);
   });
 
+  test('removing again retries a Discord delete the first removal could not complete', async () => {
+    // Ids surviving on a tombstone are the pair the removal was meant to take
+    // down -- nothing can write ids onto a terminal row, because `markActive`
+    // is their only writer and it is gated on a transition the tombstones do
+    // not have. A retry is therefore the author's only way to get two messages
+    // that are still up out of the archive channel.
+    const fixture = await seedConfiguredGuild();
+    await service.clip(clipInput(fixture, fakeSnowflake()));
+    gateway.failNextDelete(new Error('discord unavailable'));
+
+    const removeInput = {
+      guildId: fixture.guildId,
+      sourceMessageId: fixture.sourceMessageId,
+      invokerUserId: fixture.sourceAuthorUserId,
+      invokerHasManageGuild: false,
+    };
+    expect(await service.removeByAuthorOrAdmin(removeInput)).toEqual({ kind: 'REMOVED' });
+    const stranded = await readClip(fixture);
+    expect(stranded?.status).toBe('REMOVED_BY_AUTHOR');
+    expect(stranded?.archiveProvenanceMessageId).toBe('provenance-1');
+    expect(stranded?.archiveForwardMessageId).toBe('forward-1');
+
+    expect(await service.removeByAuthorOrAdmin(removeInput)).toEqual({ kind: 'REMOVED' });
+
+    const expectedDelete = {
+      archiveChannelId: fixture.archiveChannelId,
+      ids: { provenanceMessageId: 'provenance-1', forwardMessageId: 'forward-1' },
+    };
+    expect(gateway.deleteCalls).toEqual([expectedDelete, expectedDelete]);
+    const tombstone = await readClip(fixture);
+    expect(tombstone?.archiveProvenanceMessageId).toBeNull();
+    expect(tombstone?.archiveForwardMessageId).toBeNull();
+    // The retry deletes an archive; it never re-tombstones. A second
+    // transition out of a terminal status would throw, and `removedAt` must
+    // keep naming the removal that actually happened.
+    expect(tombstone?.status).toBe('REMOVED_BY_AUTHOR');
+    expect(tombstone?.removedAt).toEqual(stranded?.removedAt);
+  });
+
   test('a failed archive creation stays FAILED and a retry reaches ACTIVE', async () => {
     const fixture = await seedConfiguredGuild();
     const clipperUserId = fakeSnowflake();
