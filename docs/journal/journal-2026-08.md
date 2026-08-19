@@ -622,3 +622,51 @@ delete failed / no channel -> keep ids AND row, leave DELETING for reconciliatio
   node-postgres' undeclared default `max`. Raising it turns the race into a queue with no
   test failure. Set `max` explicitly in the test setup, or assert the relationship.
 - `TOMBSTONE_STATUSES` in `lib/clip/repository.ts` is a mutable module-level array.
+
+## 2026-08-19 — CodeRabbit on PR #47: the false comment was the defect
+
+### A removal retry could not clean up an archive whose first delete failed
+
+`removeByAuthorOrAdmin` commits the tombstone, then deletes the two Discord messages, and
+keeps the ids when that delete fails — deliberately, since they are the only handle on
+content still up in the archive channel. Nothing ever used that handle: a second removal
+matched `isTerminalStatus` and returned before reaching the delete. The pair stayed up
+with no retry path, and only Wave 5 reconciliation would ever have noticed.
+
+The tell was a comment, not the control flow: *"the archive it pointed at is already
+gone"* was simply false on the failed-delete path. The branch was written for a tombstone
+whose ids had been cleared, and the failed-delete case — added later, correctly — made
+that premise conditional without anyone revisiting the sentence that asserted it.
+
+The fix returns `archiveOf(locked)` from the terminal branch so the caller re-enters the
+same delete-and-clear path. What makes that safe is worth keeping: **ids on a terminal
+row can only be the pair the removal was meant to delete.** `markActive` is their only
+writer, `publishArchive` gates it on `canTransition`, and `LEGAL_TRANSITIONS` gives the
+tombstones no outgoing edges — so nothing can put a *different* archive's ids there. The
+retry deletes and clears; it does not re-tombstone, so `removedAt` keeps naming the
+removal that actually happened. Falling through to a second transition would throw, and
+the test pins `removedAt` unchanged to catch exactly that mis-wiring.
+
+Two consequences, both acceptable. Concurrent removals can now both issue a delete for
+the same pair — a no-op for an absent message under the gateway contract the orphaned-
+provenance cleanup already relies on. And a removal in a guild with no archive channel
+now cleans up once the guild is configured, which it previously never did.
+
+### The `ACTIVE` with zero clippers defect, found independently
+
+CodeRabbit reached the same reachable sequence as `### Parked` above, from the code
+alone. Third independent confirmation; still parked, still Ori's call to unpark. Its
+proposed sketch takes the archive back down after a successful publish and says it "still
+needs the follow-up transition out of `ACTIVE`" — that follow-up is the load-bearing
+half. Deleting the messages does not trip `clips_active_requires_archive`, because the
+CHECK reads the row and not Discord; clearing the ids afterwards does, which is the
+failure already fixed in `2a8abdc` and written up above.
+
+### The `PARKED` pointer above is dangling
+
+`### Parked: ACTIVE with zero clippers` points at "the SDD ledger under PARKED".
+`.superpowers/sdd/` holds only `wave-0-remainder` in the main checkout and nothing at all
+in the wave-2 worktree (the directory is git-ignored, so a worktree never carries it).
+The reasoning survives in this journal and in the PR body; the cross-reference does not.
+Ledger paths are ignored and per-checkout, so a journal entry should carry the substance
+rather than point at one.
