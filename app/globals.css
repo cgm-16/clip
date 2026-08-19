@@ -1,26 +1,38 @@
 @import "tailwindcss";
 
+/*
+ * `tokens.css` at the repository root is the single source of visual values.
+ * It is imported, never copied: no colour, size, spacing or radius is written
+ * down a second time in this file. It comes after Tailwind so the token
+ * declarations sit downstream of Tailwind's preflight.
+ */
+@import "../tokens.css";
+
+/*
+ * `next/font` self-hosts JetBrains Mono under a generated family name and
+ * exposes it as --font-jetbrains-mono, so the literal "JetBrains Mono" that
+ * heads the token's stack can never match the loaded face. Compose the
+ * generated family in front of the same fallbacks the token declares.
+ *
+ * --font-ui is left exactly as the token declares it. Pretendard has no
+ * Google Fonts entry and no self-hosted copy in this repository, and the
+ * handoff's CDN build is annotated "self-host for production", so P0 falls
+ * through to the system UI stack the token already lists.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--page);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+}
+
+/* Visible focus on every interactive element, no exceptions. */
+:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset);
 }
