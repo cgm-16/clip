@@ -495,3 +495,67 @@ comment no longer claims more than was observed.
 running container is `clip-pg` on **5433/clip_dev**. Every `prisma` CLI invocation therefore needs
 `DATABASE_URL=…5433/clip_dev` in front of it, and `set -a && . ./.env && set +a` sends the CLI at
 a dead port. `.env` is gitignored, so this is a local-machine fix for Ori rather than a repo change.
+
+## 2026-08-19 — Task 2.3: the deletion window, and what a half-applied ruling looks like
+
+### The two-instruction composition bug
+
+The Task 3 dispatch carried seven pre-settled rulings. Two of them, both individually correct:
+
+- **F** — tombstoning deletes every clipper row (§7.4: removal overrides all preservation signals).
+- **A** — the deletion finalizer branches on the freshly-locked status: tombstoned → clear the
+  archive ids and keep the row; `DELETING` with zero clippers → delete the row.
+
+F was implemented. A was implemented *only for the revival branch*. The result:
+
+```
+A clips             -> ACTIVE, 1 clipper
+A unclips           -> removeClipper (0 left) -> markDeleting -> DELETING, lock released
+                       [ Discord delete in flight — the window ]
+author removes      -> REMOVED_BY_AUTHOR + deleteClippers   (F)
+finalizer relocks   -> countClippers == 0 -> deleteClipWithClippers   <-- tombstone destroyed
+```
+
+The clipper count cannot tell "the last clipper left" from "removal wiped the clippers" — both read
+zero. Only the status can, which is exactly what ruling A said. Recreation was unblocked for a
+message whose author had explicitly removed it, which is the harassment loop §7.4 exists to stop.
+
+What makes this worth writing down is that it violates no CHECK, satisfies every type, and passed
+all 19 of the implementer's own tests. It was found by reading the window against the ruling that
+named it. The lesson for future dispatches: **audit each numbered ruling against the diff
+individually before reviewing the code as a whole.** A skipped ruling (G, the safe-log allowlist)
+shows up in a grep. A half-applied one leaves no artifact distinguishing it from a finished one.
+
+### The delete hook is what makes these races testable
+
+`tests/clip/fake-gateway.ts` `onNextDelete(hook)` runs an arbitrary async function *inside*
+`deleteArchiveMessage`, i.e. exactly in the window between "Discord messages gone" and "finalizer
+retakes the lock". Both window tests (revival, and now tombstone) are fully deterministic with no
+sleeps. It is one-shot on purpose: a hook that fired again on the delete the concurrent request
+itself triggers would recurse.
+
+### Parked: `ACTIVE` with zero clippers
+
+Not fixed, deliberately — full reasoning and a fix sketch are in the SDD ledger under PARKED.
+
+```
+A unclips    -> DELETING, delete in flight
+B clips      -> count 1
+finalizer    -> relocks, reads count 1 -> "revived", releases lock
+B unclips    -> sees DELETING -> ALREADY_DELETING, returns
+finalizer    -> recreates archive, publishArchive: DELETING -> ACTIVE is legal
+             -> ACTIVE, zero clippers, live archive no unclip can remove
+```
+
+`service.ts` claims the finalizer's count re-read makes this converge, but the lock does not order
+that read after B's `removeClipper` — only one of the two interleavings is safe. Not reproducible
+with a single `onNextDelete` hook (B's clip must land before the count read, B's unclip after it).
+The right repair is an "ACTIVE requires ≥1 clipper" guard inside `publishArchive`'s lock, which
+then strands the row `DELETING` with no finalizer and so needs `finalizeDeletion` restructured to
+re-enter. Wider than Task 3; a half-applied version repeats the bug above.
+
+### Unrelated, do not fix here
+
+`k8s/deployment.yaml:19-25` carries a comment saying "Wave 0 ships no Prisma schema, so there is
+nothing to migrate". False since Wave 1. The migration is still applied by hand; the `migrator`
+Dockerfile stage running `prisma migrate deploy` as an initContainer is the carried-forward fix.
