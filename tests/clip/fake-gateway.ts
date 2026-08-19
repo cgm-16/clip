@@ -14,6 +14,8 @@ export type FakeDiscordArchiveGateway = DiscordArchiveGateway & {
   failNextCreate(error: Error): void;
   /** Makes the next `deleteArchiveMessage` throw `error`, leaving both messages up. */
   failNextDelete(error: Error): void;
+  /** Runs `hook` inside the next `createArchiveMessage`, before it returns. */
+  onNextCreate(hook: () => Promise<void>): void;
   /** Runs `hook` inside the next `deleteArchiveMessage`, before it resolves. */
   onNextDelete(hook: () => Promise<void>): void;
 };
@@ -36,6 +38,7 @@ export function createFakeGateway(): FakeDiscordArchiveGateway {
   let archivesPosted = 0;
   let nextCreateError: Error | null = null;
   let nextDeleteError: Error | null = null;
+  let createHook: (() => Promise<void>) | null = null;
   let deleteHook: (() => Promise<void>) | null = null;
 
   return {
@@ -50,6 +53,10 @@ export function createFakeGateway(): FakeDiscordArchiveGateway {
       nextDeleteError = error;
     },
 
+    onNextCreate(hook: () => Promise<void>): void {
+      createHook = hook;
+    },
+
     onNextDelete(hook: () => Promise<void>): void {
       deleteHook = hook;
     },
@@ -60,6 +67,13 @@ export function createFakeGateway(): FakeDiscordArchiveGateway {
         const error = nextCreateError;
         nextCreateError = null;
         throw error;
+      }
+      // Same one-shot contract as the delete hook, and the same purpose: land a
+      // concurrent request inside the round-trip rather than sleeping and hoping.
+      const hook = createHook;
+      createHook = null;
+      if (hook !== null) {
+        await hook();
       }
       archivesPosted += 1;
       return {

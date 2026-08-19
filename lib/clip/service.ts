@@ -144,6 +144,15 @@ export function createClipService(gateway: DiscordArchiveGateway) {
       if (!canTransition(locked.status, 'ACTIVE')) {
         return { published: false as const, clip: locked };
       }
+      // An ACTIVE Clip is one at least one member is still asking to keep. With
+      // no clipper rows left, `removeClipper` reports `removed: false` to
+      // everyone, so no unclip could ever take the archive down again and only
+      // an author or admin removal would clear it. The count is read under the
+      // same lock that writes ACTIVE: the caller's own count was read before a
+      // Discord round-trip, and the signal can be withdrawn inside it.
+      if ((await countClippers(tx, key.guildId, key.sourceMessageId)) === 0) {
+        return { published: false as const, clip: locked };
+      }
       assertTransition(locked.status, 'ACTIVE');
       const { applied } = await markActive(tx, key.guildId, key.sourceMessageId, archive);
       if (!applied) {
@@ -314,84 +323,102 @@ export function createClipService(gateway: DiscordArchiveGateway) {
     archiveChannelId: string | null;
     archive: ArchiveMessageIds | null;
   }): Promise<void> {
-    const { key, archiveChannelId, archive } = context;
-    // Whether Discord is done with the pair this finalizer was sent to remove.
-    // A Clip with no archive has nothing outstanding; one whose guild lost its
-    // configuration has two messages nobody can address, which is the same
-    // position as a delete that failed.
-    let archiveRemoved = archive === null;
-    if (archive !== null && archiveChannelId !== null) {
-      archiveRemoved = await deleteArchiveQuietly(key, archiveChannelId, archive);
-    }
+    const { key, archiveChannelId } = context;
+    let archive = context.archive;
 
-    const outcome = await lockClip(key.guildId, key.sourceMessageId, async (tx, locked) => {
-      if (locked.status === 'ACTIVE') {
-        // A concurrent publish won the row while the delete was in flight. Its
-        // ids are that publish's, not the pair taken down here, so neither
-        // clearing them nor deleting the row is this finalizer's to do --
-        // and clearing them would violate `clips_active_requires_archive` and
-        // reject the caller's whole unclip.
-        return { revived: false as const };
+    for (;;) {
+      // Whether Discord is done with the pair this finalizer was sent to remove.
+      // A Clip with no archive has nothing outstanding; one whose guild lost its
+      // configuration has two messages nobody can address, which is the same
+      // position as a delete that failed.
+      let archiveRemoved = archive === null;
+      if (archive !== null && archiveChannelId !== null) {
+        archiveRemoved = await deleteArchiveQuietly(key, archiveChannelId, archive);
       }
-      if (archiveRemoved) {
-        // Discord is done with the pair, so the row must say so before the lock
-        // is released, or a concurrent revival cannot tell whether the archive
-        // still exists.
-        await clearArchiveMessageIds(tx, key.guildId, key.sourceMessageId);
-      }
-      if (isTerminalStatus(locked.status)) {
-        // A removal landed in the window. The row this finalizer was sent to
-        // delete is now a tombstone, and §7.4 puts that above the deletion:
-        // dropping it would unblock recreation of a message its author
-        // explicitly removed. The clipper count cannot decide this -- removal
-        // drops every clipper row, so a tombstone always reads as zero.
-        return { revived: false as const };
-      }
-      if (!archiveRemoved) {
-        // Two messages are still up and the row's ids are the only handle on
-        // them. Leaving the Clip DELETING keeps it visible to reconciliation;
-        // deleting the row would strand published content with nothing left to
-        // match it against.
-        return { revived: false as const };
-      }
-      if ((await countClippers(tx, key.guildId, key.sourceMessageId)) === 0) {
-        await deleteClipWithClippers(tx, key.guildId, key.sourceMessageId);
-        return { revived: false as const };
-      }
-      return { revived: true as const, clip: locked };
-    });
-    if (outcome === null || !outcome.revived) {
-      return;
-    }
 
-    if (archiveChannelId === null) {
-      return;
-    }
-
-    // A preservation signal arrived while the delete was in flight, so the Clip
-    // must converge back to an active archive (§9.8). The new archive is posted
-    // before ACTIVE is written, never after.
-    let recreated: ArchiveMessageIds;
-    try {
-      recreated = await gateway.createArchiveMessage({
-        archiveChannelId,
-        sourceChannelId: outcome.clip.sourceChannelId,
-        sourceMessageId: outcome.clip.sourceMessageId,
-        sourceAuthorUserId: outcome.clip.authorUserId,
+      const outcome = await lockClip(key.guildId, key.sourceMessageId, async (tx, locked) => {
+        if (locked.status === 'ACTIVE') {
+          // A concurrent publish won the row while the delete was in flight. Its
+          // ids are that publish's, not the pair taken down here, so neither
+          // clearing them nor deleting the row is this finalizer's to do --
+          // and clearing them would violate `clips_active_requires_archive` and
+          // reject the caller's whole unclip.
+          return { revived: false as const };
+        }
+        if (archiveRemoved) {
+          // Discord is done with the pair, so the row must say so before the lock
+          // is released, or a concurrent revival cannot tell whether the archive
+          // still exists.
+          await clearArchiveMessageIds(tx, key.guildId, key.sourceMessageId);
+        }
+        if (isTerminalStatus(locked.status)) {
+          // A removal landed in the window. The row this finalizer was sent to
+          // delete is now a tombstone, and §7.4 puts that above the deletion:
+          // dropping it would unblock recreation of a message its author
+          // explicitly removed. The clipper count cannot decide this -- removal
+          // drops every clipper row, so a tombstone always reads as zero.
+          return { revived: false as const };
+        }
+        if (!archiveRemoved) {
+          // Two messages are still up and the row's ids are the only handle on
+          // them. Leaving the Clip DELETING keeps it visible to reconciliation;
+          // deleting the row would strand published content with nothing left to
+          // match it against.
+          return { revived: false as const };
+        }
+        if ((await countClippers(tx, key.guildId, key.sourceMessageId)) === 0) {
+          await deleteClipWithClippers(tx, key.guildId, key.sourceMessageId);
+          return { revived: false as const };
+        }
+        return { revived: true as const, clip: locked };
       });
-    } catch (error) {
-      logClipEvent({
-        event: 'clip.revival_failed',
-        guildId: key.guildId,
-        sourceMessageId: key.sourceMessageId,
-        errorCode: errorCodeOf(error),
-      });
-      return;
-    }
+      if (outcome === null || !outcome.revived) {
+        return;
+      }
 
-    const published = await publishArchive(key, recreated);
-    if (!published.published) {
-      await deleteArchiveQuietly(key, archiveChannelId, recreated);
+      if (archiveChannelId === null) {
+        return;
+      }
+
+      // A preservation signal arrived while the delete was in flight, so the Clip
+      // must converge back to an active archive (§9.8). The new archive is posted
+      // before ACTIVE is written, never after.
+      let recreated: ArchiveMessageIds;
+      try {
+        recreated = await gateway.createArchiveMessage({
+          archiveChannelId,
+          sourceChannelId: outcome.clip.sourceChannelId,
+          sourceMessageId: outcome.clip.sourceMessageId,
+          sourceAuthorUserId: outcome.clip.authorUserId,
+        });
+      } catch (error) {
+        logClipEvent({
+          event: 'clip.revival_failed',
+          guildId: key.guildId,
+          sourceMessageId: key.sourceMessageId,
+          errorCode: errorCodeOf(error),
+        });
+        return;
+      }
+
+      const published = await publishArchive(key, recreated);
+      if (published.published) {
+        return;
+      }
+
+      // The publish was declined, so the pair just posted is unreferenced. The
+      // unclip that withdrew the reviving signal saw DELETING and deferred to
+      // this finalizer, so nothing else will take it down or reap the row.
+      // Re-entering runs the same delete-and-re-decide the original pair went
+      // through; `archive` is the new pair, never one already deleted, so the
+      // loop cannot act on a stale `archiveRemoved`.
+      //
+      // Terminates: another pass needs the reviving clipper withdrawn *during*
+      // the rebuild and a fresh clip before the next lock -- two member actions,
+      // each behind a Discord round-trip. A removal instead leaves via
+      // `isTerminalStatus`, and no replacement clipper leaves via
+      // `deleteClipWithClippers`.
+      archive = recreated;
     }
   }
 

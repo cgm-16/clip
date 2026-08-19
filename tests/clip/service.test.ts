@@ -670,6 +670,46 @@ describe('clip service', () => {
     expect(gateway.deleteCalls).toHaveLength(1);
   });
 
+  test('a revival whose reviver withdraws during the rebuild publishes nothing', async () => {
+    // The clipper count that justified the rebuild is read under one lock and
+    // acted on after a Discord round-trip. The withdrawal below lands inside
+    // that round-trip and takes the `ALREADY_DELETING` branch, which starts no
+    // second finalizer -- it defers to this one. Publishing here would leave an
+    // ACTIVE Clip nobody signalled for, and `removeClipper` reports `false` for
+    // everyone, so no unclip could ever take that archive down again.
+    const fixture = await seedConfiguredGuild();
+    const first = fakeSnowflake();
+    const reviver = fakeSnowflake();
+    await service.clip(clipInput(fixture, first));
+
+    gateway.onNextDelete(async () => {
+      const revival = await service.clip(clipInput(fixture, reviver));
+      expect(revival.kind).toBe('CLIPPER_ADDED');
+    });
+    gateway.onNextCreate(async () => {
+      const withdrawal = await service.unclip({
+        guildId: fixture.guildId,
+        sourceMessageId: fixture.sourceMessageId,
+        clipperUserId: reviver,
+      });
+      expect(withdrawal).toEqual({ kind: 'UNCLIPPED', remaining: 0 });
+    });
+
+    const result = await service.unclip({
+      guildId: fixture.guildId,
+      sourceMessageId: fixture.sourceMessageId,
+      clipperUserId: first,
+    });
+
+    expect(result).toEqual({ kind: 'UNCLIPPED', remaining: 0 });
+    expect(await readClip(fixture)).toBeNull();
+    expect(await countClipperRows(fixture)).toBe(0);
+    // Two pairs were posted and both came back down: the original, and the
+    // rebuild that nobody was left to want.
+    expect(gateway.createCalls).toHaveLength(2);
+    expect(gateway.deleteCalls).toHaveLength(2);
+  });
+
   test('deletion with nothing arriving in the window removes the Clip once', async () => {
     const fixture = await seedConfiguredGuild();
     const first = fakeSnowflake();
