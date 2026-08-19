@@ -695,3 +695,70 @@ in the wave-2 worktree (the directory is git-ignored, so a worktree never carrie
 The reasoning survives in this journal and in the PR body; the cross-reference does not.
 Ledger paths are ignored and per-checkout, so a journal entry should carry the substance
 rather than point at one.
+
+## 2026-08-20 — Wave 3 start: what the tracker said versus what was true
+
+### `0.2` was done and nobody knew
+
+Issue #5 was open, so the plan treated the deployment as outstanding. It had been live for
+about seven hours: pod up, CloudNativePG running, ingress on `clipendpoint.cc`, cert-manager
+certificate READY, and `curl https://clipendpoint.cc/api/health` returning `{"ok":true}` over
+a valid cert in 0.4s. The check needed no cluster access at all. Recorded in the snapshot as
+a correction because a false "blocked" was escalated to Ori on the strength of it.
+
+The access failure that produced the false blocker was its own mistake. The host uses
+**Tailscale SSH**, where authorization comes from the Tailscale control plane rather than a
+local key — and `ssh -o BatchMode=yes` suppresses exactly the interactive check that
+mechanism needs. The flag chosen to make the probe scriptable is what made it fail. Dropping
+it prints an auth URL and the login succeeds. `scripts/tunnel.sh` then works unmodified.
+
+### Issue #16 was closed by a merge keyword, not by anyone doing the work
+
+`1.3b` (register commands to the test guild) was marked CLOSED at exactly
+`2026-08-19T05:48:39Z` — the timestamp of the wave/1 merge push. A closing keyword in PR #46
+did it. The guild had **zero** commands registered; the global list was empty too.
+`scripts/register-discord-commands.ts` dry-runs unless given `--register`, and nobody ran it.
+The issue's own done-check (a screenshot of the Apps context menu) was never produced.
+
+Registered for real today and verified by re-querying the API rather than trusting the
+script's exit: `setup` (type 1), `Clip`, `Unclip`, `Remove from Clip Archive` (all type 3).
+
+The generalizable bit is that a closed issue is evidence about who edited the tracker, not
+about the world. Two of the three Wave 0/1 "done" signals checked today were wrong in
+opposite directions — `0.2` open but finished, `1.3b` closed but never started.
+
+### `0.3b` has never been performed
+
+`GET /applications/@me` returns `interactions_endpoint_url: null`. Not wrong — unset. Every
+precondition measured green: health endpoint live, the PING handler present in the deployed
+commit, and the cluster's `DISCORD_PUBLIC_KEY` byte-identical to Discord's `verify_key` for
+the application (issue #7 names a wrong public key as the top failure cause; ruled out).
+It needs one manual portal action, which only Ori can take.
+
+**The gate's own done-check is wrong.** Issue #7 says the proof is "the pod logs show the
+PING". The deployed build logs nothing per request — the readiness probe alone has hit
+`/api/health` ~6,500 times in 9 hours and produced zero lines. Whoever performs the gate will
+see the portal accept the URL and find nothing in the logs, and could read that as failure.
+Portal acceptance is the only available proof.
+
+### The deployment is a full wave behind, and pinned so it can drift further
+
+The running pod's `imageID` digest matches `sha-560b7a2` (Merge PR #46, Wave 1), not
+`sha-63a0ce1` (Wave 2). Matched by digest, not inferred from timestamps.
+
+Worse, `k8s/deployment.yaml` pins `image: ghcr.io/cgm-16/clip:latest` with
+`imagePullPolicy: Always`, and `latest` has since moved to Wave 2. **Any pod restart silently
+advances the deployment a full wave with no manifest change and no review.** `release.yml`'s
+own comment says `sha-<short>` "is the tag deploys pin to; `latest` exists for the
+unauthenticated pull in the task's done-check, not for the cluster" — so the manifest
+contradicts the documented intent. Practical consequence: if the pod bounces while chasing
+`0.3b`, the endpoint must be re-verified, because it will be a different build.
+
+Not fixed here — changing the deployed image is Ori's call and touches the cluster.
+
+### Unrelated, do not fix here
+
+The pod logged 57 copies of `Error: The Server Reference ID did not match the expected
+format` between 18:12 and 21:58 KST on 08-19, with payloads like `x`, `y` and random hex.
+That is external probing of Next.js Server Actions against a public host, not an app fault.
+No Discord message content, secrets, or user data appeared in any log line.
