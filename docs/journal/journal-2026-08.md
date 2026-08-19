@@ -453,3 +453,45 @@ The new test uses a genuine primary-key collision on `admin_sessions.token_hash`
 table's `@id`) to make the insert fail — a real Postgres unique violation, no mocks, per the
 real-data rule. It is decisive: reverting the `$transaction` to two bare statements fails it on
 `expected 2026-08-19T04:50:28.277Z to be null`.
+
+## 2026-08-19 — Wave 2 task 2: the clip repository
+
+### `?connection_limit=N` in `DATABASE_URL` does nothing under the pg driver adapter
+
+Wave 1 recorded pinning `connection_limit` to 2 as evidence that interactive transactions do not
+starve the pool. Measured today: that knob is inert in this stack.
+
+`@prisma/adapter-pg` builds `new pg.Pool({ connectionString })`. `pg.Pool` reads its ceiling from
+`options.max`; the connection string is parsed by the `Client`, and `pg-connection-string` copies
+unknown query parameters onto the config verbatim, so `connection_limit` lands in the config as a
+string nobody reads. Timed four concurrent `SELECT pg_sleep(0.3)` on one client:
+
+| pool config                     | wall time |
+| ------------------------------- | --------- |
+| `?connection_limit=1` in the URL | 306 ms    |
+| `new PrismaPg({ …, max: 1 })`    | 1224 ms   |
+| unconstrained                    | 305 ms    |
+
+Only `max` constrains anything. The real check is to set `max` on the adapter in `lib/db.ts`
+temporarily. Done for this task at `max: 2` and `max: 1` — 96/96 both times, five and three runs
+respectively — which is a much stronger result than the vacuous one, since at `max: 1` any code
+that checked out a second connection inside a transaction would deadlock outright.
+
+### The pool warm-up did not change these two race outcomes
+
+The mandated warm-up before a race is real advice, but for the two races in
+`tests/clip/repository.test.ts` it turned out not to be the deciding factor: with the warm-up
+deleted, the check-then-insert regression still produced 9 rejected claims out of 10 (five runs,
+test run in isolation so no earlier test could warm the pool), and the dropped-`FOR UPDATE`
+regression still produced `[1, 1]` instead of `[0, 1]` (five runs). node-postgres opens up to
+`max` connections concurrently, so N ≤ 10 cold callers all finish their handshakes at roughly the
+same moment and do overlap. Wave 1's false positive presumably needed more round trips per caller
+to hide behind. The warm-up stays — it removes a genuine confound and costs nothing — but its
+comment no longer claims more than was observed.
+
+### Unrelated, do not fix here
+
+`.env` in the worktree still points at `postgresql://clip:clip@localhost:5432/clip`, while the
+running container is `clip-pg` on **5433/clip_dev**. Every `prisma` CLI invocation therefore needs
+`DATABASE_URL=…5433/clip_dev` in front of it, and `set -a && . ./.env && set +a` sends the CLI at
+a dead port. `.env` is gitignored, so this is a local-machine fix for Ori rather than a repo change.
