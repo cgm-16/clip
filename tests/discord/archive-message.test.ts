@@ -256,12 +256,32 @@ describe('createArchiveMessage', () => {
       sourceMessage(DEFAULT),
       json({ id: PROVENANCE_ID }),
       json({ code: 160014, message: 'Cannot forward a message the app cannot read' }, 400),
+      json(null, 204),
     ]);
     const gateway = createDiscordArchiveGateway({ botToken: BOT_TOKEN, fetchImpl });
 
     await expect(gateway.createArchiveMessage(input)).rejects.toBeInstanceOf(
       ArchiveTargetUnavailableError
     );
+  });
+
+  test('cleans up its own provenance message when the target turns out unforwardable', async () => {
+    // `ArchiveTargetUnavailableError` carries no orphan id, so unlike a failed
+    // forward there is no way for the caller to learn about the message that
+    // was already posted. The gateway therefore has to take it down itself.
+    const { fetchImpl, calls } = stubFetch([
+      sourceMessage(DEFAULT),
+      json({ id: PROVENANCE_ID }),
+      json({ code: 160014, message: 'Cannot forward a message the app cannot read' }, 400),
+      json(null, 204),
+    ]);
+    const gateway = createDiscordArchiveGateway({ botToken: BOT_TOKEN, fetchImpl });
+
+    await gateway.createArchiveMessage(input).catch(() => undefined);
+
+    expect(calls).toHaveLength(4);
+    expect(calls[3].method).toBe('DELETE');
+    expect(calls[3].url).toContain(`/channels/${ARCHIVE_CHANNEL_ID}/messages/${PROVENANCE_ID}`);
   });
 
   test('a forward failure reports the orphaned provenance id so the caller can clean up', async () => {

@@ -49,6 +49,7 @@ export type RemoveInput = {
 };
 
 export type CreateArchiveInput = {
+  guildId: string;
   archiveChannelId: string;
   sourceChannelId: string;
   sourceMessageId: string;

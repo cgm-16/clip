@@ -132,6 +132,7 @@ describe('clip service', () => {
     });
     expect(gateway.createCalls).toEqual([
       {
+        guildId: fixture.guildId,
         archiveChannelId: fixture.archiveChannelId,
         sourceChannelId: fixture.sourceChannelId,
         sourceMessageId: fixture.sourceMessageId,

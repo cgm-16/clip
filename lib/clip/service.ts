@@ -251,6 +251,7 @@ export function createClipService(gateway: DiscordArchiveGateway) {
     let archive: ArchiveMessageIds;
     try {
       archive = await gateway.createArchiveMessage({
+        guildId: input.guildId,
         archiveChannelId: config.archiveChannelId,
         sourceChannelId: input.sourceChannelId,
         sourceMessageId: input.sourceMessageId,
@@ -386,6 +387,7 @@ export function createClipService(gateway: DiscordArchiveGateway) {
       let recreated: ArchiveMessageIds;
       try {
         recreated = await gateway.createArchiveMessage({
+          guildId: outcome.clip.guildId,
           archiveChannelId,
           sourceChannelId: outcome.clip.sourceChannelId,
           sourceMessageId: outcome.clip.sourceMessageId,
