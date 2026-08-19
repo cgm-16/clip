@@ -490,6 +490,47 @@ describe('clip service', () => {
     expect(await countClipperRows(fixture)).toBe(1);
   });
 
+  test('author removal arriving during deletion leaves the tombstone standing', async () => {
+    // The same window as the revival test, carrying the other thing that can
+    // land in it. The finalizer decided to delete the row while the Clip was
+    // DELETING with no clippers; by the time it retakes the lock that is no
+    // longer what the row is, and §7.4's tombstone outranks the deletion it
+    // was sent to finish. Deleting the row here would unblock recreation of a
+    // message its author explicitly removed.
+    const fixture = await seedConfiguredGuild();
+    const first = fakeSnowflake();
+    await service.clip(clipInput(fixture, first));
+    gateway.onNextDelete(async () => {
+      const removal = await service.removeByAuthorOrAdmin({
+        guildId: fixture.guildId,
+        sourceMessageId: fixture.sourceMessageId,
+        invokerUserId: fixture.sourceAuthorUserId,
+        invokerHasManageGuild: false,
+      });
+      expect(removal).toEqual({ kind: 'REMOVED' });
+    });
+
+    const result = await service.unclip({
+      guildId: fixture.guildId,
+      sourceMessageId: fixture.sourceMessageId,
+      clipperUserId: first,
+    });
+
+    expect(result).toEqual({ kind: 'UNCLIPPED', remaining: 0 });
+    const tombstone = await readClip(fixture);
+    expect(tombstone?.status).toBe('REMOVED_BY_AUTHOR');
+    expect(tombstone?.removedAt).not.toBeNull();
+    expect(tombstone?.archiveProvenanceMessageId).toBeNull();
+    expect(tombstone?.archiveForwardMessageId).toBeNull();
+    expect(await countClipperRows(fixture)).toBe(0);
+    // Nothing is recreated to replace an archive nobody may re-clip.
+    expect(gateway.createCalls).toHaveLength(1);
+
+    const recreate = await service.clip(clipInput(fixture, fakeSnowflake()));
+    expect(recreate).toEqual({ kind: 'REMOVED_BY_AUTHOR_OR_ADMIN' });
+    expect((await readClip(fixture))?.status).toBe('REMOVED_BY_AUTHOR');
+  });
+
   test('deletion with nothing arriving in the window removes the Clip once', async () => {
     const fixture = await seedConfiguredGuild();
     const first = fakeSnowflake();

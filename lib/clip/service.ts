@@ -324,6 +324,14 @@ export function createClipService(gateway: DiscordArchiveGateway) {
       // released, or a concurrent revival cannot tell whether the archive still
       // exists.
       await clearArchiveMessageIds(tx, key.guildId, key.sourceMessageId);
+      if (isTerminalStatus(locked.status)) {
+        // A removal landed in the window. The row this finalizer was sent to
+        // delete is now a tombstone, and §7.4 puts that above the deletion:
+        // dropping it would unblock recreation of a message its author
+        // explicitly removed. The clipper count cannot decide this -- removal
+        // drops every clipper row, so a tombstone always reads as zero.
+        return { revived: false as const };
+      }
       if ((await countClippers(tx, key.guildId, key.sourceMessageId)) === 0) {
         await deleteClipWithClippers(tx, key.guildId, key.sourceMessageId);
         return { revived: false as const };
