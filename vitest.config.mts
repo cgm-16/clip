@@ -5,6 +5,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/**/*.test.ts'],
+    setupFiles: ['tests/setup/database-url.ts'],
   },
   // Mirrors the tsconfig `@/*` -> `./*` mapping.
   resolve: {

@@ -46,3 +46,6 @@ k8s/secret.yaml
 test-results/
 playwright-report/
 .claude/settings.local.json
+
+# prisma client output (generated at install/build time)
+/generated

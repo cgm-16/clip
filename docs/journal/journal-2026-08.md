@@ -306,3 +306,150 @@ be scheduled safely against them. Same recommendation, different reason.
 **Blocked, not deferred:** applying `namespace.yaml` and `postgres.yaml` ahead of the image
 was denied by the harness's auto-mode classifier. Cluster writes need Ori's explicit
 permission; not worked around.
+## 2026-08-19 — Prisma 7 on Next 16: three things that only fail outside your shell
+
+Task 1.1 (control-plane schema) passed lint, tests and build locally while being broken
+in two environments nobody had exercised yet. All three problems share a shape: a
+dependency that is satisfied *by the developer's shell* rather than by the repository.
+
+**1. Vitest does not read `.env`.** The schema-invariant tests need a real Postgres, so
+they resolved `DATABASE_URL` through `parseEnv` and threw without it. It looked green
+only because every run so far had passed the variable inline. Fixed with a setup file
+that **defaults** rather than overrides (`??=`), so an explicit value from a shell or CI
+always wins — these tests call `deleteMany`, and a setup file that overrode the
+environment could point that at a database the developer did not intend.
+
+**2. Prisma 7 generates the client into a git-ignored directory.** `output = "../generated/prisma"`
+means a fresh clone has no client at all, and `lib/db.ts` imports from it, so nothing
+typechecks. CI needed explicit `prisma generate` and `prisma migrate deploy` steps ahead
+of lint/test/build.
+
+**3. The same directory was git-ignored but not docker-ignored** — the worst of the
+three, because it fails *silently in the right direction*. The image was copying in
+whatever stale client happened to sit on the build machine, so it built fine here and
+would have had no client at all in CI. Added to `.dockerignore` and regenerated in the
+builder stage.
+
+**Then the regeneration failed on its own:** `prisma.config.ts` resolves `DATABASE_URL`
+eagerly, and `generate` refuses to start without it, even though generating a client
+never opens a connection. Resolved by giving the generate step an unroutable placeholder
+rather than loosening the config — `migrate deploy` must still fail loudly when the real
+URL is absent.
+
+**Lesson, and it is the same one as the `@swc/helpers` entry above:** "it works" measured
+in the environment that built it proves very little. Both defects were found by
+constructing the *unprepared* environment on purpose — `env -u DATABASE_URL`, and a
+container build from a clean context — not by reading the code.
+
+---
+
+## A concurrency test that could not fail — cold Prisma connection pools serialize callers
+
+Task 1.4's single-use invariant is enforced by a conditional
+`updateMany({ where: { tokenHash, usedAt: null, ... } })` whose count decides the winner.
+To prove the test was worth anything, the implementation was temporarily replaced with the
+exact regression it is supposed to catch — a `findFirst` followed by an unconditional
+`update`. **The test still passed**, with 8 `Promise.allSettled` callers.
+
+The reason is not the database. A cold `pg` pool opens connections lazily, so eight
+simultaneous callers each wait on their own TCP+auth handshake; the first one to connect
+finished its whole read-then-write in ~9ms while the other seven were still connecting
+(~22ms), and they then read the row the winner had already marked used. The interleaving
+the test exists to create never happened.
+
+Confirmed the pool itself is not the serializer: two `pg_sleep(0.5)` queries on one client
+finish in 558ms, so a *warm* client is genuinely parallel. Warming the pool in the test —
+`Promise.all` of N trivial queries before the concurrent section — makes the same
+regression produce 7 winners and 8 sessions, and the test fails as it should.
+
+**Lesson:** a concurrency test asserting "exactly one winner" is worthless until it has
+been shown to fail against the serial implementation. Connection-pool warm-up is part of
+the setup, not an optimisation. Any future test of §9's invariants (simultaneous Clip,
+simultaneous Unclip) must warm the pool the same way and be mutation-checked the same way.
+
+## 2026-08-19 — Wave 1: three defects that only mutation testing found
+
+Wave 1 shipped five tasks. Every one passed its implementer's self-review, and the suite was
+green at every point. Three separate security defects were nevertheless present, and all three
+were found the same way: break the code, re-run the tests, see whether anything notices.
+
+1. **Task 2, `safe-log.ts`.** The allowlist filtered key *names* but not value *types*, so
+   `logClipEvent({ userId: { content: 'BODY' } })` logged a message body verbatim — against the
+   invariant that exists specifically to prevent that.
+2. **Task 4, the concurrency test.** Substituting the exact check-then-write regression it
+   claimed to catch still passed. Root cause: node-postgres opens pool connections lazily, so
+   caller 1 finished its read-then-write in ~9ms while the others were still handshaking at
+   ~22ms. A `Promise.all` warm-up fixes it, and that warm-up is load-bearing — deleting it
+   gives 5/5 false passes with the regression in place. Reproduced twice, independently.
+3. **Task 5, the interaction endpoint.** No test required `/setup` to sit downstream of the
+   Ed25519 check. Moving the branch above `verifyInteractionRequest` left all 71 tests green,
+   in a build where an unauthenticated POST mints a live admin token for any guild.
+
+Plus two more at the whole-branch review: a cross-origin POST to `/api/setup/exchange` returned
+204 with a `Set-Cookie`, and `content String?` could be added to the `Clip` table without a
+single test failing — the "never persist message bodies in Postgres" invariant had no
+deliberate protection whatsoever, only the absence of columns.
+
+The transferable finding: **a green suite is evidence about the tests, not about the code.**
+AI-authored tests cluster densely on the behaviour the author was thinking about and leave the
+adjacent boundary — authentication, storage shape, request origin — entirely unnamed. Reading
+the tests does not reveal this; only mutating the code does. Wave 2 should mutate every
+invariant it claims to protect, and treat "I read it and it looks right" as worthless for this
+class of bug.
+
+### Two traps that cost time
+
+- **`tsconfig.tsbuildinfo` does not invalidate on a tsconfig change.** After bumping `target`
+  ES2017 → ES2020, `tsc` kept reporting `TS2737` against the *old* target. Delete the buildinfo
+  whenever a tsconfig edit appears not to take effect.
+- **The test Postgres is on port 5433, not 5432** (`tests/setup/database-url.ts` defaults to the
+  `clip-pg` container). A reviewer concluded from a closed 5432 that the DB tests were silently
+  skipping and that Task 4's evidence was void. They were not skipping: pointing `DATABASE_URL`
+  at a dead port makes them *fail*. Check the default before concluding a suite is inert.
+
+### Deferred deliberately, with reasons
+
+`X-Signature-Timestamp` has no replay window, so a captured signed body mints setup tokens
+forever. Deferred to Wave 2 because exploitability requires capturing a signed body and that is
+not established here — Traefik runs without `--accesslog` and never logs bodies regardless, and
+the route does not log the body. Adding it now would deviate from Discord's documented procedure
+on the only Discord-facing surface, with no live-guild coverage, where clock skew past the
+window silently 401s every interaction and presents as a signature bug.
+
+## 2026-08-19 — PR 46 review: the two-write exchange was not atomic
+
+CodeRabbit found what 12 mutations did not: `exchangeSetupToken` consumed the setup token and
+inserted the admin session as two independent statements. If the insert failed, `used_at` was
+already committed and the admin was stranded on a dead link — a burned token, recoverable only
+by re-running `/setup`. Not a security hole (at most one session per token held either way,
+which is why the mutation pass never flagged it), but a real availability defect.
+
+Why the mutation regime missed it: every mutation asked *"can this invariant be violated?"*.
+Non-atomicity violates no invariant — it fails **safe**, in the direction of doing less. The
+transferable point is that mutation testing finds tests too weak to catch a *stronger* wrong
+behaviour, and is structurally blind to failure modes that are merely *worse for the user*.
+
+The fix folds both writes into `exchangeSetupTokenForSession`, one `prisma.$transaction`. The
+session's guild and user now come from the consumed token row rather than from the caller, so a
+session cannot be scoped to a pair its token was not issued for. The one-winner property is
+strengthened, not weakened: the row lock is now held to commit instead of being released at the
+end of the UPDATE.
+
+### The pool-exhaustion risk that did not materialize (measured)
+
+An interactive transaction holds a pool connection for its whole duration, and the concurrency
+test fires 8 overlapping callers while asserting **zero** rejections. Prisma's default
+`connection_limit` is `physical_cpus * 2 + 1` — about 5 on a 2-core runner — so the worry was 8
+transactions against 5 connections blowing the 2s `maxWait` and rejecting in CI only, on a
+machine with 10 physical cores that would never reproduce locally.
+
+It does not happen. Pinned `connection_limit` to 5, 3 and finally **2** — stricter than any
+realistic runner — and ran the file **12 consecutive times at limit 2: 78/78, zero rejections**.
+The transactions are sub-millisecond, so queued callers get a connection far inside `maxWait`.
+No `connection_limit` was added to the test URL: it would have been a harness change with no
+evidence behind it. If this ever does go flaky in CI, this is the first thing to suspect.
+
+The new test uses a genuine primary-key collision on `admin_sessions.token_hash` (it is the
+table's `@id`) to make the insert fail — a real Postgres unique violation, no mocks, per the
+real-data rule. It is decisive: reverting the `$transaction` to two bare statements fails it on
+`expected 2026-08-19T04:50:28.277Z to be null`.
