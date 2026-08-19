@@ -495,6 +495,7 @@ export function createClipService(gateway: DiscordArchiveGateway) {
     if (outcome.kind === 'NOT_AUTHORIZED') {
       return { kind: 'NOT_AUTHORIZED' };
     }
+
     if (outcome.archive !== null && config !== null) {
       // The tombstone is committed before the Discord delete is attempted. If
       // the delete fails, the tombstone keeps ids that may still address live
