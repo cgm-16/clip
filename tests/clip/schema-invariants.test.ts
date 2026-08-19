@@ -74,4 +74,37 @@ describe('control-plane schema invariants', () => {
       code: 'P2002',
     } satisfies Partial<Prisma.PrismaClientKnownRequestError>);
   });
+
+  // The wave's headline privacy invariant -- "never persist raw Discord message
+  // bodies, attachments, or embed payloads in Postgres" -- was protected only by
+  // the absence of columns, which no test asserted. Adding `content String?` to
+  // Clip passed the entire green gate. This pins the column set instead: any new
+  // column on a message-bearing table must be added here deliberately, which is
+  // the point at which someone has to ask what it stores.
+  test.each([
+    [
+      'clips',
+      [
+        'archive_forward_message_id',
+        'archive_provenance_message_id',
+        'author_notification_status',
+        'author_user_id',
+        'created_at',
+        'guild_id',
+        'removed_at',
+        'source_channel_id',
+        'source_message_id',
+        'status',
+        'updated_at',
+      ],
+    ],
+    ['clippers', ['clipped_at', 'clipper_user_id', 'guild_id', 'source_message_id']],
+  ])('%s stores only ids, state and timestamps -- never message content', async (table, allowed) => {
+    const rows = await prisma.$queryRaw<{ column_name: string }[]>`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = ${table}
+    `;
+
+    expect(rows.map((row) => row.column_name).sort()).toEqual(allowed);
+  });
 });

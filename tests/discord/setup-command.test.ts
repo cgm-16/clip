@@ -69,7 +69,7 @@ async function interactionResponse(payload: unknown) {
 
 describe('/setup interaction', () => {
   beforeEach(() => {
-    vi.stubEnv('DATABASE_URL', 'postgresql://clip:pw@localhost:5432/clip');
+    vi.stubEnv('DATABASE_URL', 'postgresql://clip:pw@localhost:5433/clip');
     vi.stubEnv('DISCORD_APPLICATION_ID', '1539212298600718416');
     vi.stubEnv('DISCORD_PUBLIC_KEY', publicKeyHex);
     vi.stubEnv('DISCORD_BOT_TOKEN', 'bot-token-value');
