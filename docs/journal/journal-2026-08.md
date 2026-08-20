@@ -810,6 +810,13 @@ attempt showed 297 and 306 passing and was discarded as meaningless.
 | `handleSubmit` has no `catch` for a rejected `fetch` | holds | read at `app/setup/[token]/SetupFlow.tsx:116-128` |
 | stranded `PENDING`/`FAILED` blocks reconfiguration | holds, with nuance | `hasLiveClips`'s own doc comment already calls the over-refusal deliberate; what it does *not* say is that nothing ever clears such a row, so the block is permanent, not transient |
 
+Correction to the final row: neither status permanently blocks reconfiguration.
+`PENDING` does not automatically retry archive creation on a later Clip request, but its
+existing clipper can unclip it, and its source author or a guild admin can tombstone it.
+`FAILED` already retries archive creation on a later Clip request and supports the same
+removal paths. Both statuses block channel reconfiguration only while the nonterminal row
+remains.
+
 So the disk failure damaged the *evidence*, not the *verdicts*: independently
 re-run with a live database, every finding stands.
 

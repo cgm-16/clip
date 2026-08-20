@@ -1,5 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
+import {
+  addClipper,
+  claimClip,
+  hasLiveClips,
+  lockClip,
+  markFailed,
+} from '@/lib/clip/repository';
 import { createClipService } from '@/lib/clip/service';
 import {
   ArchiveCreationFailedError,
@@ -314,6 +321,43 @@ describe('clip service', () => {
     expect(await readClip(fixture)).toBeNull();
     expect(await countClipperRows(fixture)).toBe(0);
   });
+
+  test.each(['PENDING', 'FAILED'] as const)(
+    'allows the source author to remove an archive-less %s Clip and clear the live blocker',
+    async (status) => {
+      const fixture = await seedConfiguredGuild();
+      const clipperUserId = fakeSnowflake();
+      await claimClip({
+        guildId: fixture.guildId,
+        sourceMessageId: fixture.sourceMessageId,
+        sourceChannelId: fixture.sourceChannelId,
+        authorUserId: fixture.sourceAuthorUserId,
+      });
+      await lockClip(fixture.guildId, fixture.sourceMessageId, async (tx) => {
+        await addClipper(tx, {
+          guildId: fixture.guildId,
+          sourceMessageId: fixture.sourceMessageId,
+          clipperUserId,
+        });
+        if (status === 'FAILED') {
+          await markFailed(tx, fixture.guildId, fixture.sourceMessageId);
+        }
+      });
+
+      const result = await service.removeByAuthorOrAdmin({
+        guildId: fixture.guildId,
+        sourceMessageId: fixture.sourceMessageId,
+        invokerUserId: fixture.sourceAuthorUserId,
+        invokerHasManageGuild: false,
+      });
+
+      expect(result).toEqual({ kind: 'REMOVED' });
+      expect((await readClip(fixture))?.status).toBe('REMOVED_BY_AUTHOR');
+      expect(await hasLiveClips(fixture.guildId)).toBe(false);
+      expect(gateway.deleteCalls).toHaveLength(0);
+      expect(await countClipperRows(fixture)).toBe(0);
+    },
+  );
 
   test('author removal deletes the archive and leaves a tombstone that blocks recreation', async () => {
     const fixture = await seedConfiguredGuild();

@@ -5,14 +5,17 @@ import type { prisma as PrismaSingleton } from '@/lib/db';
 import {
   addClipper,
   claimClip,
+  claimClipInTransaction,
   clearArchiveMessageIds,
   countArchivedClips,
   countClippers,
   deleteClipWithClippers,
   deleteClippers,
+  finalizeGuildArchiveConfig,
   findGuildArchiveConfig,
   hasLiveClips,
   lockClip,
+  lockGuildConfig,
   markActive,
   markDeleting,
   markFailed,
@@ -534,6 +537,79 @@ describe('clip repository', () => {
     const rows = await prisma.guildConfig.findMany({ where: { guildId } });
     expect(rows).toHaveLength(1);
     expect(rows[0].archiveChannelId).toBe(secondChannelId);
+  });
+
+  test('prevents reconfiguration between a Clip config read and its canonical claim', async () => {
+    const guildId = trackedGuildId();
+    const oldChannelId = fakeSnowflake();
+    const newChannelId = fakeSnowflake();
+    const configuredByUserId = fakeSnowflake();
+    const input = {
+      guildId,
+      sourceMessageId: fakeSnowflake(),
+      sourceChannelId: fakeSnowflake(),
+      authorUserId: fakeSnowflake(),
+    };
+    await upsertGuildArchiveConfig({
+      guildId,
+      archiveChannelId: oldChannelId,
+      configuredByUserId,
+    });
+    await warmConnectionPool(2);
+
+    const clipHasReadConfig = Promise.withResolvers<void>();
+    const releaseClipClaim = Promise.withResolvers<void>();
+    const claimPromise = lockGuildConfig(guildId, async (tx, config) => {
+      expect(config.archiveChannelId).toBe(oldChannelId);
+      clipHasReadConfig.resolve();
+      await releaseClipClaim.promise;
+      return claimClipInTransaction(tx, input);
+    });
+
+    await clipHasReadConfig.promise;
+    const finalizePromise = finalizeGuildArchiveConfig({
+      guildId,
+      archiveChannelId: newChannelId,
+      configuredByUserId,
+    });
+
+    let blockedLockConditionError: unknown;
+    try {
+      await vi.waitFor(
+        async () => {
+          const [activity] = await prisma.$queryRaw<Array<{ blocked: boolean }>>`
+            SELECT EXISTS (
+              SELECT 1
+              FROM pg_stat_activity
+              WHERE datname = current_database()
+                AND usename = current_user
+                AND pid <> pg_backend_pid()
+                AND state = 'active'
+                AND wait_event_type = 'Lock'
+                AND query LIKE '%guild_configs%'
+                AND query LIKE '%FOR UPDATE%'
+            ) AS blocked
+          `;
+          expect(activity?.blocked).toBe(true);
+        },
+        { timeout: 2_000, interval: 10 },
+      );
+    } catch (error) {
+      blockedLockConditionError = error;
+    } finally {
+      releaseClipClaim.resolve();
+    }
+
+    const [claim, finalize] = await Promise.all([claimPromise, finalizePromise]);
+    if (blockedLockConditionError !== undefined) {
+      throw blockedLockConditionError;
+    }
+    const persistedConfig = await prisma.guildConfig.findUniqueOrThrow({ where: { guildId } });
+
+    expect(claim?.created).toBe(true);
+    expect(finalize).toEqual({ kind: 'CONFLICT' });
+    expect(persistedConfig.archiveChannelId).toBe(oldChannelId);
+    expect(await prisma.clip.count({ where: { guildId } })).toBe(1);
   });
 
   test('countArchivedClips counts only ACTIVE clips for the guild', async () => {

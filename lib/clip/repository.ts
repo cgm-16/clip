@@ -16,6 +16,11 @@ export type ClipRecord = {
   archiveForwardMessageId: string | null;
 };
 
+export type GuildArchiveConfig = {
+  archiveChannelId: string;
+  allowedRoleIds: string[];
+};
+
 const clipRecordSelect = {
   guildId: true,
   sourceMessageId: true,
@@ -25,6 +30,21 @@ const clipRecordSelect = {
   archiveProvenanceMessageId: true,
   archiveForwardMessageId: true,
 } as const;
+
+const guildArchiveConfigSelect = {
+  archiveChannelId: true,
+  allowedRoles: { select: { roleId: true } },
+} as const;
+
+function guildArchiveConfigOf(config: {
+  archiveChannelId: string;
+  allowedRoles: { roleId: string }[];
+}): GuildArchiveConfig {
+  return {
+    archiveChannelId: config.archiveChannelId,
+    allowedRoleIds: config.allowedRoles.map((role) => role.roleId),
+  };
+}
 
 function clipKey(guildId: string, sourceMessageId: string) {
   return { guildId_sourceMessageId: { guildId, sourceMessageId } };
@@ -47,21 +67,37 @@ function clipKey(guildId: string, sourceMessageId: string) {
  * `clip.status`, since a claim whose follow-up work failed leaves a `PENDING`
  * row that a later caller still has to finish.
  */
-export async function claimClip(input: {
+type ClaimClipInput = {
   guildId: string;
   sourceMessageId: string;
   sourceChannelId: string;
   authorUserId: string;
-}): Promise<{ created: boolean; clip: ClipRecord }> {
-  const { count } = await prisma.clip.createMany({
+};
+
+async function claimClipWithClient(
+  client: Pick<TxClient, 'clip'>,
+  input: ClaimClipInput,
+): Promise<{ created: boolean; clip: ClipRecord }> {
+  const { count } = await client.clip.createMany({
     data: [input],
     skipDuplicates: true,
   });
-  const clip = await prisma.clip.findUniqueOrThrow({
+  const clip = await client.clip.findUniqueOrThrow({
     where: clipKey(input.guildId, input.sourceMessageId),
     select: clipRecordSelect,
   });
   return { created: count === 1, clip };
+}
+
+export function claimClip(input: ClaimClipInput): Promise<{ created: boolean; clip: ClipRecord }> {
+  return claimClipWithClient(prisma, input);
+}
+
+export function claimClipInTransaction(
+  tx: TxClient,
+  input: ClaimClipInput,
+): Promise<{ created: boolean; clip: ClipRecord }> {
+  return claimClipWithClient(tx, input);
 }
 
 /**
@@ -113,6 +149,37 @@ export function lockClip<T>(
       select: clipRecordSelect,
     });
     return fn(tx, clip);
+  });
+}
+
+/**
+ * Runs `fn` with the guild's archive configuration locked `FOR UPDATE`.
+ * Resolves to null without calling `fn` when setup has not created a row yet.
+ *
+ * As with `lockClip`, do no external I/O inside `fn` and use only the handed-in
+ * transaction client for database work. Clip claims and setup finalization use
+ * this same short lock so neither can act on a configuration the other changes
+ * before the claim commits.
+ */
+export function lockGuildConfig<T>(
+  guildId: string,
+  fn: (tx: TxClient, config: GuildArchiveConfig) => Promise<T>,
+): Promise<T | null> {
+  return prisma.$transaction(async (tx) => {
+    const locked = await tx.$executeRaw`
+      SELECT 1 FROM guild_configs
+      WHERE guild_id = ${guildId}
+      FOR UPDATE
+    `;
+    if (locked === 0) {
+      return null;
+    }
+
+    const config = await tx.guildConfig.findUniqueOrThrow({
+      where: { guildId },
+      select: guildArchiveConfigSelect,
+    });
+    return fn(tx, guildArchiveConfigOf(config));
   });
 }
 
@@ -320,17 +387,33 @@ export async function deleteClipWithClippers(
  * screen), and this must update the one row rather than duplicate or crash on
  * the primary key.
  */
-export async function upsertGuildArchiveConfig(input: {
+type UpsertGuildArchiveConfigInput = {
   guildId: string;
   archiveChannelId: string;
   configuredByUserId: string;
-}): Promise<void> {
+};
+
+async function upsertGuildArchiveConfigWithClient(
+  client: Pick<TxClient, 'guildConfig'>,
+  input: UpsertGuildArchiveConfigInput,
+): Promise<void> {
   const { guildId, archiveChannelId, configuredByUserId } = input;
-  await prisma.guildConfig.upsert({
+  await client.guildConfig.upsert({
     where: { guildId },
     create: { guildId, archiveChannelId, configuredByUserId },
     update: { archiveChannelId, configuredByUserId },
   });
+}
+
+export function upsertGuildArchiveConfig(input: UpsertGuildArchiveConfigInput): Promise<void> {
+  return upsertGuildArchiveConfigWithClient(prisma, input);
+}
+
+function upsertGuildArchiveConfigInTransaction(
+  tx: TxClient,
+  input: UpsertGuildArchiveConfigInput,
+): Promise<void> {
+  return upsertGuildArchiveConfigWithClient(tx, input);
 }
 
 /**
@@ -359,12 +442,50 @@ export async function upsertGuildArchiveConfig(input: {
  * orphan an existing one at all, is the real long-term fix; it is out of
  * scope today.
  */
-export async function hasLiveClips(guildId: string): Promise<boolean> {
-  const clip = await prisma.clip.findFirst({
+async function hasLiveClipsWithClient(
+  client: Pick<TxClient, 'clip'>,
+  guildId: string,
+): Promise<boolean> {
+  const clip = await client.clip.findFirst({
     where: { guildId, status: { notIn: TOMBSTONE_STATUSES } },
     select: { guildId: true },
   });
   return clip !== null;
+}
+
+export function hasLiveClips(guildId: string): Promise<boolean> {
+  return hasLiveClipsWithClient(prisma, guildId);
+}
+
+function hasLiveClipsInTransaction(tx: TxClient, guildId: string): Promise<boolean> {
+  return hasLiveClipsWithClient(tx, guildId);
+}
+
+/**
+ * Persists setup after Discord work, rechecking a reconfiguration against the
+ * Clip rows while holding the same guild lock used by canonical Clip claims.
+ */
+export async function finalizeGuildArchiveConfig(
+  input: UpsertGuildArchiveConfigInput,
+): Promise<{ kind: 'SAVED' } | { kind: 'CONFLICT' }> {
+  const outcome = await lockGuildConfig(input.guildId, async (tx, config) => {
+    if (
+      config.archiveChannelId !== input.archiveChannelId &&
+      (await hasLiveClipsInTransaction(tx, input.guildId))
+    ) {
+      return { kind: 'CONFLICT' as const };
+    }
+    await upsertGuildArchiveConfigInTransaction(tx, input);
+    return { kind: 'SAVED' as const };
+  });
+  if (outcome !== null) {
+    return outcome;
+  }
+
+  // There is no row to lock on first setup. Simultaneous first setup is a
+  // separate problem; preserve the existing database upsert path here.
+  await upsertGuildArchiveConfig(input);
+  return { kind: 'SAVED' };
 }
 
 /**
@@ -381,18 +502,22 @@ export function countArchivedClips(guildId: string): Promise<number> {
 /** Reads for the service. Null when the guild has never completed setup. */
 export async function findGuildArchiveConfig(
   guildId: string,
-): Promise<{ archiveChannelId: string; allowedRoleIds: string[] } | null> {
-  const config = await prisma.guildConfig.findUnique({
+): Promise<GuildArchiveConfig | null> {
+  return findGuildArchiveConfigWithClient(prisma, guildId);
+}
+
+async function findGuildArchiveConfigWithClient(
+  client: Pick<TxClient, 'guildConfig'>,
+  guildId: string,
+): Promise<GuildArchiveConfig | null> {
+  const config = await client.guildConfig.findUnique({
     where: { guildId },
-    select: { archiveChannelId: true, allowedRoles: { select: { roleId: true } } },
+    select: guildArchiveConfigSelect,
   });
   if (config === null) {
     return null;
   }
-  return {
-    archiveChannelId: config.archiveChannelId,
-    allowedRoleIds: config.allowedRoles.map((role) => role.roleId),
-  };
+  return guildArchiveConfigOf(config);
 }
 
 /**

@@ -354,9 +354,9 @@ In tests/clip/repository.test.ts add:
 it('prevents reconfiguration between a Clip config read and its canonical claim', async () => {})
 ~~~
 
-Use a random guild, old channel, new channel, source message, and user. Warm two real pool connections using the existing Promise.all SELECT 1 pattern. Create two explicit deferred barriers with Promise.withResolvers or the file's local equivalent; do not sleep or poll.
+Use a random guild, old channel, new channel, source message, and user. Warm two real pool connections using the existing Promise.all SELECT 1 pattern. Create two explicit deferred barriers with Promise.withResolvers or the file's local equivalent; do not sleep or make elapsed-time assertions.
 
-Operation A acquires lockGuildConfig, asserts old channel, signals clipHasReadConfig, waits for releaseClipClaim, then calls the tx-scoped claim. Only after A signals, start operation B calling finalizeGuildArchiveConfig for the new channel. Release A, await both, and assert:
+Operation A acquires lockGuildConfig, asserts old channel, signals clipHasReadConfig, waits for releaseClipClaim, then calls the tx-scoped claim. Only after A signals, start operation B calling finalizeGuildArchiveConfig for the new channel. Before releasing A, use a separate real Prisma query plus Vitest's bounded condition waiting to observe in `pg_stat_activity` that another same-user backend is active, has `wait_event_type = 'Lock'`, and is running the `guild_configs ... FOR UPDATE` query. The condition timeout may fail the test but is not correctness evidence. Only after the actual blocked-lock condition is observed, release A, await both, and assert:
 
 ~~~ts
 expect(claim.created).toBe(true);
@@ -373,7 +373,7 @@ Run:
 pnpm exec vitest run tests/clip/repository.test.ts -t "prevents reconfiguration"
 ~~~
 
-Done-check: FAIL because the shared lock/finalizer/transaction-client operations do not exist. Once it compiles, the pre-fix independent calls allow the stale update.
+Done-check: FAIL because the shared lock/finalizer/transaction-client operations do not exist. After those interfaces compile, temporarily removing the GuildConfig `FOR UPDATE` must also fail because the blocked-lock condition is never observed (or because stale state wins); restore the lock before continuing.
 
 - [ ] **Step 3: Implement the repository serialization boundary**
 

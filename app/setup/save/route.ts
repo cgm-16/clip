@@ -3,9 +3,9 @@ import { authenticateAdminSession } from '@/lib/admin-session/service';
 import { ADMIN_SESSION_COOKIE_NAME } from '@/lib/admin-session/tokens';
 import {
   countArchivedClips,
+  finalizeGuildArchiveConfig,
   findGuildArchiveConfig,
   hasLiveClips,
-  upsertGuildArchiveConfig,
 } from '@/lib/clip/repository';
 import {
   createDiscordGuildLookup,
@@ -13,6 +13,7 @@ import {
 } from '@/lib/discord/guild-lookup';
 import { createDiscordRestClient, DiscordApiError } from '@/lib/discord/rest-client';
 import { parseEnv } from '@/lib/env';
+import { logClipEvent } from '@/lib/logging/safe-log';
 
 /**
  * Reads one cookie's value out of a raw `Cookie` request header. Duplicated
@@ -95,9 +96,8 @@ function parseCreatedChannel(body: unknown): { id: string; name: string } | null
  * "existing channel" re-validates the submitted id against the guild's own
  * eligible channels server-side (never trusting the client's list); "create"
  * asks Discord to make a new private `#clip-archive` and use that instead.
- * Either way the result is persisted with `upsertGuildArchiveConfig`, an
- * upsert so re-running setup for an already-configured guild updates in
- * place rather than duplicating or throwing.
+ * Either way the result is persisted only after a final locked recheck, so a
+ * Clip claimed during the Discord round-trip cannot be orphaned by the save.
  *
  * Allowed-role configuration is cut from P0 per the task brief; only the
  * archive channel and who configured it are persisted here.
@@ -220,11 +220,29 @@ export async function POST(request: Request) {
     throw error;
   }
 
-  await upsertGuildArchiveConfig({
+  const finalized = await finalizeGuildArchiveConfig({
     guildId,
     archiveChannelId,
     configuredByUserId: identity.userId,
   });
+  if (finalized.kind === 'CONFLICT') {
+    if (destination === 'create') {
+      const client = createDiscordRestClient({ botToken: env.DISCORD_BOT_TOKEN, fetchImpl: fetch });
+      try {
+        await client.request('DELETE', `/channels/${archiveChannelId}`);
+      } catch (error) {
+        logClipEvent({
+          event: 'setup.archive-channel-cleanup-failed',
+          guildId,
+          errorCode:
+            error instanceof DiscordApiError
+              ? String(error.code ?? error.status)
+              : 'UNKNOWN',
+        });
+      }
+    }
+    return new Response(null, { status: 409 });
+  }
   const clipCount = await countArchivedClips(guildId);
 
   return Response.json({

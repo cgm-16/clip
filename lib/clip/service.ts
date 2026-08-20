@@ -2,13 +2,14 @@ import type { ClipStatus } from '@/generated/prisma/client';
 import { canClip } from '@/lib/clip/authorization';
 import {
   addClipper,
-  claimClip,
+  claimClipInTransaction,
   clearArchiveMessageIds,
   countClippers,
   deleteClipWithClippers,
   deleteClippers,
   findGuildArchiveConfig,
   lockClip,
+  lockGuildConfig,
   markActive,
   markDeleting,
   markFailed,
@@ -166,8 +167,26 @@ export function createClipService(gateway: DiscordArchiveGateway) {
 
   async function clip(input: ClipInput): Promise<ClipCommandResult> {
     const key = { guildId: input.guildId, sourceMessageId: input.sourceMessageId };
-    const config = await findGuildArchiveConfig(input.guildId);
-    if (config === null) {
+    const claim = await lockGuildConfig(input.guildId, async (tx, config) => {
+      if (
+        !canClip({
+          hasManageGuild: input.clipperHasManageGuild,
+          memberRoleIds: input.clipperRoleIds,
+          allowedRoleIds: config.allowedRoleIds,
+        })
+      ) {
+        return { kind: 'NOT_AUTHORIZED' as const };
+      }
+
+      const claimed = await claimClipInTransaction(tx, {
+        guildId: input.guildId,
+        sourceMessageId: input.sourceMessageId,
+        sourceChannelId: input.sourceChannelId,
+        authorUserId: input.sourceAuthorUserId,
+      });
+      return { kind: 'CLAIMED' as const, config, ...claimed };
+    });
+    if (claim === null) {
       // §17 case 12: clipping fails safely until an admin configures the guild.
       // No DB write -- an unconfigured guild has nowhere to put the archive.
       logClipEvent({
@@ -180,13 +199,7 @@ export function createClipService(gateway: DiscordArchiveGateway) {
       return { kind: 'FAILED', retryable: false };
     }
 
-    if (
-      !canClip({
-        hasManageGuild: input.clipperHasManageGuild,
-        memberRoleIds: input.clipperRoleIds,
-        allowedRoleIds: config.allowedRoleIds,
-      })
-    ) {
+    if (claim.kind === 'NOT_AUTHORIZED') {
       logClipEvent({
         event: 'clip.rejected',
         guildId: input.guildId,
@@ -197,12 +210,7 @@ export function createClipService(gateway: DiscordArchiveGateway) {
       return { kind: 'NOT_AUTHORIZED' };
     }
 
-    const { created, clip: claimed } = await claimClip({
-      guildId: input.guildId,
-      sourceMessageId: input.sourceMessageId,
-      sourceChannelId: input.sourceChannelId,
-      authorUserId: input.sourceAuthorUserId,
-    });
+    const { config, created, clip: claimed } = claim;
     if (isTerminalStatus(claimed.status)) {
       // §7.4: the tombstone blocks recreation, and no preservation signal is
       // recorded against it -- recording one would resurrect the harassment
