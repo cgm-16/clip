@@ -36,6 +36,10 @@ const BASE_URL = 'https://clipendpoint.cc';
 const GUILD_ID = '1539212298600718416';
 const OTHER_GUILD_ID = '1539212298600718499';
 const USER_ID = '1539212298600718417';
+// Deliberately different from GUILD_ID: the bot's overwrite is keyed on the
+// application id and `@everyone`'s on the guild id, so a shared literal would
+// let an assertion on either one pass against the other.
+const APPLICATION_ID = '1539212298600718888';
 const SESSION_COOKIE = `${ADMIN_SESSION_COOKIE_NAME}=session-bearer`;
 
 // Only the paths that reach parseEnv (an Origin header present, or code past
@@ -43,7 +47,7 @@ const SESSION_COOKIE = `${ADMIN_SESSION_COOKIE_NAME}=session-bearer`;
 // tests/admin-session/exchange-route.test.ts's stubEnv.
 function stubEnv(): void {
   vi.stubEnv('DATABASE_URL', 'postgresql://clip:pw@localhost:5433/clip_dev');
-  vi.stubEnv('DISCORD_APPLICATION_ID', '1539212298600718416');
+  vi.stubEnv('DISCORD_APPLICATION_ID', APPLICATION_ID);
   vi.stubEnv('DISCORD_PUBLIC_KEY', 'a'.repeat(64));
   vi.stubEnv('DISCORD_BOT_TOKEN', 'bot-token-value');
   vi.stubEnv('ADMIN_SESSION_SECRET', 'x'.repeat(32));
@@ -216,8 +220,6 @@ describe('POST /setup/save', () => {
 
     const VIEW_CHANNEL = 1n << 10n;
     const SEND_MESSAGES = 1n << 11n;
-    const APPLICATION_ID = '1539212298600718416'; // matches stubEnv's DISCORD_APPLICATION_ID
-
     expect(discordRequest).toHaveBeenCalledWith(
       'POST',
       `/guilds/${GUILD_ID}/channels`,
@@ -227,6 +229,36 @@ describe('POST /setup/save', () => {
             id: APPLICATION_ID,
             type: 1,
             allow: (VIEW_CHANNEL | SEND_MESSAGES).toString(),
+          }),
+        ]),
+      }),
+    );
+  });
+
+  // The privacy half of the same array. Spec 5.3 makes the auto-created
+  // archive channel private, which is entirely the `@everyone` deny -- and
+  // deleting that one entry left all 307 tests green, so nothing covered it.
+  // `@everyone`'s role id is the guild id.
+  test('create-destination save denies @everyone VIEW_CHANNEL on the new channel', async () => {
+    stubEnv();
+    authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
+    discordRequest.mockResolvedValue({ id: '222', name: 'clip-archive', type: 0 });
+    upsertGuildArchiveConfig.mockResolvedValue(undefined);
+    countArchivedClips.mockResolvedValue(0);
+
+    await POST(postJson({ destination: 'create', channelId: null }));
+
+    const VIEW_CHANNEL = 1n << 10n;
+
+    expect(discordRequest).toHaveBeenCalledWith(
+      'POST',
+      `/guilds/${GUILD_ID}/channels`,
+      expect.objectContaining({
+        permission_overwrites: expect.arrayContaining([
+          expect.objectContaining({
+            id: GUILD_ID,
+            type: 0,
+            deny: VIEW_CHANNEL.toString(),
           }),
         ]),
       }),
