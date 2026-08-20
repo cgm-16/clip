@@ -177,6 +177,46 @@ describe('POST /setup/save', () => {
     });
   });
 
+  // Finding C2: a private #clip-archive created with only the @everyone deny
+  // leaves the bot itself unable to see the channel it just made -- it has
+  // no ADMINISTRATOR (spec §15) and no overwrite of its own, so it inherits
+  // @everyone's now-denied VIEW_CHANNEL. Every subsequent clip then fails the
+  // provenance POST with Discord 50001. This asserts the create call also
+  // grants the application's own member overwrite the permissions
+  // archive-message.ts actually needs in steady state: VIEW_CHANNEL (to
+  // address the channel at all) and SEND_MESSAGES (to post the provenance
+  // and forward messages). Nothing broader -- deleting the bot's own
+  // messages needs no permission, and channel creation itself runs on the
+  // guild-level MANAGE_CHANNELS the bot already holds, not a channel
+  // overwrite.
+  test('create-destination save grants the bot itself VIEW_CHANNEL and SEND_MESSAGES on the new channel', async () => {
+    stubEnv();
+    authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
+    discordRequest.mockResolvedValue({ id: '222', name: 'clip-archive', type: 0 });
+    upsertGuildArchiveConfig.mockResolvedValue(undefined);
+    countArchivedClips.mockResolvedValue(0);
+
+    await POST(postJson({ destination: 'create', channelId: null }));
+
+    const VIEW_CHANNEL = 1n << 10n;
+    const SEND_MESSAGES = 1n << 11n;
+    const APPLICATION_ID = '1539212298600718416'; // matches stubEnv's DISCORD_APPLICATION_ID
+
+    expect(discordRequest).toHaveBeenCalledWith(
+      'POST',
+      `/guilds/${GUILD_ID}/channels`,
+      expect.objectContaining({
+        permission_overwrites: expect.arrayContaining([
+          expect.objectContaining({
+            id: APPLICATION_ID,
+            type: 1,
+            allow: (VIEW_CHANNEL | SEND_MESSAGES).toString(),
+          }),
+        ]),
+      }),
+    );
+  });
+
   test('a guild the bot can no longer see is reported as 404', async () => {
     stubEnv();
     authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });

@@ -52,16 +52,20 @@ const SaveRequestSchema = z
 // test file already follows.
 const GUILD_TEXT_CHANNEL_TYPE = 0;
 
-// A permission overwrite's `type`: 0 targets a role. The guild id doubles as
-// the `@everyone` role's id, so an overwrite keyed on it denies everyone.
+// A permission overwrite's `type`: 0 targets a role, 1 targets a member. The
+// guild id doubles as the `@everyone` role's id, so a `type: 0` overwrite
+// keyed on it denies everyone; `DISCORD_APPLICATION_ID` is the bot's own
+// user id (see `Env`), so a `type: 1` overwrite keyed on it targets the bot.
 const ROLE_OVERWRITE_TYPE = 0;
+const MEMBER_OVERWRITE_TYPE = 1;
 
-// VIEW_CHANNEL, from Discord's permission bitflags
+// VIEW_CHANNEL and SEND_MESSAGES, from Discord's permission bitflags
 // (developers.discord.com/docs/topics/permissions#permissions-bitwise-permission-flags).
 // `lib/discord/permissions.ts` only exports the one flag it currently tests
-// (`MANAGE_GUILD`); this stays local rather than growing that file for a
+// (`MANAGE_GUILD`); these stay local rather than growing that file for a
 // second caller, matching `guild-lookup.ts`'s own `UNKNOWN_GUILD` precedent.
 const VIEW_CHANNEL_PERMISSION = 1n << 10n;
+const SEND_MESSAGES_PERMISSION = 1n << 11n;
 
 const ARCHIVE_CHANNEL_NAME = 'clip-archive';
 
@@ -148,11 +152,27 @@ export async function POST(request: Request) {
         // Private by default (spec §5.3): deny VIEW_CHANNEL for @everyone.
         // A guild Administrator sees it regardless -- Discord never lets a
         // channel overwrite narrow ADMINISTRATOR's access.
+        //
+        // The bot itself is not exempt from the @everyone deny above: it
+        // holds no ADMINISTRATOR (spec §15) and its managed role carries no
+        // overwrite of its own, so without a second, explicit member
+        // overwrite here it could not see the private channel it just
+        // created. VIEW_CHANNEL lets it address the channel at all;
+        // SEND_MESSAGES is what `archive-message.ts`'s provenance and
+        // forward posts need once it can. Nothing broader: deleting the
+        // bot's own messages needs no permission, and the create call above
+        // already ran on the guild-level MANAGE_CHANNELS the bot holds, not
+        // a channel overwrite.
         permission_overwrites: [
           {
             id: guildId,
             type: ROLE_OVERWRITE_TYPE,
             deny: VIEW_CHANNEL_PERMISSION.toString(),
+          },
+          {
+            id: env.DISCORD_APPLICATION_ID,
+            type: MEMBER_OVERWRITE_TYPE,
+            allow: (VIEW_CHANNEL_PERMISSION | SEND_MESSAGES_PERMISSION).toString(),
           },
         ],
       });
