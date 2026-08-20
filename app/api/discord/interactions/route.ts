@@ -236,10 +236,15 @@ async function lookupGuildName(env: Env, guildId: string): Promise<string> {
  * Runs `Clip` after its deferred reply has already gone out.
  *
  * The follow-up carrying `result`'s outcome is sent before the marker and
- * the DM are attempted, and neither of those can throw past this point --
- * `ArchiveMarker.add` and `notifyAuthorOfFirstArchival` are both contracted
- * never to throw. What the member was already told about their own clip can
- * therefore never change because a side effect failed.
+ * the DM are attempted. `ArchiveMarker.add` is contracted never to throw,
+ * but `notifyAuthorOfFirstArchival` is not -- its `claimAuthorNotification`
+ * calls `findUniqueOrThrow` after an `updateMany`, which throws if a
+ * concurrent deletion drops the row in between (finding I1). Everything
+ * from the marker onward therefore runs inside its own `try`: a member who
+ * was already told `✓ 보관했습니다` for a Clip that genuinely succeeded must
+ * never have that answer overwritten with `transientFailure` by a later
+ * step's failure, since the outer catch in `handleContextCommand` would
+ * otherwise send exactly that second, wrong follow-up.
  */
 async function runClipCommand(ctx: ContextCommandContext, env: Env): Promise<void> {
   const gateway = createDiscordArchiveGateway({ botToken: env.DISCORD_BOT_TOKEN, fetchImpl: fetch });
@@ -261,19 +266,32 @@ async function runClipCommand(ctx: ContextCommandContext, env: Env): Promise<voi
     return;
   }
 
-  const marker = createArchiveMarker({ botToken: env.DISCORD_BOT_TOKEN, fetchImpl: fetch });
-  await marker.add(ctx.sourceChannelId, ctx.sourceMessageId);
+  try {
+    const marker = createArchiveMarker({ botToken: env.DISCORD_BOT_TOKEN, fetchImpl: fetch });
+    await marker.add(ctx.sourceChannelId, ctx.sourceMessageId);
 
-  const guildName = await lookupGuildName(env, ctx.guildId);
-  await notifyAuthorOfFirstArchival(
-    {
+    const guildName = await lookupGuildName(env, ctx.guildId);
+    await notifyAuthorOfFirstArchival(
+      {
+        guildId: ctx.guildId,
+        sourceMessageId: ctx.sourceMessageId,
+        guildName,
+        channelName: ctx.channelName ?? ctx.sourceChannelId,
+      },
+      { botToken: env.DISCORD_BOT_TOKEN, fetchImpl: fetch },
+    );
+  } catch (error) {
+    // The member has already been told the truth (the Clip is ACTIVE);
+    // nothing from here on may reach `handleContextCommand`'s catch and
+    // replace that answer with `transientFailure`.
+    logClipEvent({
+      event: 'clip.post_archival_step_failed',
       guildId: ctx.guildId,
       sourceMessageId: ctx.sourceMessageId,
-      guildName,
-      channelName: ctx.channelName ?? ctx.sourceChannelId,
-    },
-    { botToken: env.DISCORD_BOT_TOKEN, fetchImpl: fetch },
-  );
+      userId: ctx.invokingUserId,
+      errorCode: discordErrorCode(error),
+    });
+  }
 }
 
 /**
