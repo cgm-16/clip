@@ -184,7 +184,11 @@ describe('/setup interaction', () => {
       signedRequest({
         type: APPLICATION_COMMAND_INTERACTION_TYPE,
         guild_id: GUILD_ID,
-        data: { id: '1539212298600718419', name: 'Clip', type: 3 },
+        // Not one of the four registered commands (`lib/discord/commands.ts`):
+        // an unrecognized name is the case this test means to exercise, and
+        // using a real command name here would instead exercise that
+        // command's own handler.
+        data: { id: '1539212298600718419', name: 'Not A Registered Command', type: 3 },
         member: { user: { id: USER_ID }, permissions: MANAGE_GUILD_ONLY },
       }),
     );
