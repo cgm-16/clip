@@ -3,6 +3,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vi
 import {
   addClipper,
   claimClip,
+  finalizeGuildArchiveConfig,
   hasLiveClips,
   lockClip,
   markFailed,
@@ -469,6 +470,57 @@ describe('clip service', () => {
     // keep naming the removal that actually happened.
     expect(tombstone?.status).toBe('REMOVED_BY_AUTHOR');
     expect(tombstone?.removedAt).toEqual(stranded?.removedAt);
+  });
+
+  test('reconfiguration waits until a failed removal retry clears its archive ids', async () => {
+    const fixture = await seedConfiguredGuild();
+    const replacementArchiveChannelId = fakeSnowflake();
+    const replacementConfiguredByUserId = fakeSnowflake();
+    await service.clip(clipInput(fixture, fakeSnowflake()));
+    gateway.failNextDelete(new Error('discord unavailable'));
+
+    const removeInput = {
+      guildId: fixture.guildId,
+      sourceMessageId: fixture.sourceMessageId,
+      invokerUserId: fixture.sourceAuthorUserId,
+      invokerHasManageGuild: false,
+    };
+    expect(await service.removeByAuthorOrAdmin(removeInput)).toEqual({ kind: 'REMOVED' });
+    expect(await readClip(fixture)).toMatchObject({
+      status: 'REMOVED_BY_AUTHOR',
+      archiveProvenanceMessageId: 'provenance-1',
+      archiveForwardMessageId: 'forward-1',
+    });
+
+    expect(
+      await finalizeGuildArchiveConfig({
+        guildId: fixture.guildId,
+        archiveChannelId: replacementArchiveChannelId,
+        configuredByUserId: replacementConfiguredByUserId,
+      }),
+    ).toEqual({ kind: 'CONFLICT' });
+    expect(
+      (await prisma.guildConfig.findUniqueOrThrow({ where: { guildId: fixture.guildId } }))
+        .archiveChannelId,
+    ).toBe(fixture.archiveChannelId);
+
+    expect(await service.removeByAuthorOrAdmin(removeInput)).toEqual({ kind: 'REMOVED' });
+    expect(await readClip(fixture)).toMatchObject({
+      status: 'REMOVED_BY_AUTHOR',
+      archiveProvenanceMessageId: null,
+      archiveForwardMessageId: null,
+    });
+    expect(
+      await finalizeGuildArchiveConfig({
+        guildId: fixture.guildId,
+        archiveChannelId: replacementArchiveChannelId,
+        configuredByUserId: replacementConfiguredByUserId,
+      }),
+    ).toEqual({ kind: 'SAVED' });
+    expect(
+      (await prisma.guildConfig.findUniqueOrThrow({ where: { guildId: fixture.guildId } }))
+        .archiveChannelId,
+    ).toBe(replacementArchiveChannelId);
   });
 
   test('a failed archive creation stays FAILED and a retry reaches ACTIVE', async () => {

@@ -26,11 +26,9 @@ spec:
       # tooling can never drift out of sync with the code it migrates for.
       initContainers:
         - name: migrate
-          # Must be bumped in lockstep with the app container's tag below --
-          # both fields must always name the identical tag. Nothing enforces
-          # this: it is not validated by CI, not templated from one value,
-          # and not checked at apply time. A mismatch here silently runs one
-          # wave's migrations against another wave's code.
+          # Rendered from the same release-image placeholder as the app
+          # container below. The renderer requires exactly two identical Clip
+          # image values, keeping migrations and application code on one build.
           #
           # The tag must also name an image built from a commit that already
           # contains this Dockerfile's `migrate-deps` stage (this branch adds
@@ -61,9 +59,8 @@ spec:
 
       containers:
         - name: clip
-          # Must be the exact same tag as the `migrate` initContainer above
-          # -- see that field's comment for why. Bump both together, never
-          # one alone.
+          # Rendered from the same release-image placeholder as `migrate`;
+          # the renderer rejects a manifest whose two image values differ.
           image: __CLIP_RELEASE_IMAGE__
           ports:
             - containerPort: 3000

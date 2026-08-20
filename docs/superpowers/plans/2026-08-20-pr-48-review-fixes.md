@@ -742,6 +742,15 @@ git add -A 'app/setup/[token]' lib/ui/copy.ts tests/ui/copy.test.ts tests/ui/set
 git commit -m "fix(setup): recover from transient responses"
 ~~~
 
+## Final Review Delta: Block Reconfiguration While Cleanup IDs Remain
+
+The whole-branch review found that a removed Clip can retain `archiveMessageId` or `archiveMetaMessageId` after Discord cleanup fails. `hasLiveClips` currently ignores that tombstone, so reconfiguration can switch the guild destination before removal retry; retry then targets the new channel and can orphan the old archive. This extends Task 3's guard invariant without changing removal states or adding automatic cleanup.
+
+- [x] Add a real-Postgres regression for failed removal retaining an archive ID: `finalizeGuildArchiveConfig` must return `CONFLICT`; after a successful removal retry clears both IDs, finalization may succeed.
+- [x] Change the shared guard predicate so any Clip retaining either archive ID blocks reconfiguration, regardless of tombstone status; preserve the existing live-status rule for rows without IDs.
+- [x] Correct the now-false two-request guild-lookup test comment and the deployment template comments that claim image equality is unenforced.
+- [x] Run the focused repository/service/setup suites, lint, full tests, and build; independently review this final delta before final verification.
+
 ## Final Verification and Authorized GitHub Actions
 
 After all task reviews are clean:

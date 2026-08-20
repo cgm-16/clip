@@ -640,8 +640,8 @@ describe('clip repository', () => {
 
   // Finding C3: `/setup/save` must refuse to repoint a guild's archive
   // channel while any Clip could still be addressed through the old one --
-  // `hasLiveClips` is that guard's whole basis, so its own status boundary
-  // has to be exactly right (only the two removal tombstones don't count).
+  // `hasLiveClips` is that guard's whole basis, so tombstones stop counting
+  // only after Discord cleanup has cleared both archive ids.
   describe('hasLiveClips', () => {
     async function makeClip(guildId: string, status: ClipStatus) {
       await prisma.clip.create({

@@ -417,8 +417,8 @@ function upsertGuildArchiveConfigInTransaction(
 }
 
 /**
- * True if the guild has any live (non-tombstoned) Clip -- one whose archive
- * a channel reconfiguration could orphan.
+ * True if the guild has any live Clip or any Clip retaining an archive id --
+ * one whose workflow or Discord cleanup a channel reconfiguration could orphan.
  *
  * `/setup/save` uses this to refuse repointing `archiveChannelId` while it
  * is true (finding C3): the `Clip` row stores no archive channel id of its
@@ -430,14 +430,15 @@ function upsertGuildArchiveConfigInTransaction(
  * while both archive messages stay live and orphaned.
  *
  * `TOMBSTONE_STATUSES` is reused rather than re-deriving the same set from
- * `isTerminalStatus` in `lib/clip/state-machine.ts`: it already names
- * exactly "the statuses nothing transitions out of", which is precisely
- * "no archive left to orphan" here too.
+ * `isTerminalStatus` in `lib/clip/state-machine.ts`: it names exactly the
+ * statuses whose rows stop blocking once Discord cleanup has cleared both
+ * archive ids.
  *
  * This over-refuses on a PENDING or FAILED Clip, neither of which has
  * posted an archive yet -- deliberately: the cheap, correct-by-construction
- * guard is "any non-terminal row blocks it", not one that has to reason
- * about which live states already have a Discord side effect to protect.
+ * guard is "any non-terminal row or retained archive id blocks it", not one
+ * that has to reason about which live states already have a Discord side
+ * effect to protect.
  * Storing the archive channel per Clip, so a reconfiguration could never
  * orphan an existing one at all, is the real long-term fix; it is out of
  * scope today.
@@ -447,7 +448,14 @@ async function hasLiveClipsWithClient(
   guildId: string,
 ): Promise<boolean> {
   const clip = await client.clip.findFirst({
-    where: { guildId, status: { notIn: TOMBSTONE_STATUSES } },
+    where: {
+      guildId,
+      OR: [
+        { status: { notIn: TOMBSTONE_STATUSES } },
+        { archiveProvenanceMessageId: { not: null } },
+        { archiveForwardMessageId: { not: null } },
+      ],
+    },
     select: { guildId: true },
   });
   return clip !== null;

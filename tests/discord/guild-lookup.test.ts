@@ -49,10 +49,9 @@ function json(body: unknown, status = 200): StubResponse {
 type Call = { url: string; method: string; headers: Headers };
 
 /**
- * A fetch double keyed by which resource the URL addresses, rather than by
- * call order. The two GETs this module issues have no ordering relationship
- * to each other, so routing by call order would make the tests brittle to a
- * harmless reordering of the implementation.
+ * A fetch double that records the requested resource and fails on unexpected
+ * URLs, so the tests assert the lookup's HTTP boundary instead of returning a
+ * canned response regardless of what the implementation requested.
  */
 function stubFetch(routes: { channels?: StubResponse }) {
   const calls: Call[] = [];
