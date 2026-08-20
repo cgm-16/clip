@@ -198,5 +198,5 @@ export const WEB_COPY_AUTHORED = {
    * the record. The `/setup` token renders as a bordered mono chip, the same
    * treatment `WEB_COPY.expiredSetupLink.recovery` gives it.
    */
-  saveFailed: '정보를 저장할 수 없습니다. 다시 시도하거나, /setup으로 새로운 링크를 발급해 주세요.',
+  saveFailed: '정보를 저장할 수 없습니다. 다시 시도하거나, /setup 으로 새로운 링크를 발급해 주세요.',
 } as const;
