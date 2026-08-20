@@ -1,0 +1,29 @@
+/*
+ * The small square-mark + "Clip" lockup that heads both Screen A's card and
+ * Screen B's guild identity bar. Values: design/Clip P0 Screens.dc.html:27
+ * (Screen A), :44 (Screen B) — identical in both places.
+ */
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+/*
+ * The mockup's mark colour (#8b9096) has no matching token; --muted
+ * (#83888f) is the closest defined value and, being slightly lighter, never
+ * reduces contrast versus the mockup.
+ */
+.mark {
+  width: 9px;
+  height: 9px;
+  background: var(--muted);
+  border-radius: var(--radius-chip);
+  flex: none;
+}
+
+.name {
+  font: 600 14px / 1 var(--font-ui);
+  color: var(--text);
+  letter-spacing: -0.01em;
+}

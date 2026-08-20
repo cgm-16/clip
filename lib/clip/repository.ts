@@ -1,4 +1,4 @@
-import type { ClipStatus, Prisma } from '@/generated/prisma/client';
+import type { AuthorNotificationStatus, ClipStatus, Prisma } from '@/generated/prisma/client';
 import type { ArchiveMessageIds } from '@/lib/clip/types';
 import { prisma } from '@/lib/db';
 
@@ -16,6 +16,11 @@ export type ClipRecord = {
   archiveForwardMessageId: string | null;
 };
 
+export type GuildArchiveConfig = {
+  archiveChannelId: string;
+  allowedRoleIds: string[];
+};
+
 const clipRecordSelect = {
   guildId: true,
   sourceMessageId: true,
@@ -25,6 +30,21 @@ const clipRecordSelect = {
   archiveProvenanceMessageId: true,
   archiveForwardMessageId: true,
 } as const;
+
+const guildArchiveConfigSelect = {
+  archiveChannelId: true,
+  allowedRoles: { select: { roleId: true } },
+} as const;
+
+function guildArchiveConfigOf(config: {
+  archiveChannelId: string;
+  allowedRoles: { roleId: string }[];
+}): GuildArchiveConfig {
+  return {
+    archiveChannelId: config.archiveChannelId,
+    allowedRoleIds: config.allowedRoles.map((role) => role.roleId),
+  };
+}
 
 function clipKey(guildId: string, sourceMessageId: string) {
   return { guildId_sourceMessageId: { guildId, sourceMessageId } };
@@ -47,21 +67,37 @@ function clipKey(guildId: string, sourceMessageId: string) {
  * `clip.status`, since a claim whose follow-up work failed leaves a `PENDING`
  * row that a later caller still has to finish.
  */
-export async function claimClip(input: {
+type ClaimClipInput = {
   guildId: string;
   sourceMessageId: string;
   sourceChannelId: string;
   authorUserId: string;
-}): Promise<{ created: boolean; clip: ClipRecord }> {
-  const { count } = await prisma.clip.createMany({
+};
+
+async function claimClipWithClient(
+  client: Pick<TxClient, 'clip'>,
+  input: ClaimClipInput,
+): Promise<{ created: boolean; clip: ClipRecord }> {
+  const { count } = await client.clip.createMany({
     data: [input],
     skipDuplicates: true,
   });
-  const clip = await prisma.clip.findUniqueOrThrow({
+  const clip = await client.clip.findUniqueOrThrow({
     where: clipKey(input.guildId, input.sourceMessageId),
     select: clipRecordSelect,
   });
   return { created: count === 1, clip };
+}
+
+export function claimClip(input: ClaimClipInput): Promise<{ created: boolean; clip: ClipRecord }> {
+  return claimClipWithClient(prisma, input);
+}
+
+export function claimClipInTransaction(
+  tx: TxClient,
+  input: ClaimClipInput,
+): Promise<{ created: boolean; clip: ClipRecord }> {
+  return claimClipWithClient(tx, input);
 }
 
 /**
@@ -113,6 +149,37 @@ export function lockClip<T>(
       select: clipRecordSelect,
     });
     return fn(tx, clip);
+  });
+}
+
+/**
+ * Runs `fn` with the guild's archive configuration locked `FOR UPDATE`.
+ * Resolves to null without calling `fn` when setup has not created a row yet.
+ *
+ * As with `lockClip`, do no external I/O inside `fn` and use only the handed-in
+ * transaction client for database work. Clip claims and setup finalization use
+ * this same short lock so neither can act on a configuration the other changes
+ * before the claim commits.
+ */
+export function lockGuildConfig<T>(
+  guildId: string,
+  fn: (tx: TxClient, config: GuildArchiveConfig) => Promise<T>,
+): Promise<T | null> {
+  return prisma.$transaction(async (tx) => {
+    const locked = await tx.$executeRaw`
+      SELECT 1 FROM guild_configs
+      WHERE guild_id = ${guildId}
+      FOR UPDATE
+    `;
+    if (locked === 0) {
+      return null;
+    }
+
+    const config = await tx.guildConfig.findUniqueOrThrow({
+      where: { guildId },
+      select: guildArchiveConfigSelect,
+    });
+    return fn(tx, guildArchiveConfigOf(config));
   });
 }
 
@@ -311,19 +378,209 @@ export async function deleteClipWithClippers(
   await tx.clip.delete({ where: clipKey(guildId, sourceMessageId) });
 }
 
+/**
+ * Persists the chosen archive destination for a guild, creating the config row
+ * on first setup and overwriting it in place on a repeat visit.
+ *
+ * An upsert, never a check-then-insert: `/setup` can be re-run for a guild
+ * that already completed it (a still-live setup token, or a later reconfigure
+ * screen), and this must update the one row rather than duplicate or crash on
+ * the primary key.
+ */
+type UpsertGuildArchiveConfigInput = {
+  guildId: string;
+  archiveChannelId: string;
+  configuredByUserId: string;
+};
+
+async function upsertGuildArchiveConfigWithClient(
+  client: Pick<TxClient, 'guildConfig'>,
+  input: UpsertGuildArchiveConfigInput,
+): Promise<void> {
+  const { guildId, archiveChannelId, configuredByUserId } = input;
+  await client.guildConfig.upsert({
+    where: { guildId },
+    create: { guildId, archiveChannelId, configuredByUserId },
+    update: { archiveChannelId, configuredByUserId },
+  });
+}
+
+export function upsertGuildArchiveConfig(input: UpsertGuildArchiveConfigInput): Promise<void> {
+  return upsertGuildArchiveConfigWithClient(prisma, input);
+}
+
+function upsertGuildArchiveConfigInTransaction(
+  tx: TxClient,
+  input: UpsertGuildArchiveConfigInput,
+): Promise<void> {
+  return upsertGuildArchiveConfigWithClient(tx, input);
+}
+
+/**
+ * True if the guild has any live Clip or any Clip retaining an archive id --
+ * one whose workflow or Discord cleanup a channel reconfiguration could orphan.
+ *
+ * `/setup/save` uses this to refuse repointing `archiveChannelId` while it
+ * is true (finding C3): the `Clip` row stores no archive channel id of its
+ * own, only `GuildConfig.archiveChannelId` at the guild level, so once that
+ * is repointed a live Clip's archive messages are still sitting in the old
+ * channel with nothing in the database able to address them -- author
+ * removal would then delete by the *new* channel id against the *old*
+ * message ids, get back Discord's 10008, and silently tombstone the row
+ * while both archive messages stay live and orphaned.
+ *
+ * `TOMBSTONE_STATUSES` is reused rather than re-deriving the same set from
+ * `isTerminalStatus` in `lib/clip/state-machine.ts`: it names exactly the
+ * statuses whose rows stop blocking once Discord cleanup has cleared both
+ * archive ids.
+ *
+ * This over-refuses on a PENDING or FAILED Clip, neither of which has
+ * posted an archive yet -- deliberately: the cheap, correct-by-construction
+ * guard is "any non-terminal row or retained archive id blocks it", not one
+ * that has to reason about which live states already have a Discord side
+ * effect to protect.
+ * Storing the archive channel per Clip, so a reconfiguration could never
+ * orphan an existing one at all, is the real long-term fix; it is out of
+ * scope today.
+ */
+async function hasLiveClipsWithClient(
+  client: Pick<TxClient, 'clip'>,
+  guildId: string,
+): Promise<boolean> {
+  const clip = await client.clip.findFirst({
+    where: {
+      guildId,
+      OR: [
+        { status: { notIn: TOMBSTONE_STATUSES } },
+        { archiveProvenanceMessageId: { not: null } },
+        { archiveForwardMessageId: { not: null } },
+      ],
+    },
+    select: { guildId: true },
+  });
+  return clip !== null;
+}
+
+export function hasLiveClips(guildId: string): Promise<boolean> {
+  return hasLiveClipsWithClient(prisma, guildId);
+}
+
+function hasLiveClipsInTransaction(tx: TxClient, guildId: string): Promise<boolean> {
+  return hasLiveClipsWithClient(tx, guildId);
+}
+
+/**
+ * Persists setup after Discord work, rechecking a reconfiguration against the
+ * Clip rows while holding the same guild lock used by canonical Clip claims.
+ */
+export async function finalizeGuildArchiveConfig(
+  input: UpsertGuildArchiveConfigInput,
+): Promise<{ kind: 'SAVED' } | { kind: 'CONFLICT' }> {
+  const outcome = await lockGuildConfig(input.guildId, async (tx, config) => {
+    if (
+      config.archiveChannelId !== input.archiveChannelId &&
+      (await hasLiveClipsInTransaction(tx, input.guildId))
+    ) {
+      return { kind: 'CONFLICT' as const };
+    }
+    await upsertGuildArchiveConfigInTransaction(tx, input);
+    return { kind: 'SAVED' as const };
+  });
+  if (outcome !== null) {
+    return outcome;
+  }
+
+  // There is no row to lock on first setup. Simultaneous first setup is a
+  // separate problem; preserve the existing database upsert path here.
+  await upsertGuildArchiveConfig(input);
+  return { kind: 'SAVED' };
+}
+
+/**
+ * The number of Clips currently archived for a guild -- Screen C's `보관된
+ * 메시지` count. `ACTIVE` only: a tombstoned Clip is no longer preserved, and
+ * one whose Discord copy has vanished (Screen D's `누락` row) is still
+ * `ACTIVE` -- the archive *record* survives even when the Discord message
+ * does not, so it still counts as archived.
+ */
+export function countArchivedClips(guildId: string): Promise<number> {
+  return prisma.clip.count({ where: { guildId, status: 'ACTIVE' } });
+}
+
 /** Reads for the service. Null when the guild has never completed setup. */
 export async function findGuildArchiveConfig(
   guildId: string,
-): Promise<{ archiveChannelId: string; allowedRoleIds: string[] } | null> {
-  const config = await prisma.guildConfig.findUnique({
+): Promise<GuildArchiveConfig | null> {
+  return findGuildArchiveConfigWithClient(prisma, guildId);
+}
+
+async function findGuildArchiveConfigWithClient(
+  client: Pick<TxClient, 'guildConfig'>,
+  guildId: string,
+): Promise<GuildArchiveConfig | null> {
+  const config = await client.guildConfig.findUnique({
     where: { guildId },
-    select: { archiveChannelId: true, allowedRoles: { select: { roleId: true } } },
+    select: guildArchiveConfigSelect,
   });
   if (config === null) {
     return null;
   }
-  return {
-    archiveChannelId: config.archiveChannelId,
-    allowedRoleIds: config.allowedRoles.map((role) => role.roleId),
-  };
+  return guildArchiveConfigOf(config);
+}
+
+/**
+ * Claims the first-clip author DM for the caller, atomically.
+ *
+ * The claim writes `UNDELIVERABLE`, not `DELIVERED`: the send has not
+ * happened yet, and a process that dies between the claim and the Discord
+ * round-trip must not leave a row that lies about delivery. `UNDELIVERABLE`
+ * is always a safe thing for that row to say -- worst case a member never
+ * gets the DM, which spec §11.1 already treats as best-effort -- where
+ * `DELIVERED` would be an unrecoverable false claim. A successful send flips
+ * it forward with `markAuthorNotificationDelivered` below.
+ *
+ * The conditional `updateMany` is the whole guard: Postgres serializes two
+ * concurrent updates to the same row, so at most one caller ever observes
+ * `count === 1` and only that caller may send. A retry or a restart that
+ * calls this again after the first claim finds the row already
+ * non-`PENDING` and gets `null`, which is this function's "do not send"
+ * answer -- the persisted status is the guard, not anything held in memory.
+ *
+ * Returns null when there is nothing to claim, whether because the Clip does
+ * not exist or because a DM was already claimed for it.
+ */
+export async function claimAuthorNotification(
+  guildId: string,
+  sourceMessageId: string,
+): Promise<{ authorUserId: string; sourceChannelId: string } | null> {
+  const { count } = await prisma.clip.updateMany({
+    where: { guildId, sourceMessageId, authorNotificationStatus: 'PENDING' satisfies AuthorNotificationStatus },
+    data: { authorNotificationStatus: 'UNDELIVERABLE' satisfies AuthorNotificationStatus },
+  });
+  if (count !== 1) {
+    return null;
+  }
+  const clip = await prisma.clip.findUniqueOrThrow({
+    where: clipKey(guildId, sourceMessageId),
+    select: { authorUserId: true, sourceChannelId: true },
+  });
+  return clip;
+}
+
+/**
+ * Records that the DM claimed by `claimAuthorNotification` was sent.
+ *
+ * Guarded the same way `claimAuthorNotification` claims: only a row this
+ * caller's own claim left at `UNDELIVERABLE` moves to `DELIVERED`, so a
+ * caller that lost the claim (and therefore never sent) cannot overwrite a
+ * status some other request already settled.
+ */
+export async function markAuthorNotificationDelivered(
+  guildId: string,
+  sourceMessageId: string,
+): Promise<void> {
+  await prisma.clip.updateMany({
+    where: { guildId, sourceMessageId, authorNotificationStatus: 'UNDELIVERABLE' satisfies AuthorNotificationStatus },
+    data: { authorNotificationStatus: 'DELIVERED' satisfies AuthorNotificationStatus },
+  });
 }

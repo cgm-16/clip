@@ -1,0 +1,65 @@
+/*
+ * Values: docs/06_DESIGN_HANDOFF.md "Buttons"; design/Clip Design System.dc.html
+ * button swatches (lines 171-193). Primary's horizontal padding is on the 4px
+ * scale (--sp-4); secondary/danger's is not (--sp-btn-x). Focus is the global
+ * `:focus-visible` rule in app/globals.css — nothing here duplicates it.
+ */
+.button {
+  font: 500 var(--fs-label) / 1 var(--font-ui);
+  border-radius: var(--radius);
+  border: var(--hairline) solid transparent;
+  padding: var(--sp-control-y) var(--sp-btn-x);
+  cursor: pointer;
+  transition: background-color 120ms, border-color 120ms, color 120ms;
+}
+
+.primary {
+  padding-left: var(--sp-4);
+  padding-right: var(--sp-4);
+  background: var(--btn-primary-bg);
+  border-color: var(--btn-primary-bg);
+  color: var(--btn-primary-fg);
+}
+.primary:hover:not(:disabled) {
+  background: var(--btn-primary-bg-hover);
+  border-color: var(--btn-primary-bg-hover);
+}
+.primary:disabled {
+  background: var(--btn-disabled-bg);
+  border-color: var(--btn-disabled-bg);
+  color: var(--faint);
+  cursor: not-allowed;
+}
+
+.secondary {
+  background: transparent;
+  border-color: var(--border-strong);
+  color: var(--text-2);
+}
+.secondary:hover:not(:disabled) {
+  /*
+   * The handoff's hover border (#3a3f46) has no token and tokens.css is not
+   * ours to extend with new colours beyond the two the design ruling
+   * authorized (--accent-text-2, --success-text-2). --border-strong is the
+   * same border already used at rest; the background and text-colour shift
+   * still carry the 120ms hover transition.
+   */
+  background: var(--btn-disabled-bg);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.secondary:disabled {
+  border-color: var(--border);
+  color: var(--faint);
+  cursor: not-allowed;
+}
+
+.danger {
+  background: var(--error-surface);
+  border-color: var(--error-border);
+  color: var(--error-text);
+}
+.danger:disabled {
+  color: var(--faint);
+  cursor: not-allowed;
+}

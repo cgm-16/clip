@@ -17,16 +17,51 @@ spec:
         runAsNonRoot: true
         runAsUser: 1001
 
-      # No migration initContainer yet, deliberately. Wave 0 ships no Prisma
-      # schema, so there is nothing to migrate, and the runtime image contains
-      # only the Next.js standalone bundle — no Prisma CLI and no migration SQL.
-      # An initContainer running `prisma migrate deploy` against this image
-      # would crash-loop. It lands with Wave 1, together with the schema and a
-      # Dockerfile stage that carries the migration tooling.
+      # `prisma migrate deploy` runs to completion before the app container
+      # starts. It is forward-only and idempotent, so running it on every pod
+      # start is safe; a non-zero exit here blocks the app container from
+      # starting at all, rather than letting it serve against a stale schema.
+      # Same image as the app — the Dockerfile bundles the Prisma CLI and its
+      # own dependency closure alongside the standalone server, so migration
+      # tooling can never drift out of sync with the code it migrates for.
+      initContainers:
+        - name: migrate
+          # Rendered from the same release-image placeholder as the app
+          # container below. The renderer requires exactly two identical Clip
+          # image values, keeping migrations and application code on one build.
+          #
+          # The tag must also name an image built from a commit that already
+          # contains this Dockerfile's `migrate-deps` stage (this branch adds
+          # it). An image built from an earlier commit has no /migrate path
+          # at all, and this initContainer's `command` below fails to find
+          # it, landing the pod in Init:CrashLoopBackOff before the app
+          # container ever starts. See finding C1: this repo was caught
+          # pinned to `sha-63a0ce1`, the wave base commit, for exactly this
+          # reason -- confirm the image was built from a commit with
+          # `/migrate` before bumping either tag.
+          image: __CLIP_RELEASE_IMAGE__
+          # Everything the migration needs lives under /migrate, away from the
+          # standalone server's own traced node_modules. Running from /app fails
+          # with "Cannot find module 'prisma/config'": prisma.config.ts imports
+          # from the prisma package, and that only resolves next to it. The
+          # config is where the datasource URL comes from -- schema.prisma
+          # declares no `url` of its own.
+          workingDir: /migrate
+          command: ["node", "/migrate/node_modules/prisma/build/index.js", "migrate", "deploy"]
+          env:
+            # Same secret and key the app container reads its own
+            # DATABASE_URL from.
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: clip-db-app
+                  key: uri
 
       containers:
         - name: clip
-          image: ghcr.io/cgm-16/clip:latest
+          # Rendered from the same release-image placeholder as `migrate`;
+          # the renderer rejects a manifest whose two image values differ.
+          image: __CLIP_RELEASE_IMAGE__
           ports:
             - containerPort: 3000
 

@@ -1,0 +1,19 @@
+/*
+ * A generic labelled group. Values: design/Clip Design System.dc.html
+ * "보관 위치" / "클립 허용 역할" groups (legend `font:500 11px`, legend-to-content
+ * `gap:8px` — on the 4px scale, so --sp-2, not a new token).
+ */
+.fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.legend {
+  padding: 0;
+  font: 500 11px / 1 var(--font-ui);
+  color: var(--muted);
+}

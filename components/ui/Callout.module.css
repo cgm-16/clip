@@ -1,0 +1,52 @@
+/*
+ * Values: docs/06_DESIGN_HANDOFF.md "Status callouts"; design/Clip P0
+ * Screens.dc.html lines 39-40 (NOTE), 100-102 (NOTE), 155-156 (OK). Tag and
+ * body share one colour per the mockups, so `color` is set once on the
+ * container and both children inherit it (see TextTag).
+ */
+.callout {
+  display: flex;
+  gap: var(--sp-inline-gap);
+  align-items: flex-start;
+  padding: var(--sp-callout-y) var(--sp-3);
+  border: var(--hairline) solid;
+  border-radius: var(--radius);
+}
+
+/* The mockup nudges the tag down 1px to sit on the body text's baseline;
+   TextTag itself stays alignment-agnostic since standalone uses (READY, 누락)
+   don't want it. */
+.tag {
+  padding-top: 1px;
+}
+
+.copy {
+  margin: 0;
+  font: 400 11.5px / 1.6 var(--font-ui);
+  color: inherit;
+  text-wrap: pretty;
+}
+
+.note {
+  border-color: var(--accent-border);
+  background: var(--accent-surface);
+  color: var(--accent-text-2);
+}
+
+.ok {
+  border-color: var(--success-border);
+  background: var(--success-surface);
+  color: var(--success-text-2);
+}
+
+.confirm {
+  border-color: var(--warning-border);
+  background: var(--warning-surface);
+  color: var(--warning-text);
+}
+
+.error {
+  border-color: var(--error-border);
+  background: var(--error-surface);
+  color: var(--error-text);
+}

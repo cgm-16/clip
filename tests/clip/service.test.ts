@@ -1,5 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
+import {
+  addClipper,
+  claimClip,
+  finalizeGuildArchiveConfig,
+  hasLiveClips,
+  lockClip,
+  markFailed,
+} from '@/lib/clip/repository';
 import { createClipService } from '@/lib/clip/service';
 import {
   ArchiveCreationFailedError,
@@ -132,6 +140,7 @@ describe('clip service', () => {
     });
     expect(gateway.createCalls).toEqual([
       {
+        guildId: fixture.guildId,
         archiveChannelId: fixture.archiveChannelId,
         sourceChannelId: fixture.sourceChannelId,
         sourceMessageId: fixture.sourceMessageId,
@@ -314,6 +323,43 @@ describe('clip service', () => {
     expect(await countClipperRows(fixture)).toBe(0);
   });
 
+  test.each(['PENDING', 'FAILED'] as const)(
+    'allows the source author to remove an archive-less %s Clip and clear the live blocker',
+    async (status) => {
+      const fixture = await seedConfiguredGuild();
+      const clipperUserId = fakeSnowflake();
+      await claimClip({
+        guildId: fixture.guildId,
+        sourceMessageId: fixture.sourceMessageId,
+        sourceChannelId: fixture.sourceChannelId,
+        authorUserId: fixture.sourceAuthorUserId,
+      });
+      await lockClip(fixture.guildId, fixture.sourceMessageId, async (tx) => {
+        await addClipper(tx, {
+          guildId: fixture.guildId,
+          sourceMessageId: fixture.sourceMessageId,
+          clipperUserId,
+        });
+        if (status === 'FAILED') {
+          await markFailed(tx, fixture.guildId, fixture.sourceMessageId);
+        }
+      });
+
+      const result = await service.removeByAuthorOrAdmin({
+        guildId: fixture.guildId,
+        sourceMessageId: fixture.sourceMessageId,
+        invokerUserId: fixture.sourceAuthorUserId,
+        invokerHasManageGuild: false,
+      });
+
+      expect(result).toEqual({ kind: 'REMOVED' });
+      expect((await readClip(fixture))?.status).toBe('REMOVED_BY_AUTHOR');
+      expect(await hasLiveClips(fixture.guildId)).toBe(false);
+      expect(gateway.deleteCalls).toHaveLength(0);
+      expect(await countClipperRows(fixture)).toBe(0);
+    },
+  );
+
   test('author removal deletes the archive and leaves a tombstone that blocks recreation', async () => {
     const fixture = await seedConfiguredGuild();
     await service.clip(clipInput(fixture, fakeSnowflake()));
@@ -424,6 +470,57 @@ describe('clip service', () => {
     // keep naming the removal that actually happened.
     expect(tombstone?.status).toBe('REMOVED_BY_AUTHOR');
     expect(tombstone?.removedAt).toEqual(stranded?.removedAt);
+  });
+
+  test('reconfiguration waits until a failed removal retry clears its archive ids', async () => {
+    const fixture = await seedConfiguredGuild();
+    const replacementArchiveChannelId = fakeSnowflake();
+    const replacementConfiguredByUserId = fakeSnowflake();
+    await service.clip(clipInput(fixture, fakeSnowflake()));
+    gateway.failNextDelete(new Error('discord unavailable'));
+
+    const removeInput = {
+      guildId: fixture.guildId,
+      sourceMessageId: fixture.sourceMessageId,
+      invokerUserId: fixture.sourceAuthorUserId,
+      invokerHasManageGuild: false,
+    };
+    expect(await service.removeByAuthorOrAdmin(removeInput)).toEqual({ kind: 'REMOVED' });
+    expect(await readClip(fixture)).toMatchObject({
+      status: 'REMOVED_BY_AUTHOR',
+      archiveProvenanceMessageId: 'provenance-1',
+      archiveForwardMessageId: 'forward-1',
+    });
+
+    expect(
+      await finalizeGuildArchiveConfig({
+        guildId: fixture.guildId,
+        archiveChannelId: replacementArchiveChannelId,
+        configuredByUserId: replacementConfiguredByUserId,
+      }),
+    ).toEqual({ kind: 'CONFLICT' });
+    expect(
+      (await prisma.guildConfig.findUniqueOrThrow({ where: { guildId: fixture.guildId } }))
+        .archiveChannelId,
+    ).toBe(fixture.archiveChannelId);
+
+    expect(await service.removeByAuthorOrAdmin(removeInput)).toEqual({ kind: 'REMOVED' });
+    expect(await readClip(fixture)).toMatchObject({
+      status: 'REMOVED_BY_AUTHOR',
+      archiveProvenanceMessageId: null,
+      archiveForwardMessageId: null,
+    });
+    expect(
+      await finalizeGuildArchiveConfig({
+        guildId: fixture.guildId,
+        archiveChannelId: replacementArchiveChannelId,
+        configuredByUserId: replacementConfiguredByUserId,
+      }),
+    ).toEqual({ kind: 'SAVED' });
+    expect(
+      (await prisma.guildConfig.findUniqueOrThrow({ where: { guildId: fixture.guildId } }))
+        .archiveChannelId,
+    ).toBe(replacementArchiveChannelId);
   });
 
   test('a failed archive creation stays FAILED and a retry reaches ACTIVE', async () => {

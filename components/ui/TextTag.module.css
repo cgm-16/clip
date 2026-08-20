@@ -1,0 +1,16 @@
+/*
+ * The leading text tag every state carries (NOTE / OK / 확인 / 오류 / 누락 /
+ * READY). State is never signalled by colour alone, so this component is
+ * intentionally colour-agnostic: it inherits its colour from an ancestor
+ * (e.g. Callout sets `color` on the callout container) unless the `color`
+ * prop is passed for a standalone use.
+ *
+ * Values: design/Clip Design System.dc.html status-callout swatch
+ * (`font:500 10px/1.4 'JetBrains Mono',monospace;letter-spacing:0.08em`).
+ */
+.tag {
+  font: 500 var(--fs-micro) / 1.4 var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: inherit;
+}

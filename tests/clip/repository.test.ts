@@ -1,21 +1,28 @@
 import { randomUUID } from 'node:crypto';
 import { afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
+import type { ClipStatus } from '@/generated/prisma/client';
 import type { prisma as PrismaSingleton } from '@/lib/db';
 import {
   addClipper,
   claimClip,
+  claimClipInTransaction,
   clearArchiveMessageIds,
+  countArchivedClips,
   countClippers,
   deleteClipWithClippers,
   deleteClippers,
+  finalizeGuildArchiveConfig,
   findGuildArchiveConfig,
+  hasLiveClips,
   lockClip,
+  lockGuildConfig,
   markActive,
   markDeleting,
   markFailed,
   markRemovedByAdmin,
   markRemovedByAuthor,
   removeClipper,
+  upsertGuildArchiveConfig,
 } from '@/lib/clip/repository';
 
 const CONCURRENT_CLAIMERS = 10;
@@ -508,5 +515,168 @@ describe('clip repository', () => {
 
   test('findGuildArchiveConfig returns null for a guild that never completed setup', async () => {
     expect(await findGuildArchiveConfig(fakeSnowflake())).toBeNull();
+  });
+
+  test('upsertGuildArchiveConfig overwrites in place on a repeat call for the same guild, never duplicates', async () => {
+    const guildId = trackedGuildId();
+    const userId = fakeSnowflake();
+    const firstChannelId = fakeSnowflake();
+    const secondChannelId = fakeSnowflake();
+
+    await upsertGuildArchiveConfig({
+      guildId,
+      archiveChannelId: firstChannelId,
+      configuredByUserId: userId,
+    });
+    await upsertGuildArchiveConfig({
+      guildId,
+      archiveChannelId: secondChannelId,
+      configuredByUserId: userId,
+    });
+
+    const rows = await prisma.guildConfig.findMany({ where: { guildId } });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].archiveChannelId).toBe(secondChannelId);
+  });
+
+  test('prevents reconfiguration between a Clip config read and its canonical claim', async () => {
+    const guildId = trackedGuildId();
+    const oldChannelId = fakeSnowflake();
+    const newChannelId = fakeSnowflake();
+    const configuredByUserId = fakeSnowflake();
+    const input = {
+      guildId,
+      sourceMessageId: fakeSnowflake(),
+      sourceChannelId: fakeSnowflake(),
+      authorUserId: fakeSnowflake(),
+    };
+    await upsertGuildArchiveConfig({
+      guildId,
+      archiveChannelId: oldChannelId,
+      configuredByUserId,
+    });
+    await warmConnectionPool(2);
+
+    const clipHasReadConfig = Promise.withResolvers<void>();
+    const releaseClipClaim = Promise.withResolvers<void>();
+    const claimPromise = lockGuildConfig(guildId, async (tx, config) => {
+      expect(config.archiveChannelId).toBe(oldChannelId);
+      clipHasReadConfig.resolve();
+      await releaseClipClaim.promise;
+      return claimClipInTransaction(tx, input);
+    });
+
+    await clipHasReadConfig.promise;
+    const finalizePromise = finalizeGuildArchiveConfig({
+      guildId,
+      archiveChannelId: newChannelId,
+      configuredByUserId,
+    });
+
+    let blockedLockConditionError: unknown;
+    try {
+      await vi.waitFor(
+        async () => {
+          const [activity] = await prisma.$queryRaw<Array<{ blocked: boolean }>>`
+            SELECT EXISTS (
+              SELECT 1
+              FROM pg_stat_activity
+              WHERE datname = current_database()
+                AND usename = current_user
+                AND pid <> pg_backend_pid()
+                AND state = 'active'
+                AND wait_event_type = 'Lock'
+                AND query LIKE '%guild_configs%'
+                AND query LIKE '%FOR UPDATE%'
+            ) AS blocked
+          `;
+          expect(activity?.blocked).toBe(true);
+        },
+        { timeout: 2_000, interval: 10 },
+      );
+    } catch (error) {
+      blockedLockConditionError = error;
+    } finally {
+      releaseClipClaim.resolve();
+    }
+
+    const [claim, finalize] = await Promise.all([claimPromise, finalizePromise]);
+    if (blockedLockConditionError !== undefined) {
+      throw blockedLockConditionError;
+    }
+    const persistedConfig = await prisma.guildConfig.findUniqueOrThrow({ where: { guildId } });
+
+    expect(claim?.created).toBe(true);
+    expect(finalize).toEqual({ kind: 'CONFLICT' });
+    expect(persistedConfig.archiveChannelId).toBe(oldChannelId);
+    expect(await prisma.clip.count({ where: { guildId } })).toBe(1);
+  });
+
+  test('countArchivedClips counts only ACTIVE clips for the guild', async () => {
+    const guildId = trackedGuildId();
+
+    async function makeClip(status: ClipStatus) {
+      await prisma.clip.create({
+        data: {
+          guildId,
+          sourceMessageId: fakeSnowflake(),
+          sourceChannelId: fakeSnowflake(),
+          authorUserId: fakeSnowflake(),
+          status,
+          // ACTIVE requires non-null archive ids (clips_active_requires_archive).
+          archiveProvenanceMessageId: status === 'ACTIVE' ? fakeSnowflake() : null,
+          archiveForwardMessageId: status === 'ACTIVE' ? fakeSnowflake() : null,
+        },
+      });
+    }
+
+    await makeClip('ACTIVE');
+    await makeClip('ACTIVE');
+    await makeClip('PENDING');
+    await makeClip('REMOVED_BY_AUTHOR');
+
+    expect(await countArchivedClips(guildId)).toBe(2);
+  });
+
+  // Finding C3: `/setup/save` must refuse to repoint a guild's archive
+  // channel while any Clip could still be addressed through the old one --
+  // `hasLiveClips` is that guard's whole basis, so tombstones stop counting
+  // only after Discord cleanup has cleared both archive ids.
+  describe('hasLiveClips', () => {
+    async function makeClip(guildId: string, status: ClipStatus) {
+      await prisma.clip.create({
+        data: {
+          guildId,
+          sourceMessageId: fakeSnowflake(),
+          sourceChannelId: fakeSnowflake(),
+          authorUserId: fakeSnowflake(),
+          status,
+          archiveProvenanceMessageId: status === 'ACTIVE' ? fakeSnowflake() : null,
+          archiveForwardMessageId: status === 'ACTIVE' ? fakeSnowflake() : null,
+        },
+      });
+    }
+
+    test('false for a guild with no Clip rows at all', async () => {
+      expect(await hasLiveClips(trackedGuildId())).toBe(false);
+    });
+
+    test('false when every Clip is tombstoned (REMOVED_BY_AUTHOR / REMOVED_BY_ADMIN)', async () => {
+      const guildId = trackedGuildId();
+      await makeClip(guildId, 'REMOVED_BY_AUTHOR');
+      await makeClip(guildId, 'REMOVED_BY_ADMIN');
+
+      expect(await hasLiveClips(guildId)).toBe(false);
+    });
+
+    test.each<ClipStatus>(['PENDING', 'FAILED', 'ACTIVE', 'DELETING'])(
+      'true when a %s Clip exists',
+      async (status) => {
+        const guildId = trackedGuildId();
+        await makeClip(guildId, status);
+
+        expect(await hasLiveClips(guildId)).toBe(true);
+      },
+    );
   });
 });

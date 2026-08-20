@@ -43,6 +43,7 @@ next-env.d.ts
 # clip — additions on top of the create-next-app defaults
 !.env.example
 k8s/secret.yaml
+k8s/rendered/
 test-results/
 playwright-report/
 .claude/settings.local.json

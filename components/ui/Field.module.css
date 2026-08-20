@@ -1,0 +1,23 @@
+/*
+ * Shared label/error styling for TextInput and Select — the two primitives
+ * that pair a `<label>` with one control and an optional error message.
+ * Values: design/Clip Design System.dc.html "입력 · 선택" swatches (label
+ * `font:500 11px`, group `gap:6px`); docs/06_DESIGN_HANDOFF.md "Inputs"
+ * (error message `11px #e9a3a3`).
+ */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-field-gap);
+}
+
+.label {
+  font: 500 11px / 1 var(--font-ui);
+  color: var(--muted);
+}
+
+.error {
+  margin: 0;
+  font: 400 11px / 1.5 var(--font-ui);
+  color: var(--error-text);
+}
