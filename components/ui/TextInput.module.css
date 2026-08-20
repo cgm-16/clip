@@ -1,0 +1,46 @@
+/*
+ * Values: docs/06_DESIGN_HANDOFF.md "Inputs"; design/Clip Design System.dc.html
+ * lines 209 (rest), 213 (focus), 217 (error), 222 (disabled).
+ *
+ * Focus: the global `:focus-visible` rule in app/globals.css already applies
+ * (2px outline, 2px offset) — this only adds the border-colour change the
+ * mockup also shows. The mockup's focused input uses `outline-offset:1px`;
+ * that 1px difference from the global 2px is a deliberate non-override, not
+ * an oversight — duplicating the outline rule per-component to save 1px of
+ * offset is not worth the specificity duplication CLAUDE.md warns against.
+ */
+.input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--sp-control-y) var(--sp-control-x);
+  background: var(--sunken);
+  border: var(--hairline) solid var(--border-strong);
+  border-radius: var(--radius);
+  font: 400 var(--fs-label) / 1 var(--font-ui);
+  color: var(--text);
+}
+.input::placeholder {
+  /* Placeholders in an *enabled* input are readable text, not disabled
+     content — the handoff calls this out explicitly as a defect to never
+     reintroduce, so --muted here, not --faint. */
+  color: var(--muted);
+}
+.input:focus-visible {
+  border-color: var(--accent);
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.inputError {
+  border-color: var(--danger-solid);
+}
+
+.input:disabled {
+  background: var(--sunken);
+  border-color: var(--border);
+  color: var(--faint);
+  cursor: not-allowed;
+}

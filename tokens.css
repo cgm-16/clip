@@ -18,10 +18,12 @@
 
   --accent: #4a5a8c;
   --accent-text: #8f9fd6;
+  --accent-text-2: #aeb9dc;  /* NOTE callout tag + body, on --accent-surface. design/Clip P0 Screens.dc.html:101-102 */
   --accent-surface: #131721;
   --accent-border: #3b4560;
 
   --success-text: #86c1a1;
+  --success-text-2: #9ccdb3;  /* OK callout tag + body, on --success-surface. design/Clip P0 Screens.dc.html:155-156 */
   --success-surface: #111a15;
   --success-border: #2f4d3d;
   --warning-text: #d6bb8f;
@@ -53,6 +55,22 @@
 
   --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
   --sp-5: 20px; --sp-6: 24px; --sp-8: 32px; --sp-12: 48px;
+
+  /*
+   * Off-scale values the mockups actually use for form-control primitives.
+   * The 4px scale above covers layout rhythm; these are component-internal
+   * padding/gaps the handoff's own component swatches specify precisely.
+   * Named by role, not by pixel value, since some coincide numerically
+   * (e.g. --sp-control-y and --sp-inline-gap are both 10px) but are
+   * independent design decisions that happen to agree today.
+   */
+  --sp-control-y: 10px;   /* button/input/select/radio-row vertical padding. design/Clip Design System.dc.html:171 (button), 209 (input), 245 (radio) */
+  --sp-control-x: 11px;   /* input/select/radio-row horizontal padding. design/Clip Design System.dc.html:209, 226, 245 */
+  --sp-btn-x: 14px;       /* secondary/danger button horizontal padding (primary reuses --sp-4). design/Clip Design System.dc.html:179,192,193; corroborated design/Clip P0 Screens.dc.html:271,275 */
+  --sp-field-gap: 6px;    /* gap between a field's label and its control. design/Clip Design System.dc.html:206 */
+  --sp-inline-gap: 10px;  /* gap between a leading marker (tag/radio dot) and its text. design/Clip Design System.dc.html:243 (radio), 484 (callout) */
+  --sp-callout-y: 11px;   /* callout vertical padding (horizontal reuses --sp-3). docs/06_DESIGN_HANDOFF.md "Status callouts"; design/Clip P0 Screens.dc.html:100 */
+  --sp-chip-x: 7px;       /* bordered mono chip horizontal padding (vertical reuses --sp-1). design/Clip P0 Screens.dc.html:151 */
 
   --radius: 2px;
   --radius-chip: 1px;

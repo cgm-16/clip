@@ -1,0 +1,13 @@
+/*
+ * The bordered mono chip (the "Clip" token in the setup-complete usage step).
+ * Values: design/Clip P0 Screens.dc.html line 151
+ * (`font:500 12.5px/1 'JetBrains Mono';border:1px solid #2f3339;border-radius:1px;padding:4px 7px`).
+ */
+.chip {
+  display: inline-block;
+  font: 500 var(--fs-label) / 1 var(--font-mono);
+  color: var(--text);
+  border: var(--hairline) solid var(--border-strong);
+  border-radius: var(--radius-chip);
+  padding: var(--sp-1) var(--sp-chip-x);
+}

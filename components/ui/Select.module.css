@@ -1,0 +1,32 @@
+/*
+ * Same box as TextInput (design/Clip Design System.dc.html:226). The mockup
+ * draws its own `▾` glyph because it is a static `<span>`, not a real
+ * control; a real `<select>` keeps the browser's native dropdown arrow
+ * rather than stripping it with `appearance: none` and leaving no affordance
+ * in its place.
+ */
+.select {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--sp-control-y) var(--sp-control-x);
+  background: var(--sunken);
+  border: var(--hairline) solid var(--border-strong);
+  border-radius: var(--radius);
+  font: 400 var(--fs-label) / 1 var(--font-ui);
+  color: var(--text);
+}
+.select:focus-visible {
+  border-color: var(--accent);
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.select:disabled {
+  background: var(--sunken);
+  border-color: var(--border);
+  color: var(--faint);
+  cursor: not-allowed;
+}
