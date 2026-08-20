@@ -4,7 +4,7 @@
 
 Discord keeps the archived content. Clip's database keeps only the control state needed to operate the archive correctly.
 
-> **Status: P0 shipped in reduced scope, deployed and live.** The Discord path — setup, Clip, Unclip, author/admin removal — is built, tested and running at `https://clipendpoint.cc`. The read-only web archive (Wave 5) was deliberately cut against the 2026-08-20 deadline. [What is built](#what-is-built) states exactly what exists, what was cut and by whose decision; [docs/04_ASSIGNMENT_CUMULATIVE_SNAPSHOT.md](docs/04_ASSIGNMENT_CUMULATIVE_SNAPSHOT.md) is the append-only evidence log behind every claim here.
+> **Status: P0 shipped in reduced scope, deployed and live.** The Discord path — setup, Clip, Unclip, author/admin removal — is built, tested and running at `https://clipendpoint.cc`. The read-only web archive (Wave 5) was deliberately cut against the 2026-08-20 deadline. [What is built](#what-is-built) states exactly what exists, what was cut and by whose decision; [docs/07_ASSIGNMENT_ANSWERS.md](docs/07_ASSIGNMENT_ANSWERS.md) holds the four assignment answers; [docs/04_ASSIGNMENT_CUMULATIVE_SNAPSHOT.md](docs/04_ASSIGNMENT_CUMULATIVE_SNAPSHOT.md) is the append-only evidence log behind every claim here.
 
 ---
 
@@ -245,6 +245,7 @@ Failures were recorded when they happened, not summarized afterwards, and the lo
 | [docs/02_CLIP_IMPLEMENTATION_PLAN.md](docs/02_CLIP_IMPLEMENTATION_PLAN.md) | Waves, tasks, tests, verification gates |
 | [docs/03_CLIP_RESEARCH_DECISION_LOG.md](docs/03_CLIP_RESEARCH_DECISION_LOG.md) | Why Clip, competitor attacks, rejected alternatives, reversals |
 | [docs/04_ASSIGNMENT_CUMULATIVE_SNAPSHOT.md](docs/04_ASSIGNMENT_CUMULATIVE_SNAPSHOT.md) | **Append-only evidence log** — the record behind every claim above |
+| [docs/07_ASSIGNMENT_ANSWERS.md](docs/07_ASSIGNMENT_ANSWERS.md) | **The four assignment answers** (Korean), written from the evidence log |
 | [docs/05_DESIGN_AGENT_BRIEF.md](docs/05_DESIGN_AGENT_BRIEF.md) | Functional screens and UX invariants given to the design pass |
 | [docs/06_DESIGN_HANDOFF.md](docs/06_DESIGN_HANDOFF.md) | **The UI specification** — design system, screens A–E, final Korean copy |
 | [docs/DESIGN_RATIONALE_APPEND.md](docs/DESIGN_RATIONALE_APPEND.md) | Design decision log (Korean) |
