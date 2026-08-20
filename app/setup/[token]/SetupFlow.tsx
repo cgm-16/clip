@@ -110,8 +110,9 @@ export function SetupFlow({ token }: { token: string }) {
   // Posts the chosen destination to `/setup/save`
   // (`docs/06_DESIGN_HANDOFF.md` "Setup form": "success → Screen C"). A save
   // that fails leaves the admin on Screen B to retry; `onSubmit`'s boolean is
-  // ScreenB's whole contract and it does not otherwise surface the failure
-  // (see `ScreenB.tsx`'s own doc comment on `onSubmit`).
+  // how ScreenB knows to render its save-failed error callout
+  // (`WEB_COPY.setup.saveFailed`) rather than silently doing nothing (see
+  // `ScreenB.tsx`'s own doc comment on `onSubmit`).
   async function handleSubmit(submission: SetupSubmission): Promise<boolean> {
     const response = await fetch('/setup/save', {
       method: 'POST',

@@ -13,7 +13,7 @@ import { ScreenA } from '@/app/setup/[token]/ScreenA';
 import { ScreenB } from '@/app/setup/[token]/ScreenB';
 import { ScreenC } from '@/app/setup/[token]/ScreenC';
 import { SetupFlow } from '@/app/setup/[token]/SetupFlow';
-import { WEB_COPY, WEB_COPY_TEMPLATES } from '@/lib/ui/copy';
+import { WEB_COPY, WEB_COPY_AUTHORED, WEB_COPY_TEMPLATES } from '@/lib/ui/copy';
 
 const CHANNELS = [
   { id: '111', name: 'clip-archive', type: 0 },
@@ -149,6 +149,49 @@ describe('ScreenB — archive destination configuration', () => {
     await waitFor(() => expect(saveButton).toBeDisabled());
     resolveSubmit(true);
     await waitFor(() => expect(saveButton).not.toBeDisabled());
+  });
+
+  it('renders the save-failed error callout, with the 오류 tag, when onSubmit resolves false, and stays on Screen B', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(false);
+    render(<ScreenB channels={CHANNELS} onSubmit={onSubmit} />);
+
+    await user.click(screen.getByRole('button', { name: WEB_COPY.setup.save }));
+
+    // The copy wraps a mono "/setup" token, so match the surrounding text via
+    // a function matcher rather than an exact string, the same technique
+    // ScreenA's recovery callout test uses.
+    expect(
+      await screen.findByText((_, node) => node?.textContent === WEB_COPY_AUTHORED.saveFailed),
+    ).toBeInTheDocument();
+    expect(screen.getByText('오류')).toBeInTheDocument();
+    // Still Screen B — the form itself remains rendered.
+    expect(screen.getByText(WEB_COPY.setup.destinationLegend)).toBeInTheDocument();
+  });
+
+  it('clears the save-failed error once a following retry is submitted', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    render(<ScreenB channels={CHANNELS} onSubmit={onSubmit} />);
+
+    await user.click(screen.getByRole('button', { name: WEB_COPY.setup.save }));
+    await screen.findByText('오류');
+
+    await user.click(screen.getByRole('button', { name: WEB_COPY.setup.save }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText('오류')).not.toBeInTheDocument();
+  });
+
+  it('renders the save-failed error inside an aria-live region', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(false);
+    render(<ScreenB channels={CHANNELS} onSubmit={onSubmit} />);
+
+    await user.click(screen.getByRole('button', { name: WEB_COPY.setup.save }));
+
+    const errorText = await screen.findByText('오류');
+    expect(errorText.closest('[aria-live]')).toHaveAttribute('aria-live', 'polite');
   });
 
   it('renders the required consent block verbatim', () => {
@@ -369,6 +412,50 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
       'href',
       'https://discord.com/channels/g1/999',
     );
+  });
+
+  it('shows the save-failed callout on Screen B when /setup/save fails, then clears it and advances to Screen C once a retry succeeds', async () => {
+    const user = userEvent.setup();
+    let saveAttempts = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/setup/data')) {
+        return Response.json({ guildId: 'g1', channels: CHANNELS });
+      }
+      if (url.endsWith('/setup/save')) {
+        saveAttempts += 1;
+        if (saveAttempts === 1) {
+          return new Response(null, { status: 502 });
+        }
+        return Response.json({
+          archiveChannelId: '111',
+          archiveChannelName: 'clip-archive',
+          autoCreated: false,
+          clipCount: 3,
+        });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<SetupFlow token="fresh-token" />);
+    await waitFor(() =>
+      expect(screen.getByText(WEB_COPY.setup.destinationLegend)).toBeInTheDocument(),
+    );
+
+    await user.click(screen.getByRole('button', { name: WEB_COPY.setup.save }));
+
+    expect(
+      await screen.findByText((_, node) => node?.textContent === WEB_COPY_AUTHORED.saveFailed),
+    ).toBeInTheDocument();
+    expect(screen.getByText('오류')).toBeInTheDocument();
+    // Still Screen B — a failed save must never silently advance.
+    expect(screen.getByText(WEB_COPY.setup.destinationLegend)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: WEB_COPY.setup.save }));
+
+    await waitFor(() => expect(screen.getByText(WEB_COPY.setupComplete.title)).toBeInTheDocument());
+    expect(screen.queryByText('오류')).not.toBeInTheDocument();
   });
 
   it('"설정 다시 보기" on Screen C returns to Screen B with the same fetched channels', async () => {

@@ -110,6 +110,18 @@
   color: var(--text-2);
 }
 
+/*
+ * Always mounted (see ScreenB.tsx) so the region exists for aria-live before
+ * its content ever changes. Empty, it must not claim a `.form` gap slot on
+ * every ordinary render — `:empty` cancels the gap above it with a matching
+ * negative margin, so an idle Screen B measures exactly as it did before
+ * this region existed. Once a Callout is inside, the rule no longer matches
+ * and the usual 22px gaps on both sides apply.
+ */
+.saveError:empty {
+  margin-top: -22px;
+}
+
 .actions {
   display: flex;
   align-items: center;

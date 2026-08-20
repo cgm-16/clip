@@ -178,3 +178,25 @@ export const WEB_COPY_TEMPLATES = {
    */
   keptArchiveChannel: 'Discord의 #{channel} 채널과 그 안의 모든 메시지',
 } as const;
+
+/**
+ * Copy with no handoff source at all — `docs/06_DESIGN_HANDOFF.md` does not
+ * specify a string for the condition, and none is invented at implementation
+ * time (`CLAUDE.md` rule 9). Kept apart from `WEB_COPY` so `tests/ui/copy.test.ts`'s
+ * "quotes every entry verbatim from the handoff document" check — which walks
+ * `WEB_COPY` looking for drift from `docs/06_DESIGN_HANDOFF.md` — does not
+ * have to special-case entries that were never quoted from it in the first
+ * place; that invariant is about anti-drift for quoted copy and does not
+ * apply here. Every entry must record who authored it and when.
+ */
+export const WEB_COPY_AUTHORED = {
+  /**
+   * Screen B save failure — expired session, channel gone, Discord refusing
+   * channel creation, a 5xx, etc. The handoff has no string for this
+   * condition (recorded as a gap in `docs/DESIGN_RATIONALE_APPEND.md`
+   * §10.8-3). Authored by Ori on 2026-08-20; see that same file's §11.5 for
+   * the record. The `/setup` token renders as a bordered mono chip, the same
+   * treatment `WEB_COPY.expiredSetupLink.recovery` gives it.
+   */
+  saveFailed: '정보를 저장할 수 없습니다. 다시 시도하거나, /setup으로 새로운 링크를 발급해 주세요.',
+} as const;
