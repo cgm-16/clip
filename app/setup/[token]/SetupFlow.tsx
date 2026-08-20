@@ -59,7 +59,8 @@ function parseSaveResult(value: unknown): SaveResult | null {
     typeof archiveChannelName !== 'string' ||
     typeof autoCreated !== 'boolean' ||
     typeof clipCount !== 'number' ||
-    !Number.isFinite(clipCount)
+    !Number.isInteger(clipCount) ||
+    clipCount < 0
   ) {
     return null;
   }
@@ -134,11 +135,21 @@ export function SetupFlow({ token }: { token: string }) {
         return;
       }
 
-      const exchangeResponse = await fetch('/api/setup/exchange', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token }),
-      });
+      let exchangeResponse: Response;
+      try {
+        exchangeResponse = await fetch('/api/setup/exchange', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token }),
+        });
+      } catch {
+        if (!ownsAttempt()) {
+          return;
+        }
+        retryPending.current = false;
+        setState({ status: 'load-error', canExchangeToken: capability.canExchangeToken });
+        return;
+      }
       if (!ownsAttempt()) {
         return;
       }
