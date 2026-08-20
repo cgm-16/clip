@@ -977,3 +977,10 @@ tombstones in the control database. The test alt received temporary Manage
 Server permission for the two-user administrator path; its later removal was
 not independently verified in this session and remains human cleanup if still
 present.
+
+PR #51's required CI passed install, Prisma generation and migration, lint, all
+tests, and build. GitHub also annotated that `actions/checkout@v4`,
+`actions/setup-node@v4`, and `pnpm/action-setup@v4` target deprecated Node 20 and
+are currently forced onto Node 24 by the runner. Updating workflow actions is
+unrelated to this documentation-only closeout, so it is recorded rather than
+changed here.
