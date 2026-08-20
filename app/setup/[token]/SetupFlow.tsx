@@ -4,11 +4,21 @@ import { useEffect, useState } from 'react';
 import type { SetupChannel } from '@/lib/discord/guild-lookup';
 import { ScreenA } from './ScreenA';
 import { ScreenB, type SetupSubmission } from './ScreenB';
+import { ScreenC } from './ScreenC';
+
+/** `/setup/save`'s success body — see `app/setup/save/route.ts`. */
+type SaveResult = {
+  archiveChannelId: string;
+  archiveChannelName: string;
+  autoCreated: boolean;
+  clipCount: number;
+};
 
 type FlowState =
   | { status: 'loading' }
   | { status: 'expired' }
-  | { status: 'ready'; guildId: string; channels: SetupChannel[] };
+  | { status: 'ready'; guildId: string; channels: SetupChannel[] }
+  | ({ status: 'complete'; guildId: string; channels: SetupChannel[] } & SaveResult);
 
 type SetupData = { guildId: string; channels: SetupChannel[] };
 
@@ -77,19 +87,44 @@ export function SetupFlow({ token }: { token: string }) {
     return <ScreenA />;
   }
 
-  return <ScreenB channels={state.channels} onSubmit={handleSubmit} />;
-}
+  if (state.status === 'complete') {
+    return (
+      <ScreenC
+        guildId={state.guildId}
+        archiveChannelId={state.archiveChannelId}
+        archiveChannelName={state.archiveChannelName}
+        autoCreated={state.autoCreated}
+        clipCount={state.clipCount}
+        onReviewSettings={() =>
+          setState({ status: 'ready', guildId: state.guildId, channels: state.channels })
+        }
+      />
+    );
+  }
 
-// Persisting the chosen destination (writing GuildConfig, and for "create"
-// actually creating the Discord archive channel) is DAG node 4.4's concern,
-// not this task's — see task-6-report.md. This wires the form's submit to a
-// save endpoint that does not exist yet, so a real submit currently 404s;
-// ScreenB's own tests inject their own `onSubmit` and never exercise this.
-async function handleSubmit(submission: SetupSubmission): Promise<boolean> {
-  const response = await fetch('/setup/save', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(submission),
-  });
-  return response.ok;
+  // Only 'ready' remains at this point. Captured as plain locals, not
+  // repeated `state.x` reads, since TypeScript's narrowing of `state` above
+  // does not extend into the nested `handleSubmit` closure below.
+  const { guildId, channels } = state;
+
+  // Posts the chosen destination to `/setup/save`
+  // (`docs/06_DESIGN_HANDOFF.md` "Setup form": "success → Screen C"). A save
+  // that fails leaves the admin on Screen B to retry; `onSubmit`'s boolean is
+  // ScreenB's whole contract and it does not otherwise surface the failure
+  // (see `ScreenB.tsx`'s own doc comment on `onSubmit`).
+  async function handleSubmit(submission: SetupSubmission): Promise<boolean> {
+    const response = await fetch('/setup/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(submission),
+    });
+    if (!response.ok) {
+      return false;
+    }
+    const result: SaveResult = await response.json();
+    setState({ status: 'complete', guildId, channels, ...result });
+    return true;
+  }
+
+  return <ScreenB channels={channels} onSubmit={handleSubmit} />;
 }

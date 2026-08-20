@@ -1,0 +1,138 @@
+/*
+ * Values: design/Clip P0 Screens.dc.html:124-152 (Screen C). Card width
+ * (520px) and the gaps below have no matching tokens.css var -- literal
+ * on-scale-ish pixel values used directly, the same approach ScreenA.module.css
+ * and ScreenB.module.css already take for this screen collection's own
+ * off-scale measurements.
+ */
+.page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-12) var(--sp-6);
+}
+
+.card {
+  width: 520px;
+  background: var(--surface);
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.heading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.title {
+  margin: 0;
+  font: 600 var(--fs-title) / var(--lh-title) var(--font-ui);
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+
+.summary {
+  display: flex;
+  flex-direction: column;
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius);
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-3) 14px;
+  border-bottom: var(--hairline) solid var(--divider);
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.key {
+  font: 400 11px / 1.4 var(--font-mono);
+  color: var(--muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  flex: none;
+}
+
+.value {
+  font: 400 12.5px / 1.4 var(--font-ui);
+  color: var(--text);
+  text-align: right;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.usage {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.usageHeading {
+  font: 500 11px / 1 var(--font-ui);
+  color: var(--muted);
+}
+
+.usageRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) 13px;
+  background: var(--sunken);
+  /* Mockup's #23262b is between --divider (#1c1f23) and --border (#26292e);
+     --border is the closer defined value. */
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius);
+  flex-wrap: wrap;
+}
+
+.usageStep {
+  font: 400 12.5px / 1 var(--font-ui);
+  color: var(--text);
+}
+
+.usageArrow {
+  font: 400 11px / 1 var(--font-mono);
+  color: var(--muted);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+/* Mirrors components/ui/Button.module.css's `.button.primary` -- an `<a>`
+   needs its own element (Button only renders a <button>), so the primary
+   button's visual is duplicated here rather than hand-rolling new values. */
+.primaryLink {
+  font: 500 var(--fs-label) / 1 var(--font-ui);
+  border-radius: var(--radius);
+  border: var(--hairline) solid var(--btn-primary-bg);
+  padding: var(--sp-control-y) var(--sp-4);
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-fg);
+  cursor: pointer;
+  transition: background-color 120ms, border-color 120ms;
+  text-decoration: none;
+  display: inline-block;
+}
+
+.primaryLink:hover {
+  background: var(--btn-primary-bg-hover);
+  border-color: var(--btn-primary-bg-hover);
+}

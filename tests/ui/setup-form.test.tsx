@@ -11,8 +11,9 @@ afterEach(cleanup);
 
 import { ScreenA } from '@/app/setup/[token]/ScreenA';
 import { ScreenB } from '@/app/setup/[token]/ScreenB';
+import { ScreenC } from '@/app/setup/[token]/ScreenC';
 import { SetupFlow } from '@/app/setup/[token]/SetupFlow';
-import { WEB_COPY } from '@/lib/ui/copy';
+import { WEB_COPY, WEB_COPY_TEMPLATES } from '@/lib/ui/copy';
 
 const CHANNELS = [
   { id: '111', name: 'clip-archive', type: 0 },
@@ -185,6 +186,83 @@ describe('ScreenB — archive destination configuration', () => {
   });
 });
 
+describe('ScreenC — setup complete', () => {
+  const BASE_PROPS = {
+    guildId: 'g1',
+    archiveChannelId: '111',
+    archiveChannelName: 'clip-archive',
+    autoCreated: false,
+    clipCount: 5,
+  };
+
+  it('renders the READY tag and title', () => {
+    render(<ScreenC {...BASE_PROPS} />);
+    expect(screen.getByText(WEB_COPY.setupComplete.readyTag)).toBeInTheDocument();
+    expect(screen.getByText(WEB_COPY.setupComplete.title)).toBeInTheDocument();
+  });
+
+  it('renders the three key/value rows: archive channel, admin-only, clip count', () => {
+    render(<ScreenC {...BASE_PROPS} />);
+    expect(screen.getByText(WEB_COPY.setupComplete.archiveChannelKey)).toBeInTheDocument();
+    expect(screen.getByText('#clip-archive')).toBeInTheDocument();
+    expect(screen.getByText(WEB_COPY.setupComplete.adminsKey)).toBeInTheDocument();
+    expect(screen.getByText(WEB_COPY.setupComplete.adminsValue)).toBeInTheDocument();
+    expect(screen.getByText(WEB_COPY.setupComplete.clipCountKey)).toBeInTheDocument();
+    expect(
+      screen.getByText(WEB_COPY_TEMPLATES.clipCount.replace('{count}', '5')),
+    ).toBeInTheDocument();
+    // No allowed-roles row -- roles are cut from P0.
+    expect(screen.queryByText(WEB_COPY.setupComplete.allowedRolesKey)).not.toBeInTheDocument();
+  });
+
+  it('reflects the real clip count, not the mockup literal', () => {
+    render(<ScreenC {...BASE_PROPS} clipCount={0} />);
+    expect(screen.getByText(WEB_COPY_TEMPLATES.clipCount.replace('{count}', '0'))).toBeInTheDocument();
+    expect(screen.queryByText('47개')).not.toBeInTheDocument();
+  });
+
+  it('renders the stepped usage row with the Clip token as a mono chip', () => {
+    render(<ScreenC {...BASE_PROPS} />);
+    expect(screen.getByText(WEB_COPY.setupComplete.usageHeading)).toBeInTheDocument();
+    expect(screen.getByText('메시지 우클릭')).toBeInTheDocument();
+    expect(screen.getByText('앱')).toBeInTheDocument();
+    expect(screen.getByText('Clip')).toBeInTheDocument();
+  });
+
+  it('hides the auto-created OK callout when the channel was not auto-created', () => {
+    render(<ScreenC {...BASE_PROPS} autoCreated={false} />);
+    expect(
+      screen.queryByText((_, node) => node?.textContent === WEB_COPY.setupComplete.manageChannelNoLongerNeeded),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('OK')).not.toBeInTheDocument();
+  });
+
+  it('shows the auto-created OK callout when the channel was auto-created', () => {
+    render(<ScreenC {...BASE_PROPS} autoCreated />);
+    expect(screen.getByText('OK')).toBeInTheDocument();
+    expect(
+      screen.getByText((_, node) => node?.textContent === WEB_COPY.setupComplete.manageChannelNoLongerNeeded),
+    ).toBeInTheDocument();
+  });
+
+  it('"아카이브 열기" is a real link to the Discord archive channel', () => {
+    render(<ScreenC {...BASE_PROPS} guildId="g1" archiveChannelId="111" />);
+    const link = screen.getByRole('link', { name: WEB_COPY.setupComplete.openArchive });
+    expect(link).toHaveAttribute('href', 'https://discord.com/channels/g1/111');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'));
+  });
+
+  it('"설정 다시 보기" invokes the review-settings callback', async () => {
+    const user = userEvent.setup();
+    const onReviewSettings = vi.fn();
+    render(<ScreenC {...BASE_PROPS} onReviewSettings={onReviewSettings} />);
+
+    await user.click(screen.getByRole('button', { name: WEB_COPY.setupComplete.reviewSettings }));
+    expect(onReviewSettings).toHaveBeenCalledOnce();
+  });
+});
+
 describe('SetupFlow — session exchange and Screen A/B branching', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -255,5 +333,72 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
       '/api/setup/exchange',
       expect.anything(),
     );
+  });
+
+  it('posts the submission to /setup/save and renders Screen C with the response on success', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/setup/data')) {
+        return Response.json({ guildId: 'g1', channels: CHANNELS });
+      }
+      if (url.endsWith('/setup/save')) {
+        expect(init?.method).toBe('POST');
+        expect(JSON.parse(String(init?.body))).toEqual({ destination: 'create', channelId: null });
+        return Response.json({
+          archiveChannelId: '999',
+          archiveChannelName: 'clip-archive',
+          autoCreated: true,
+          clipCount: 0,
+        });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<SetupFlow token="fresh-token" />);
+    await waitFor(() =>
+      expect(screen.getByText(WEB_COPY.setup.destinationLegend)).toBeInTheDocument(),
+    );
+
+    await user.click(screen.getByRole('button', { name: WEB_COPY.setup.save }));
+
+    await waitFor(() => expect(screen.getByText(WEB_COPY.setupComplete.title)).toBeInTheDocument());
+    expect(screen.getByText('OK')).toBeInTheDocument(); // autoCreated callout
+    expect(screen.getByRole('link', { name: WEB_COPY.setupComplete.openArchive })).toHaveAttribute(
+      'href',
+      'https://discord.com/channels/g1/999',
+    );
+  });
+
+  it('"설정 다시 보기" on Screen C returns to Screen B with the same fetched channels', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/setup/data')) {
+        return Response.json({ guildId: 'g1', channels: CHANNELS });
+      }
+      if (url.endsWith('/setup/save')) {
+        return Response.json({
+          archiveChannelId: '111',
+          archiveChannelName: 'clip-archive',
+          autoCreated: false,
+          clipCount: 2,
+        });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<SetupFlow token="fresh-token" />);
+    await waitFor(() =>
+      expect(screen.getByText(WEB_COPY.setup.destinationLegend)).toBeInTheDocument(),
+    );
+    await user.click(screen.getByRole('button', { name: WEB_COPY.setup.save }));
+    await waitFor(() => expect(screen.getByText(WEB_COPY.setupComplete.title)).toBeInTheDocument());
+
+    await user.click(screen.getByRole('button', { name: WEB_COPY.setupComplete.reviewSettings }));
+
+    expect(screen.getByText(WEB_COPY.setup.destinationLegend)).toBeInTheDocument();
   });
 });
