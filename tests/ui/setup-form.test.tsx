@@ -458,6 +458,38 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
     expect(screen.queryByText('오류')).not.toBeInTheDocument();
   });
 
+  it('shows the save-failed callout when the /setup/save request itself rejects, instead of throwing', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/setup/data')) {
+        return Response.json({ guildId: 'g1', channels: CHANNELS });
+      }
+      if (url.endsWith('/setup/save')) {
+        // What an offline / DNS / connection-reset save looks like: the
+        // request rejects, so there is no Response to inspect at all.
+        throw new Error('network down');
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<SetupFlow token="fresh-token" />);
+    await waitFor(() =>
+      expect(screen.getByText(WEB_COPY.setup.destinationLegend)).toBeInTheDocument(),
+    );
+
+    await user.click(screen.getByRole('button', { name: WEB_COPY.setup.save }));
+
+    expect(
+      await screen.findByText((_, node) => node?.textContent === WEB_COPY_AUTHORED.saveFailed),
+    ).toBeInTheDocument();
+    expect(screen.getByText('오류')).toBeInTheDocument();
+    // Still Screen B — a rejected save must never silently advance.
+    expect(screen.getByText(WEB_COPY.setup.destinationLegend)).toBeInTheDocument();
+    expect(screen.queryByText(WEB_COPY.setupComplete.title)).not.toBeInTheDocument();
+  });
+
   it('"설정 다시 보기" on Screen C returns to Screen B with the same fetched channels', async () => {
     const user = userEvent.setup();
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {

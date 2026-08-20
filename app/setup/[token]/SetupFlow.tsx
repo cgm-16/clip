@@ -111,14 +111,23 @@ export function SetupFlow({ token }: { token: string }) {
   // (`docs/06_DESIGN_HANDOFF.md` "Setup form": "success → Screen C"). A save
   // that fails leaves the admin on Screen B to retry; `onSubmit`'s boolean is
   // how ScreenB knows to render its save-failed error callout
-  // (`WEB_COPY.setup.saveFailed`) rather than silently doing nothing (see
+  // (`WEB_COPY_AUTHORED.saveFailed`) rather than silently doing nothing (see
   // `ScreenB.tsx`'s own doc comment on `onSubmit`).
   async function handleSubmit(submission: SetupSubmission): Promise<boolean> {
-    const response = await fetch('/setup/save', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(submission),
-    });
+    let response: Response;
+    try {
+      response = await fetch('/setup/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(submission),
+      });
+    } catch {
+      // An offline or reset connection rejects instead of answering. That is
+      // still a failed save, so it has to leave here as `false`; thrown, it
+      // would escape ScreenB's submit handler and the admin would be left
+      // with no error callout at all.
+      return false;
+    }
     if (!response.ok) {
       return false;
     }
