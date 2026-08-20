@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { ADMIN_SESSION_COOKIE_NAME } from '@/lib/admin-session/tokens';
 import { GuildUnavailableError } from '@/lib/discord/guild-lookup';
 
@@ -21,7 +21,14 @@ vi.mock('@/lib/discord/rest-client', async (importOriginal) => {
 
 const upsertGuildArchiveConfig = vi.hoisted(() => vi.fn());
 const countArchivedClips = vi.hoisted(() => vi.fn());
-vi.mock('@/lib/clip/repository', () => ({ upsertGuildArchiveConfig, countArchivedClips }));
+const findGuildArchiveConfig = vi.hoisted(() => vi.fn());
+const hasLiveClips = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/clip/repository', () => ({
+  upsertGuildArchiveConfig,
+  countArchivedClips,
+  findGuildArchiveConfig,
+  hasLiveClips,
+}));
 
 const { POST } = await import('@/app/setup/save/route');
 
@@ -52,6 +59,15 @@ function postJson(body: unknown, headers: Record<string, string> = {}): Request 
 }
 
 describe('POST /setup/save', () => {
+  beforeEach(() => {
+    // Default to "first setup for this guild, no live Clips yet" so every
+    // test that does not care about the C3 reconfiguration guard does not
+    // have to restate it -- `vi.resetAllMocks()` below wipes these between
+    // tests, so they are reinstated on every run rather than set once.
+    findGuildArchiveConfig.mockResolvedValue(null);
+    hasLiveClips.mockResolvedValue(false);
+  });
+
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.resetAllMocks();
@@ -215,6 +231,83 @@ describe('POST /setup/save', () => {
         ]),
       }),
     );
+  });
+
+  // Finding C3: `Clip` rows carry no archive channel id of their own, only
+  // `GuildConfig.archiveChannelId` does. Repointing that field out from under
+  // a live Clip strands its archive in the old channel with nothing able to
+  // address it any more -- author removal then deletes against the wrong
+  // channel, gets Discord's "unknown message", and silently tombstones the
+  // row while both archive messages stay live. `/setup/save` must refuse the
+  // repoint while any non-terminal Clip exists.
+  describe('finding C3: reconfiguring the archive channel while Clips are live', () => {
+    test('an existing-channel save to a *different* channel is refused (409) when the guild has a live Clip', async () => {
+      stubEnv();
+      authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
+      findGuildArchiveConfig.mockResolvedValue({ archiveChannelId: '111', allowedRoleIds: [] });
+      hasLiveClips.mockResolvedValue(true);
+      getGuildSetupTargets.mockResolvedValue({
+        channels: [{ id: '111', name: 'general', type: 0 }, { id: '222', name: 'new-channel', type: 0 }],
+        roles: [],
+      });
+
+      const response = await POST(postJson({ destination: 'existing', channelId: '222' }));
+
+      expect(response.status).toBe(409);
+      expect(upsertGuildArchiveConfig).not.toHaveBeenCalled();
+      // The guard fires before any Discord call: no eligibility lookup, no
+      // channel-creation POST.
+      expect(getGuildSetupTargets).not.toHaveBeenCalled();
+      expect(discordRequest).not.toHaveBeenCalled();
+    });
+
+    test('a create-destination save is refused (409) when the guild already has a config and a live Clip', async () => {
+      stubEnv();
+      authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
+      findGuildArchiveConfig.mockResolvedValue({ archiveChannelId: '111', allowedRoleIds: [] });
+      hasLiveClips.mockResolvedValue(true);
+
+      const response = await POST(postJson({ destination: 'create', channelId: null }));
+
+      expect(response.status).toBe(409);
+      expect(upsertGuildArchiveConfig).not.toHaveBeenCalled();
+      expect(discordRequest).not.toHaveBeenCalled();
+    });
+
+    test('setting the archive channel for the first time is never refused, even though hasLiveClips is never asked', async () => {
+      stubEnv();
+      authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
+      findGuildArchiveConfig.mockResolvedValue(null); // no prior setup
+      getGuildSetupTargets.mockResolvedValue({
+        channels: [{ id: '111', name: 'general', type: 0 }],
+        roles: [],
+      });
+      upsertGuildArchiveConfig.mockResolvedValue(undefined);
+      countArchivedClips.mockResolvedValue(0);
+
+      const response = await POST(postJson({ destination: 'existing', channelId: '111' }));
+
+      expect(response.status).toBe(200);
+      expect(hasLiveClips).not.toHaveBeenCalled();
+    });
+
+    test('re-saving the same existing channel is never refused, even with live Clips', async () => {
+      stubEnv();
+      authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
+      findGuildArchiveConfig.mockResolvedValue({ archiveChannelId: '111', allowedRoleIds: [] });
+      hasLiveClips.mockResolvedValue(true);
+      getGuildSetupTargets.mockResolvedValue({
+        channels: [{ id: '111', name: 'general', type: 0 }],
+        roles: [],
+      });
+      upsertGuildArchiveConfig.mockResolvedValue(undefined);
+      countArchivedClips.mockResolvedValue(5);
+
+      const response = await POST(postJson({ destination: 'existing', channelId: '111' }));
+
+      expect(response.status).toBe(200);
+      expect(upsertGuildArchiveConfig).toHaveBeenCalled();
+    });
   });
 
   test('a guild the bot can no longer see is reported as 404', async () => {

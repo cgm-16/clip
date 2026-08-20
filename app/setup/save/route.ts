@@ -1,7 +1,12 @@
 import { z } from 'zod';
 import { authenticateAdminSession } from '@/lib/admin-session/service';
 import { ADMIN_SESSION_COOKIE_NAME } from '@/lib/admin-session/tokens';
-import { countArchivedClips, upsertGuildArchiveConfig } from '@/lib/clip/repository';
+import {
+  countArchivedClips,
+  findGuildArchiveConfig,
+  hasLiveClips,
+  upsertGuildArchiveConfig,
+} from '@/lib/clip/repository';
 import {
   createDiscordGuildLookup,
   GuildUnavailableError,
@@ -128,6 +133,23 @@ export async function POST(request: Request) {
 
   const env = parseEnv(process.env);
   const guildId = identity.guildId;
+
+  // Finding C3: `Clip` rows carry no archive channel id of their own, only
+  // `GuildConfig.archiveChannelId` does -- so repointing that field while a
+  // live Clip still depends on the old channel strands its archive there
+  // with nothing left able to address it (see `hasLiveClips`'s doc comment
+  // in `lib/clip/repository.ts`). Setting the channel for the first time
+  // (`existingConfig === null`) is always allowed; re-selecting the guild's
+  // already-configured channel is a no-op, not a reconfigure, so it is
+  // allowed too even with live Clips. "create" always makes a brand-new
+  // channel, so it is a reconfigure whenever a config already exists.
+  const existingConfig = await findGuildArchiveConfig(guildId);
+  const isReconfigure =
+    existingConfig !== null &&
+    (destination === 'create' || existingConfig.archiveChannelId !== channelId);
+  if (isReconfigure && (await hasLiveClips(guildId))) {
+    return new Response(null, { status: 409 });
+  }
 
   let archiveChannelId: string;
   let archiveChannelName: string;

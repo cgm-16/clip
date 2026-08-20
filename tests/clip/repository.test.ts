@@ -11,6 +11,7 @@ import {
   deleteClipWithClippers,
   deleteClippers,
   findGuildArchiveConfig,
+  hasLiveClips,
   lockClip,
   markActive,
   markDeleting,
@@ -559,5 +560,47 @@ describe('clip repository', () => {
     await makeClip('REMOVED_BY_AUTHOR');
 
     expect(await countArchivedClips(guildId)).toBe(2);
+  });
+
+  // Finding C3: `/setup/save` must refuse to repoint a guild's archive
+  // channel while any Clip could still be addressed through the old one --
+  // `hasLiveClips` is that guard's whole basis, so its own status boundary
+  // has to be exactly right (only the two removal tombstones don't count).
+  describe('hasLiveClips', () => {
+    async function makeClip(guildId: string, status: ClipStatus) {
+      await prisma.clip.create({
+        data: {
+          guildId,
+          sourceMessageId: fakeSnowflake(),
+          sourceChannelId: fakeSnowflake(),
+          authorUserId: fakeSnowflake(),
+          status,
+          archiveProvenanceMessageId: status === 'ACTIVE' ? fakeSnowflake() : null,
+          archiveForwardMessageId: status === 'ACTIVE' ? fakeSnowflake() : null,
+        },
+      });
+    }
+
+    test('false for a guild with no Clip rows at all', async () => {
+      expect(await hasLiveClips(trackedGuildId())).toBe(false);
+    });
+
+    test('false when every Clip is tombstoned (REMOVED_BY_AUTHOR / REMOVED_BY_ADMIN)', async () => {
+      const guildId = trackedGuildId();
+      await makeClip(guildId, 'REMOVED_BY_AUTHOR');
+      await makeClip(guildId, 'REMOVED_BY_ADMIN');
+
+      expect(await hasLiveClips(guildId)).toBe(false);
+    });
+
+    test.each<ClipStatus>(['PENDING', 'FAILED', 'ACTIVE', 'DELETING'])(
+      'true when a %s Clip exists',
+      async (status) => {
+        const guildId = trackedGuildId();
+        await makeClip(guildId, status);
+
+        expect(await hasLiveClips(guildId)).toBe(true);
+      },
+    );
   });
 });

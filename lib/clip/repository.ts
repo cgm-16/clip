@@ -334,6 +334,40 @@ export async function upsertGuildArchiveConfig(input: {
 }
 
 /**
+ * True if the guild has any live (non-tombstoned) Clip -- one whose archive
+ * a channel reconfiguration could orphan.
+ *
+ * `/setup/save` uses this to refuse repointing `archiveChannelId` while it
+ * is true (finding C3): the `Clip` row stores no archive channel id of its
+ * own, only `GuildConfig.archiveChannelId` at the guild level, so once that
+ * is repointed a live Clip's archive messages are still sitting in the old
+ * channel with nothing in the database able to address them -- author
+ * removal would then delete by the *new* channel id against the *old*
+ * message ids, get back Discord's 10008, and silently tombstone the row
+ * while both archive messages stay live and orphaned.
+ *
+ * `TOMBSTONE_STATUSES` is reused rather than re-deriving the same set from
+ * `isTerminalStatus` in `lib/clip/state-machine.ts`: it already names
+ * exactly "the statuses nothing transitions out of", which is precisely
+ * "no archive left to orphan" here too.
+ *
+ * This over-refuses on a PENDING or FAILED Clip, neither of which has
+ * posted an archive yet -- deliberately: the cheap, correct-by-construction
+ * guard is "any non-terminal row blocks it", not one that has to reason
+ * about which live states already have a Discord side effect to protect.
+ * Storing the archive channel per Clip, so a reconfiguration could never
+ * orphan an existing one at all, is the real long-term fix; it is out of
+ * scope today.
+ */
+export async function hasLiveClips(guildId: string): Promise<boolean> {
+  const clip = await prisma.clip.findFirst({
+    where: { guildId, status: { notIn: TOMBSTONE_STATUSES } },
+    select: { guildId: true },
+  });
+  return clip !== null;
+}
+
+/**
  * The number of Clips currently archived for a guild -- Screen C's `보관된
  * 메시지` count. `ACTIVE` only: a tombstoned Clip is no longer preserved, and
  * one whose Discord copy has vanished (Screen D's `누락` row) is still
