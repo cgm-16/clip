@@ -762,3 +762,62 @@ The pod logged 57 copies of `Error: The Server Reference ID did not match the ex
 format` between 18:12 and 21:58 KST on 08-19, with payloads like `x`, `y` and random hex.
 That is external probing of Next.js Server Actions against a public host, not an app fault.
 No Discord message content, secrets, or user data appeared in any log line.
+
+## Docker disk exhaustion and what it does to test evidence
+
+The local Docker ran out of storage. The `clip-pg` container — the real Postgres
+that 89 of the 307 tests depend on — was gone entirely; only a stale `ubuntu`
+container remained, holding 9.9GB, alongside 20.5GB of build cache, against 17GB
+free on a 92%-full disk.
+
+**What that does to the suite.** With nothing listening on 5433, `pnpm test`
+gives `Test Files 8 failed | 19 passed`, `Tests 89 failed | 218 passed`. They
+fail *loudly*, with `PrismaClientKnownRequestError` — they do not skip. That
+confirms again the property recorded in the snapshot (§ the dismissed
+"370ms suite" claim): pointing `DATABASE_URL` at a dead port makes DB tests fail,
+never silently pass. The suite has no silent-skip hole.
+
+**The corruption vector this creates, which is subtle and worth naming.** A
+DB-down environment makes every DB-backed test fail *regardless of the code under
+it*. Revert-proofing asks "does this test fail when I revert the fix?" — and with
+no database the answer is yes for reasons that have nothing to do with the fix.
+**A dead Postgres turns revert-proof verification into a false-positive
+generator.** Any claim of the form "I reverted the fix and the test went red" is
+worthless unless the DB was up, and the failure mode looks identical either way.
+The defence is to read the *failure reason*: a real revert-proof test fails on an
+assertion (`expected 200 to be 409`), not on a connection error.
+
+Restoring it: `docker run -d --name clip-pg -p 5433:5432 -e POSTGRES_USER=clip
+-e POSTGRES_PASSWORD=clip -e POSTGRES_DB=clip_dev postgres:17-alpine`, then
+`DATABASE_URL=…5433/clip_dev pnpm prisma migrate deploy`. The container is run by
+hand, not by compose — there is no compose file — so it does not survive a prune
+and nothing recreates it. With it up: 307/307 green.
+
+### Re-verification of the fix-wave review, with the database up
+
+Every claim re-checked by reverting *only the source hunks* and keeping the tests
+(`git show <sha> -- <source paths> | git apply -R`). Reverting a whole commit
+proves nothing, since the commit carries its own tests away with it — that first
+attempt showed 297 and 306 passing and was discarded as meaningless.
+
+| Claim | Verdict | Evidence |
+|---|---|---|
+| C2 test revert-proof | holds | exactly 1 test fails, the right one |
+| C3 test revert-proof | holds | 8 fail; the two route tests on real assertions (`200→409`, `502→409`), six repo tests on `TypeError: hasLiveClips is not a function` |
+| C3's two negative controls *not* revert-proof | holds | both still pass on revert, as the reviewer said |
+| I1 test revert-proof | holds | assertion failure (2 PATCH calls, expected 1), 189ms against real Postgres |
+| `SetupFlow.tsx:114` cites a non-existent `WEB_COPY.setup.saveFailed` | holds | string is `WEB_COPY_AUTHORED.saveFailed` |
+| `handleSubmit` has no `catch` for a rejected `fetch` | holds | read at `app/setup/[token]/SetupFlow.tsx:116-128` |
+| stranded `PENDING`/`FAILED` blocks reconfiguration | holds, with nuance | `hasLiveClips`'s own doc comment already calls the over-refusal deliberate; what it does *not* say is that nothing ever clears such a row, so the block is permanent, not transient |
+
+So the disk failure damaged the *evidence*, not the *verdicts*: independently
+re-run with a live database, every finding stands.
+
+### Verified gap: private-by-default is untested
+
+The reviewer's parting claim checked out and is the most useful thing here.
+Deleting only the `@everyone` deny overwrite from `app/setup/save/route.ts` —
+which makes the auto-created archive channel **readable by the whole server**,
+against spec §5.3 — leaves **307/307 tests green**. The C2 test added this wave
+asserts the bot's *own* member overwrite and says nothing about the deny that
+makes the channel private. The privacy half of that array has no test at all.
