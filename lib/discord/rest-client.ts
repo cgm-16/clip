@@ -71,6 +71,7 @@ const MAX_ATTEMPTS = 3;
 // can report a value far longer than any interaction can wait for, and honouring
 // it exactly would hold the request open well past the point of usefulness.
 const MAX_RETRY_DELAY_MS = 5_000;
+const DISCORD_REQUEST_TIMEOUT_MS = 10_000;
 
 function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -128,6 +129,7 @@ export function createDiscordRestClient(options: DiscordRestClientOptions): Disc
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(DISCORD_REQUEST_TIMEOUT_MS),
     });
   }
 
