@@ -904,3 +904,83 @@ look like a decision.
 - GitHub issues `4`, `5`, `6`, `44` (`0.1`, `0.2`, `0.3a`, `0.1b`) are open for
   work merged days ago. The as-shipped table in `README.md` is derived from the
   source tree specifically because of this, and closing them is Ori's call.
+
+## 2026-08-20 — Deployed POC and permission findings
+
+The deployed application from PR #48 was exercised end to end in the live test
+guild after the Wave 7 documentation reconciliation. The application pod and
+migration initContainer remained on
+`ghcr.io/cgm-16/clip:sha-7109e3d` (digest
+`sha256:7ef7d5b1990ffd3df4ae387c83914bc603110e8a2895a2bdc9eca28cf7c4f8c4`),
+the public health endpoint returned `{"ok":true}`, and the Discord application
+retained the interaction endpoint and all four guild commands. Later `main`
+commits came from documentation-only PR #49; the running image is therefore the
+submitted application commit, not the repository's later documentation HEAD.
+
+The 17-scenario Wave 6.3 list ended as follows:
+
+| Scenario | Result | Evidence |
+|---|---|---|
+| Setup with a new archive channel | PASS | Private `#clip-archive` created; setup reached READY |
+| Setup with the existing archive channel | PASS | Same channel reused; no duplicate created |
+| Administrator Clip | PASS | Archive pair and source marker created |
+| Allowed-role Clip | CUT | Role configuration UI (`4.3`) was not shipped |
+| Unauthorized Clip | PASS | Private denial; no row, archive message, or marker |
+| Same user clips twice | PASS | One canonical Clip/Clipper; duplicate response on retry |
+| Two users clip once each | PASS | Two Clippers on one canonical Clip; no duplicate DM |
+| One user unclips while one remains | PASS | One Clipper and archive pair remained |
+| Final user unclips | PASS | Clip, archive pair, and marker were removed |
+| Source author removes archive | PASS | `REMOVED_BY_AUTHOR` tombstone retained; archive cleared |
+| Reclip after author removal | PASS | Tombstone denial; no recreated archive |
+| Source edit after Clip | PASS | Forwarded snapshot remained unchanged |
+| Source delete after Clip | PASS | Archive and ACTIVE control row remained |
+| Author DM blocked | PASS | Clip succeeded; notification recorded `UNDELIVERABLE` |
+| Archive filtering and pagination | CUT | Web archive (Wave 5) was not shipped |
+| Expired admin session | PASS | Expired-link recovery screen; no database mutation |
+| Missing archive-message web state | CUT | Web archive (Wave 5) was not shipped |
+
+That is **14 passed and 3 deliberate scope cuts**, with no failed executable
+scenario. This does not close Wave 6.2: the separate integrated race pass was
+not part of this manual run and is not claimed here. Screenshots were reviewed
+in the live session but were not committed because they show personal Discord
+identities.
+
+The first live Clip attempt exposed an application-level prerequisite that the
+channel permission table did not express. Discord returned `160014`
+(`ARCHIVE_TARGET_UNAVAILABLE`) even though the bot could view the source and
+archive channels. The source-message request returned HTTP 200 but redacted the
+message content, and the application flags showed that Message Content access
+was disabled. After Ori enabled Message Content Intent in the Developer Portal,
+the same FAILED row recovered to ACTIVE on retry and the archive pair was
+created. No redeploy was required. The relevant Discord contracts are the
+[message resource](https://docs.discord.com/developers/resources/message),
+[Gateway intents](https://docs.discord.com/developers/events/gateway), and the
+[error code table](https://docs.discord.com/developers/topics/opcodes-and-status-codes).
+
+Permission measurement is partial, not a complete minimum matrix. Ori revoked
+`MANAGE_CHANNELS` from the managed bot role after auto-create, confirmed the bot
+did not have `ADMINISTRATOR`, and then passed a fresh Clip and cleanup Unclip.
+This proves `MANAGE_CHANNELS` is bootstrap-only for the tested path. The
+remaining runtime permissions were exercised as a bundle rather than revoked
+one by one.
+
+One real P0 limitation remains. `getGuildSetupTargets` type-filters text channels
+but does not calculate effective permissions, and the existing-channel save
+path persists the selected channel without checking the bot's `VIEW_CHANNEL` or
+`SEND_MESSAGES`. The happy existing-channel scenario passed because the tested
+channel was writable; a missing-permissions refusal cannot be claimed. Ori
+declined a deadline-hour hotfix, so the operational prerequisite is documented
+instead: verify those permissions manually before saving an existing channel.
+
+The live archive was empty after cleanup apart from retained author-removal
+tombstones in the control database. The test alt received temporary Manage
+Server permission for the two-user administrator path; its later removal was
+not independently verified in this session and remains human cleanup if still
+present.
+
+PR #51's required CI passed install, Prisma generation and migration, lint, all
+tests, and build. GitHub also annotated that `actions/checkout@v4`,
+`actions/setup-node@v4`, and `pnpm/action-setup@v4` target deprecated Node 20 and
+are currently forced onto Node 24 by the runner. Updating workflow actions is
+unrelated to this documentation-only closeout, so it is recorded rather than
+changed here.
