@@ -1,110 +1,110 @@
 # Clip
 
-**An authorized Discord member deliberately preserves one message into a server-owned archive — with roughly the effort of pinning it.**
+**권한을 가진 디스코드 멤버가 메시지 하나를 의도적으로 서버 공용 아카이브에 보존합니다 — 핀을 찍는 정도의 수고로.**
 
-Discord keeps the archived content. Clip's database keeps only the control state needed to operate the archive correctly.
+내용은 디스코드가 보관합니다. Clip의 데이터베이스는 아카이브를 올바르게 운영하는 데 필요한 제어 상태만 가집니다.
 
-> **Status: P0 shipped in reduced scope, deployed and live.** The Discord path — setup, Clip, Unclip, author/admin removal — is built, tested and running at `https://clipendpoint.cc`. The read-only web archive (Wave 5) was deliberately cut against the 2026-08-20 deadline. [What is built](#what-is-built) states exactly what exists, what was cut and by whose decision; [docs/07_ASSIGNMENT_ANSWERS.md](docs/07_ASSIGNMENT_ANSWERS.md) holds the four assignment answers; [docs/04_ASSIGNMENT_CUMULATIVE_SNAPSHOT.md](docs/04_ASSIGNMENT_CUMULATIVE_SNAPSHOT.md) is the append-only evidence log behind every claim here.
+> **상태: P0를 축소된 범위로 출시했고, 배포되어 동작 중입니다.** 디스코드 경로 — 설정, Clip, Unclip, 작성자·관리자 삭제 — 는 구현·테스트되어 `https://clipendpoint.cc`에서 실행 중입니다. 읽기 전용 웹 아카이브(Wave 5)는 2026-08-20 마감에 맞춰 의도적으로 잘라냈습니다. [무엇이 만들어졌는가](#무엇이-만들어졌는가)가 무엇이 존재하고 무엇이 누구의 결정으로 잘렸는지를 정확히 적습니다. [docs/07_ASSIGNMENT_ANSWERS.md](docs/07_ASSIGNMENT_ANSWERS.md)에 네 문항 답변이 있고, [docs/04_ASSIGNMENT_CUMULATIVE_SNAPSHOT.md](docs/04_ASSIGNMENT_CUMULATIVE_SNAPSHOT.md)가 여기 적힌 모든 주장의 근거인 append-only 증거 기록입니다.
 
 ---
 
-## The problem
+## 문제
 
-Discord pins are a bounded, channel-local shortlist managed through moderation permissions. The current limit is 250 pins per channel. The motivating incident was concrete: a community had to delete historical pins to make room for new ones.
+디스코드 핀은 모더레이션 권한으로 관리되는, 채널에 갇힌 유한한 목록입니다. 현재 한도는 채널당 250개입니다. 출발점이 된 사건은 구체적입니다 — 어떤 커뮤니티가 새 핀을 꽂을 자리를 만들려고 오래된 핀을 지워야 했습니다.
 
-But pin count is the symptom. The real gap is that communities have no low-friction primitive for saying:
+하지만 핀 개수는 증상입니다. 진짜 빈틈은 커뮤니티에 이렇게 말할 마찰 없는 원시 기능이 없다는 것입니다.
 
-> *"This message is worth preserving for us."*
+> *"이건 우리를 위해 남겨둘 가치가 있다."*
 
-## Positioning
+## 포지셔닝
 
-Clip is not an unlimited-pin utility and not a Starboard. Each neighboring primitive already means something specific:
+Clip은 무제한 핀 유틸리티도 아니고 Starboard도 아닙니다. 이웃한 원시 기능들은 각각 이미 특정한 의미를 가집니다.
 
-| Primitive | What it means |
+| 원시 기능 | 그것이 뜻하는 것 |
 |---|---|
-| Discord Pin | A moderator says this is important **for this channel** |
-| Personal bookmark | An individual says **I** want this later |
-| Starboard | **Enough people** liked this |
-| Pin archiver | These were **already pinned** and overflowed |
-| Bulk logger/exporter | **Capture everything**, filter later |
-| **Clip** | **An authorized member says this is worth preserving for the community** |
+| 디스코드 핀 | 모더레이터가 **이 채널에서** 중요하다고 말함 |
+| 개인 북마크 | **내가** 나중에 보고 싶다고 말함 |
+| Starboard | **충분히 많은 사람이** 좋아했음 |
+| 핀 아카이버 | **이미 핀이었고** 넘쳤음 |
+| 대량 로거·익스포터 | **전부 담고** 나중에 거름 |
+| **Clip** | **권한 있는 멤버가 커뮤니티를 위해 보존할 가치가 있다고 말함** |
 
-The niche is *shared intentional memory*: one visible message, preserved on purpose, without first pinning it, without a popularity threshold, and without bulk-ingesting the conversation.
+니치는 *공동체의 의도적 기억*입니다. 보이는 메시지 하나를, 먼저 핀을 찍지 않고, 인기 임계값 없이, 대화를 통째로 삼키지 않고, 의도적으로 보존하는 것.
 
-## Core loop
+## 핵심 흐름
 
 ```
-Admin runs /setup in Discord
-  → ephemeral one-time link (15 min)
-  → web: choose archive channel
-  → done
+관리자가 디스코드에서 /setup 실행
+  → 15분짜리 일회용 링크(ephemeral)
+  → 웹: 아카이브 채널 선택
+  → 완료
 
-Member right-clicks a message → Apps → Clip
-  → provenance + forwarded snapshot posted to the archive channel
-  → 📎 marker added to the source message
-  → author receives a best-effort DM with a "remove" action
+멤버가 메시지 우클릭 → 앱 → Clip
+  → 출처 메시지 + 전달된 스냅샷이 아카이브 채널에 게시됨
+  → 원본 메시지에 📎 마커 추가
+  → 작성자에게 "삭제" 버튼이 달린 DM 전송(best-effort)
 
-Author or admin → Apps → Remove from Clip Archive
-  → archive deleted, tombstone retained, recreation blocked
+작성자 또는 관리자 → 앱 → Remove from Clip Archive
+  → 아카이브 삭제, 툼스톤 유지, 재생성 차단
 ```
 
-## Architecture
+## 아키텍처
 
-A single stateless Next.js deployable serves both the Discord interaction endpoint and the admin web UI. There is no persistent Gateway worker in P0 — every product input is an explicit command or button, which HTTP interactions deliver.
+상태 없는(stateless) Next.js 배포물 하나가 디스코드 인터랙션 엔드포인트와 관리자 웹 UI를 함께 서빙합니다. P0에는 상시 Gateway 워커가 없습니다 — 모든 제품 입력이 명시적인 명령이나 버튼이고, 그것은 HTTP 인터랙션으로 전달되기 때문입니다.
 
 ```mermaid
 flowchart LR
-  D[Discord<br/>HTTP interactions] --> A
-  B[Browser<br/>admin setup] --> A
-  A[Next.js web/API<br/>stateless] --> P[(PostgreSQL<br/>control plane)]
-  A --> R[Discord REST API<br/>content plane]
+  D[디스코드<br/>HTTP 인터랙션] --> A
+  B[브라우저<br/>관리자 설정] --> A
+  A[Next.js web/API<br/>stateless] --> P[(PostgreSQL<br/>제어 평면)]
+  A --> R[Discord REST API<br/>콘텐츠 평면]
 ```
 
-### The ownership boundary
+### 소유권 경계
 
-This is the central architectural decision:
+이것이 이 제품의 중심 아키텍처 결정입니다.
 
-| Discord is authoritative for | PostgreSQL is authoritative for |
+| 디스코드가 권위를 갖는 것 | PostgreSQL이 권위를 갖는 것 |
 |---|---|
-| Archived message body | Guild configuration and allowed roles |
-| Embeds, attachments, media | Clip identity and state machine |
-| Snapshot rendering | Per-user preservation signals |
-| User/channel display details | Author/admin removal tombstones |
-| | Notification and idempotency state |
-| | Admin setup tokens and sessions |
+| 보관된 메시지 본문 | 길드 설정과 허용 역할 |
+| 임베드, 첨부, 미디어 | Clip 동일성과 상태 기계 |
+| 스냅샷 렌더링 | 사용자별 보존 신호 |
+| 사용자·채널 표시 정보 | 작성자·관리자 삭제 툼스톤 |
+| | 알림 및 멱등성 상태 |
+| | 관리자 설정 토큰과 세션 |
 
-Clip **does not** persist raw message bodies, attachment binaries, embed payloads, avatars, a search corpus, or embeddings.
+Clip은 메시지 본문, 첨부 바이너리, 임베드 페이로드, 아바타, 검색 색인, 임베딩을 **저장하지 않습니다.**
 
-Deleting Clip's data for a guild deletes Clip's control state and leaves the Discord archive channel and every message in it untouched. Our service data disappearing must never destroy community-owned content.
+한 길드의 Clip 데이터를 삭제하면 Clip의 제어 상태만 지워지고, 디스코드 아카이브 채널과 그 안의 모든 메시지는 그대로 남습니다. 저희 서비스 데이터가 사라지는 일이 커뮤니티가 소유한 콘텐츠를 파괴해서는 안 됩니다.
 
-## What is built
+## 무엇이 만들어졌는가
 
-Verified against the source tree at `main`, not against the issue tracker — several issues for merged work are still open, and an open issue is evidence about who last edited the tracker, not about the world.
+이슈 트래커가 아니라 `main`의 소스 트리를 기준으로 확인한 것입니다. 이미 머지된 작업의 이슈 여러 개가 아직 열려 있고, 열린 이슈는 세상에 대한 증거가 아니라 **누가 마지막으로 트래커를 편집했는지에 대한 증거**이기 때문입니다.
 
-| Capability | State |
+| 기능 | 상태 |
 |---|---|
-| Deployment on k3s behind Traefik, HTTPS, CloudNativePG | **Shipped** — pod and migration initContainer both on `ghcr.io/cgm-16/clip:sha-7109e3d`, the `main` HEAD commit |
-| Discord interaction endpoint (Ed25519 verification, PING) | **Shipped** — Discord holds `https://clipendpoint.cc/api/discord/interactions`, which it only accepts after a successful signed PING |
-| `/setup` slash command → one-time 15-minute admin link | **Shipped** |
-| Context commands `Clip`, `Unclip`, `Remove from Clip Archive` | **Shipped** — all four commands registered to the test guild |
-| Two-message archive entry (provenance + forward) | **Shipped** |
-| 📎 source marker, best-effort author DM with a remove button | **Shipped** |
-| Clip state machine, row locking, tombstones, idempotency | **Shipped** — unit-tested against a real PostgreSQL |
-| Design system: tokens, Korean string table, UI primitives | **Shipped** (`F.1`–`F.3`) |
-| Setup web flow: expired link, destination, complete (Screens A/B/C) | **Shipped** (`4.0`, `4.1`, `4.2`, `4.4`) |
-| **Read-only web archive (Screens D/E)** | **Cut** — `5.1`–`5.4`, decision recorded 2026-08-20 01:05 KST |
-| **Role configuration UI** | **Cut** — `4.3`; the spec already allows admin-only clipping, which is what ships |
-| **Playwright end-to-end; exhaustive a11y sweep** | **Cut** — `6.4`, `7.1` |
-| Permission matrix on a fresh guild; integrated race pass; 17-scenario manual suite | **Not done** — `6.1`, `6.2`, `6.3`. Neither cut nor completed; see below |
-| CI guard for token/string-table discipline | **Not done** — `F.6` |
+| k3s + Traefik 배포, HTTPS, CloudNativePG | **출시** — 앱 파드와 마이그레이션 initContainer 모두 `ghcr.io/cgm-16/clip:sha-7109e3d`, 즉 `main` HEAD 커밋 |
+| 디스코드 인터랙션 엔드포인트(Ed25519 서명 검증, PING) | **출시** — 디스코드가 `https://clipendpoint.cc/api/discord/interactions`를 보유. 서명된 PING이 성공해야만 저장되는 값 |
+| `/setup` 슬래시 명령 → 15분 일회용 관리자 링크 | **출시** |
+| 컨텍스트 명령 `Clip`, `Unclip`, `Remove from Clip Archive` | **출시** — 네 개 명령 모두 테스트 길드에 등록됨 |
+| 두 메시지 아카이브 항목(출처 + 전달) | **출시** |
+| 📎 원본 마커, 삭제 버튼이 달린 작성자 DM(best-effort) | **출시** |
+| Clip 상태 기계, 행 잠금, 툼스톤, 멱등성 | **출시** — 실제 PostgreSQL에 대해 테스트 |
+| 디자인 시스템: 토큰, 한국어 문자열 테이블, UI 프리미티브 | **출시** (`F.1`–`F.3`) |
+| 설정 웹 흐름: 만료 링크, 목적지 선택, 완료(화면 A/B/C) | **출시** (`4.0`, `4.1`, `4.2`, `4.4`) |
+| **읽기 전용 웹 아카이브(화면 D/E)** | **잘라냄** — `5.1`–`5.4`, 2026-08-20 01:05 KST에 기록된 결정 |
+| **역할 설정 UI** | **잘라냄** — `4.3`. 스펙이 이미 관리자 전용 클리핑을 허용하고, 출시본이 그것입니다 |
+| **Playwright E2E, 전면 접근성 감사** | **잘라냄** — `6.4`, `7.1` |
+| 새 길드 권한 매트릭스 실측, 통합 경쟁 테스트 패스, 17개 수동 시나리오 | **미완** — `6.1`, `6.2`, `6.3`. 잘라낸 것도 완료한 것도 아님 (아래 참조) |
+| 토큰·문자열 테이블 규율 CI 가드 | **미완** — `F.6` |
 
-**The cuts were a human decision, not a drift.** With 23 hours left, the remaining graph was measured against the project's own recorded pace (Wave 1 ≈ 6h, Wave 2 ≈ 10h) and the arithmetic put to Ori rather than absorbed. He chose to protect the Discord path plus the minimum setup UI. Wave 5 is the cut that costs a real capability: it is P0 item 11 in the spec, and it is beyond what the DAG's own cut order covers. It is browsing of an archive that Discord itself already displays, so losing it loses convenience rather than the product — but it is a genuine reduction of approved scope, recorded as one.
+**컷은 표류가 아니라 사람의 결정이었습니다.** 마감 23시간 전, 남은 그래프를 프로젝트 자신의 실측 속도(Wave 1 ≈ 6시간, Wave 2 ≈ 10시간)에 대고 계산했고, 그 산수를 흡수하지 않고 Ori에게 그대로 보고했습니다. 그는 디스코드 경로와 최소 설정 UI를 지키기로 결정했습니다. Wave 5는 실제 기능을 잃는 컷입니다 — 스펙 P0의 11번 항목이고, DAG에 적어둔 컷 순서가 다루는 범위를 넘어섭니다. 디스코드 아카이브 채널 자체가 이미 내용을 보여주므로 잃는 것은 편의이지 제품은 아니지만, **승인된 범위의 실질적 축소**이고 그렇게 기록되어 있습니다.
 
-**`6.1`–`6.3` are the residual, and they are the honest weak point.** They were neither protected nor cut; the clock reached them last. Their absence bounds what the test suite proves: see below.
+**`6.1`–`6.3`이 잔여분이고, 여기가 정직한 약점입니다.** 지켜진 것도 잘린 것도 아니고, 시계가 마지막에 도달했을 뿐입니다. 이 항목들의 부재가 테스트 숫자의 의미를 제한하기 때문에, 아래에 묻지 않고 표에 먼저 적습니다.
 
-### What the tests do and do not cover
+### 테스트가 무엇을 덮고, 무엇을 덮지 않는가
 
-`pnpm test` is **345 tests across 30 files, all green** against a real PostgreSQL 17 (concurrency invariants are never mocked here). Commands, run from a clean checkout with the container up:
+`pnpm test`는 실제 PostgreSQL 17에 대해 **30개 파일 345개 테스트 전부 통과**합니다(동시성 불변식은 여기서 절대 목으로 대체하지 않습니다). 깨끗한 체크아웃에서 컨테이너를 띄우고 실행하는 명령:
 
 ```bash
 docker run -d --name clip-pg -p 5433:5432 \
@@ -113,99 +113,99 @@ DATABASE_URL='postgresql://clip:clip@localhost:5433/clip_dev' pnpm prisma migrat
 pnpm test
 ```
 
-What that number does **not** cover, stated plainly because an unqualified green count is the exact failure this project kept recording:
+그 숫자가 **덮지 않는 것**을 그대로 적습니다. 조건 없는 초록색 숫자야말로 이 프로젝트가 계속 기록해 온 실패의 형태이기 때문입니다.
 
-- **No end-to-end run in a live guild.** The 17-scenario manual suite (`6.3`) was not executed. The Discord path is covered by unit and route tests against a fake gateway and a real database; the endpoint is live and the commands are registered, but no archived message was observed being created by a human in Discord as part of a recorded suite.
-- **No browser end-to-end.** Playwright (`6.4`) was cut. The setup screens are covered by React Testing Library against jsdom.
-- **No measured permission matrix.** The table below is the *assumed* minimum set, derived from the API's documented errors, not a set validated by revoking permissions on a fresh guild (`6.1`).
+- **실제 길드에서의 E2E 실행 기록이 없습니다.** 17개 수동 시나리오(`6.3`)를 수행하지 않았습니다. 디스코드 경로는 가짜 게이트웨이와 실제 DB에 대한 유닛·라우트 테스트로 덮여 있고, 엔드포인트는 살아 있고 명령은 등록되어 있지만, 기록된 시나리오의 일부로 사람이 디스코드에서 메시지가 보관되는 것을 관찰한 적은 없습니다.
+- **브라우저 E2E가 없습니다.** Playwright(`6.4`)는 잘렸습니다. 설정 화면은 jsdom 위 React Testing Library로 덮여 있습니다.
+- **실측된 권한 매트릭스가 없습니다.** 아래 표는 API의 문서화된 에러에서 유도한 **가정된** 최소 집합이며, 새 길드에서 권한을 하나씩 회수해 확인한 결과가 아닙니다(`6.1`).
 
-Several of these tests exist because a mutation proved the previous version of them could not fail. That method, and the four times it caught a false green, is the substance of [the evidence log](docs/04_ASSIGNMENT_CUMULATIVE_SNAPSHOT.md).
+여기 있는 테스트 중 여럿은 **이전 버전의 그 테스트가 실패할 수 없다는 것이 뮤테이션으로 증명되어서** 존재합니다. 그 방법과, 그것이 거짓 초록색을 네 번 잡아낸 기록이 [증거 로그](docs/04_ASSIGNMENT_CUMULATIVE_SNAPSHOT.md)의 본론입니다.
 
-## P0 scope
+## P0 범위
 
-**In**, because the service cannot operate correctly without it: admin setup and archive destination; role-gated clipping; exactly one selected message per clip; canonical deduplication with multiple preservation signals; unclip; author/admin removal with durable tombstones; concurrency and idempotency invariants; private archive by default; best-effort author DM plus a source marker; a minimal Postgres control plane; a read-only admin web archive; and real deployment.
+**포함**, 이것 없이는 서비스가 올바르게 동작하지 않기 때문에: 관리자 설정과 아카이브 목적지; 역할 기반 클리핑; 선택한 메시지 정확히 하나; 정규 중복 제거와 복수 보존 신호; 언클립; 작성자·관리자 삭제와 영속 툼스톤; 동시성·멱등성 불변식; 아카이브 비공개 기본값; best-effort 작성자 DM과 원본 마커; 최소 PostgreSQL 제어 평면; 읽기 전용 관리자 웹 아카이브; 실제 배포.
 
-Everything in that list ships except **the read-only admin web archive**, which was cut under deadline as described above. The scope statement is left standing rather than edited to match what happened — the divergence is the record.
+이 목록에서 **읽기 전용 관리자 웹 아카이브**만 출시되지 않았고, 위에 설명한 대로 마감으로 잘라냈습니다. 범위 서술은 실제로 일어난 일에 맞춰 고치지 않고 그대로 두었습니다 — 그 차이 자체가 기록이기 때문입니다.
 
-**Deferred**, with reasons, in [docs/01_CLIP_PRODUCT_SPEC.md §21](docs/01_CLIP_PRODUCT_SPEC.md) and the ledger in [docs/03_CLIP_RESEARCH_DECISION_LOG.md §10](docs/03_CLIP_RESEARCH_DECISION_LOG.md): AI summarization, publishing/print, full-text search, tags and collections, thread/parent clipping, reaction-driven clipping, preemptive opt-out, per-channel denylists, permission-aware routing, member OAuth, content caching, a Gateway worker, and automated reconciliation.
+**유예**, 이유와 함께 [docs/01_CLIP_PRODUCT_SPEC.md §21](docs/01_CLIP_PRODUCT_SPEC.md)과 [docs/03_CLIP_RESEARCH_DECISION_LOG.md §10](docs/03_CLIP_RESEARCH_DECISION_LOG.md)의 원장에: AI 요약, 발행·인쇄, 전문 검색, 태그·컬렉션, 스레드·부모 메시지 클리핑, 반응 기반 클리핑, 사전 옵트아웃, 채널별 차단 목록, 권한 인식 라우팅, 회원 OAuth, 콘텐츠 캐시, Gateway 워커, 자동 정합성 복구.
 
-The cuts are part of the answer, not gaps to hide.
+잘라낸 것들은 감출 빈틈이 아니라 답변의 일부입니다.
 
-## Discord permissions
+## 디스코드 권한
 
-Clip never requests `Administrator`. Verified against the live application: the bot holds `VIEW_CHANNEL`, `SEND_MESSAGES` and `MANAGE_CHANNELS`, and not `ADMINISTRATOR`.
+Clip은 `Administrator`를 절대 요구하지 않습니다. 실제 애플리케이션에서 확인한 결과, 봇은 `VIEW_CHANNEL`, `SEND_MESSAGES`, `MANAGE_CHANNELS`를 보유하고 `ADMINISTRATOR`는 보유하지 않습니다.
 
-| Permission | Why | When |
+| 권한 | 왜 | 언제 |
 |---|---|---|
-| `VIEW_CHANNEL` on source channels | Discord refuses to forward a message the application cannot read (error `160014`) | Steady state |
-| `VIEW_CHANNEL` + `SEND_MESSAGES` on the archive channel | Post provenance and the forwarded snapshot | Steady state |
-| `ADD_REACTIONS` | The bot-owned 📎 marker on the source message | Steady state |
-| `MANAGE_CHANNELS` | Only to auto-create the private archive channel | Bootstrap only — revocable afterwards |
+| 원본 채널의 `VIEW_CHANNEL` | 디스코드는 애플리케이션이 읽을 수 없는 메시지의 전달을 거부합니다(에러 `160014`) | 상시 |
+| 아카이브 채널의 `VIEW_CHANNEL` + `SEND_MESSAGES` | 출처 메시지와 전달된 스냅샷 게시 | 상시 |
+| `ADD_REACTIONS` | 원본 메시지에 봇 소유 📎 마커 | 상시 |
+| `MANAGE_CHANNELS` | 비공개 아카이브 채널 자동 생성에만 사용 | 부트스트랩 한정 — 이후 회수 가능 |
 
-This is the **assumed** minimum, derived from Discord's documented error cases. Earlier versions of this table
-also listed `MANAGE_MESSAGES` on the archive channel. That was wrong and is removed: a bot deleting its own
-messages does not need it, and the code never asks for it. The table over-stated the requirement for several
-days — which is the mundane version of the same problem this project kept hitting, since no test in the
-repository asserts anything about `README.md`. Task `6.1` — revoking each one on a fresh guild and recording what actually breaks — was not run, so no entry in this table has been falsified by experiment. One of them nearly went out wrong: the auto-created private channel originally denied `VIEW_CHANNEL` to `@everyone` without granting it back to the bot, which would have made the recommended default destination invisible to the application that created it. That was caught in review, and a test now fails if either overwrite is removed.
+이것은 디스코드의 문서화된 에러 케이스에서 유도한 **가정된** 최소 집합입니다. 새 길드에서 권한을 하나씩 회수해 실제로 무엇이 깨지는지 기록하는 `6.1`을 수행하지 않았으므로, 이 표의 어떤 항목도 실험으로 반증된 적이 없습니다.
 
-## Privacy and data behavior
+이전 버전의 이 표에는 아카이브 채널의 `MANAGE_MESSAGES`도 상시 요구 사항으로 적혀 있었습니다. 그것은 틀렸고 삭제했습니다 — 봇이 **자기 메시지를** 지우는 데는 필요하지 않고, 코드도 요구한 적이 없습니다. 이 표는 며칠 동안 요구 사항을 과장하고 있었고, 이는 이 프로젝트가 계속 부딪힌 문제의 평범한 버전입니다. 저장소의 어떤 테스트도 `README.md`에 대해서는 아무것도 단언하지 않기 때문입니다.
 
-- Clipping is restricted to guild admins and explicitly configured roles. **In P0 as shipped, only guild admins can clip**, because the role configuration UI (`4.3`) was cut — the spec allows this and the domain layer supports configured roles once a UI exists to set them.
-- A newly created archive is private by default
-- Only human-selected messages are touched; there is no bulk monitoring
-- Message content is never copied into Clip's database
-- The original author is notified on first archival and can remove their own archived message, independently of whether the DM was delivered
-- Removal leaves a tombstone that blocks immediate recreation, so an author cannot be re-clipped in a loop
-- Operational logs record identifiers and state transitions, never message bodies or attachments
+권한 하나는 실제로 잘못 나갈 뻔했습니다. 자동 생성되는 비공개 채널이 처음에는 `@everyone`의 `VIEW_CHANNEL`을 거부하면서 봇에게 다시 허용하지 않아서, 권장 기본 목적지가 **그것을 만든 애플리케이션에게 보이지 않는** 상태였습니다. 리뷰에서 잡혔고, 지금은 두 오버라이트 중 하나라도 제거하면 테스트가 실패합니다.
 
-We do not claim to store no user data. Clip stores Discord IDs, role configuration, preservation signals and operational metadata.
+## 프라이버시와 데이터 취급
 
-## Known limitations
+- 클리핑은 길드 관리자와 명시적으로 설정된 역할로 제한됩니다. **출시된 P0에서는 길드 관리자만 클립할 수 있습니다** — 역할 설정 UI(`4.3`)를 잘랐기 때문입니다. 스펙이 이를 허용하며, 설정할 UI만 생기면 도메인 계층은 이미 역할을 지원합니다.
+- 새로 만들어진 아카이브는 기본값이 비공개입니다
+- 사람이 선택한 메시지만 건드리며, 대량 모니터링은 없습니다
+- 메시지 본문은 Clip의 데이터베이스로 절대 복사되지 않습니다
+- 원 작성자는 첫 보관 시 알림을 받고, DM 전달 성공 여부와 무관하게 자신의 보관된 메시지를 직접 삭제할 수 있습니다
+- 삭제는 즉시 재생성을 막는 툼스톤을 남깁니다. 작성자가 반복해서 다시 클립당하는 루프가 생기지 않도록
+- 운영 로그는 식별자와 상태 전이만 기록하며, 메시지 본문이나 첨부는 기록하지 않습니다
 
-- **The 📎 marker count is not a metric.** Users can add the same reaction; Clip ignores those. The count is never surfaced, and removing an archive cannot remove reactions other users added.
-- **Forwarding constrains what can be clipped.** Discord only forwards `DEFAULT`, `REPLY`, `CHAT_INPUT_COMMAND` and `CONTEXT_MENU_COMMAND` messages — polls, calls and system messages are rejected as invalid targets.
-- **A forward cannot carry its own provenance.** Discord rejects `content` sent alongside a forward (error `160011`) and omits `author` from the snapshot, so each archive entry is two messages: a provenance line, then the forward.
-- **Snapshots are immutable.** Editing the original does not update the archive; deleting the original does not delete the archive.
-- **The archive can drift**, and in P0 nothing surfaces the drift. If someone manually deletes an archive message in Discord, the control row survives; the `누락` state exists in the string table and the spec, but the screen that would render it was cut. Automated reconciliation was already P1.
-- **There is no web archive in P0.** Members and admins read the archive in Discord, in the archive channel itself.
-- **Reconfiguring the archive destination is refused while live Clips exist.** This is deliberate — per-Clip archive-channel storage is the real fix and is out of P0 scope — but it means an admin who picks the wrong channel must delete the guild's Clip data to change it.
+사용자 데이터를 전혀 저장하지 않는다고 주장하지 않습니다. Clip은 디스코드 ID, 역할 설정, 보존 신호, 운영 메타데이터를 저장합니다.
 
-## Deployment
+## 알려진 한계
 
-Self-hosted on an existing home k3s cluster (Intel N100, 16 GB) behind Traefik, against a CloudNativePG PostgreSQL cluster in the same namespace. Deployment was P0 work and happened before the product was built, not after — the Discord interaction endpoint has to be verified against real HTTPS early, and gate `0.3b` (Discord accepting the endpoint URL) blocked everything downstream of it.
+- **📎 마커 개수는 지표가 아닙니다.** 사용자도 같은 이모지를 달 수 있고 Clip은 그것을 무시합니다. 개수는 어디에도 노출되지 않으며, 아카이브를 삭제해도 다른 사용자가 단 반응은 지울 수 없습니다.
+- **전달 기능이 클립 가능한 대상을 제한합니다.** 디스코드는 `DEFAULT`, `REPLY`, `CHAT_INPUT_COMMAND`, `CONTEXT_MENU_COMMAND`만 전달합니다 — 투표, 통화, 시스템 메시지는 잘못된 대상으로 거부됩니다.
+- **전달 메시지는 자기 출처를 담을 수 없습니다.** 디스코드는 전달과 함께 보낸 `content`를 거부하고(에러 `160011`) 스냅샷에서 `author`를 제외하므로, 아카이브 항목 하나는 항상 두 개의 메시지입니다 — 출처 한 줄, 그다음 전달.
+- **스냅샷은 불변입니다.** 원본을 수정해도 아카이브는 갱신되지 않고, 원본을 삭제해도 아카이브는 삭제되지 않습니다.
+- **아카이브는 어긋날 수 있고, P0에는 그것을 드러내는 화면이 없습니다.** 누군가 디스코드에서 아카이브 메시지를 수동으로 지우면 제어 행은 살아남습니다. `누락` 상태는 문자열 테이블과 스펙에 존재하지만 그것을 렌더링할 화면이 잘렸습니다. 자동 정합성 복구는 원래부터 P1입니다.
+- **P0에는 웹 아카이브가 없습니다.** 멤버와 관리자는 아카이브 채널 자체에서, 디스코드 안에서 읽습니다.
+- **살아 있는 Clip이 있는 동안에는 아카이브 목적지 재설정이 거부됩니다.** 이는 의도된 동작입니다 — Clip별 아카이브 채널 저장이 진짜 해법이고 P0 범위 밖입니다 — 하지만 채널을 잘못 고른 관리자는 목적지를 바꾸려면 그 길드의 Clip 데이터를 지워야 합니다.
 
-Observed state at 2026-08-20 22:15 KST:
+## 배포
+
+기존 가정용 k3s 클러스터(Intel N100, 16 GB)에 Traefik 뒤로 셀프 호스팅하며, 같은 네임스페이스의 CloudNativePG PostgreSQL 클러스터를 씁니다. 배포는 P0 작업이고 제품보다 **먼저** 이루어졌습니다 — 디스코드 인터랙션 엔드포인트는 진짜 HTTPS로 일찍 검증해야 하고, 게이트 `0.3b`(디스코드가 엔드포인트 URL을 수락하는 것)가 그 뒤의 모든 것을 막고 있었기 때문입니다.
+
+2026-08-20 22:15 KST 관측 상태:
 
 | | |
 |---|---|
-| Application pod | `clip-7d9bc9889-vmdgs`, `Running`, image `ghcr.io/cgm-16/clip:sha-7109e3d` |
-| Migration initContainer | same image — the two are bumped together, never one alone |
-| Database | `clip-db-1`, CloudNativePG, `Running` |
-| TLS | cert-manager certificate `clip-tls`, `READY True` |
-| Health | `curl https://clipendpoint.cc/api/health` → `200 {"ok":true}` |
+| 애플리케이션 파드 | `clip-7d9bc9889-vmdgs`, `Running`, 이미지 `ghcr.io/cgm-16/clip:sha-7109e3d` |
+| 마이그레이션 initContainer | 동일 이미지 — 둘은 항상 함께 올리며, 한쪽만 올리지 않습니다 |
+| 데이터베이스 | `clip-db-1`, CloudNativePG, `Running` |
+| TLS | cert-manager 인증서 `clip-tls`, `READY True` |
+| 헬스 | `curl https://clipendpoint.cc/api/health` → `200 {"ok":true}` |
 
-`k8s/deployment.yaml` carries `__CLIP_RELEASE_IMAGE__` as a placeholder and is rendered by `scripts/render-k8s-deployment.sh` with an explicit tag. It is a template rather than a checked-in pin because the checked-in pin went stale and named an image without the migration stage — applying it would have crash-looped the service. Verification of the rendered manifest is a test (`tests/scripts/render-k8s-deployment.test.ts`), not a `grep` that only prints.
+`k8s/deployment.yaml`은 `__CLIP_RELEASE_IMAGE__`를 자리표시자로 두고 `scripts/render-k8s-deployment.sh`가 명시적 태그로 렌더링합니다. 커밋된 고정 태그 대신 템플릿인 이유는, 커밋된 고정 태그가 실제로 낡아서 **마이그레이션 스테이지가 없는 이미지**를 가리키고 있었기 때문입니다 — 그대로 적용했다면 서비스가 크래시 루프에 빠졌을 것입니다. 렌더링된 매니페스트의 검증은 출력만 하는 `grep`이 아니라 테스트(`tests/scripts/render-k8s-deployment.test.ts`)입니다.
 
-Self-hosting is not free. The honest accounting:
+셀프 호스팅은 공짜가 아닙니다. 정직한 회계:
 
-| Cost | Amount | Note |
+| 비용 | 금액 | 비고 |
 |---|---|---|
-| Domain `clipendpoint.cc` | **USD 8 / year** | Registered via Cloudflare. The one genuinely new recurring cost. |
-| Incremental compute | ~0 marginal cash | Absorbed by an existing cluster. Not free — merely already paid for. The node is shared with co-tenant workloads. |
-| Electricity, network, hardware depreciation | not itemized | Real costs the household absorbs. Treated as sunk for this project rather than claimed as zero. |
-| Operator effort | not itemized | The largest real cost of self-hosting, and the one most often omitted. |
+| 도메인 `clipendpoint.cc` | **연 USD 8** | Cloudflare 등록. 유일하게 새로 발생한 반복 비용. |
+| 추가 컴퓨트 | 한계 현금 ≈ 0 | 기존 클러스터가 흡수. 공짜가 아니라 **이미 지불된** 것. 노드는 다른 워크로드와 공유됩니다. |
+| 전기·네트워크·하드웨어 감가 | 미산정 | 가정이 흡수하는 실제 비용. 0으로 주장하지 않고 매몰 비용으로 처리. |
+| 운영자 시간 | 미산정 | 셀프 호스팅의 가장 큰 실비이자 가장 자주 누락되는 항목. |
 
-Resource usage under load was not measured; there was no load. An earlier claim in this file about the node's load average was withdrawn because it could not be reproduced — that retraction is entry `[2026-08-19 05:30 KST]` in the evidence log and is deliberately kept.
+부하 상태의 자원 사용량은 측정하지 않았습니다 — 부하가 없었습니다. 이 파일에 한때 적혀 있던 노드 부하 평균 주장은 **재현되지 않아 철회**했습니다. 그 철회는 증거 로그의 `[2026-08-19 05:30 KST]` 항목이며 일부러 남겨 두었습니다.
 
-## Development
+## 개발 환경
 
-Requires Node 24+, pnpm, Docker, and a PostgreSQL instance.
+Node 24+, pnpm, Docker, PostgreSQL 인스턴스가 필요합니다.
 
 ```bash
 pnpm install
-cp .env.example .env          # fill in Discord credentials and DATABASE_URL
+cp .env.example .env          # 디스코드 자격 증명과 DATABASE_URL 채우기
 
-# Local PostgreSQL on :5433 — the port tests/setup/database-url.ts defaults to.
+# :5433의 로컬 PostgreSQL — tests/setup/database-url.ts가 기본값으로 쓰는 포트
 docker run -d --name clip-pg -p 5433:5432 \
   -e POSTGRES_USER=clip -e POSTGRES_PASSWORD=clip -e POSTGRES_DB=clip_dev \
   postgres:17-alpine
@@ -216,49 +216,49 @@ pnpm prisma migrate deploy
 pnpm dev
 ```
 
-`DATABASE_URL` has to be in the shell, not only in `.env`: Prisma 7 reads the datasource from `prisma.config.ts` at CLI time and that file resolves the variable from the environment. Runtime code goes through `parseEnv` in `lib/env.ts` instead, which does read `.env`.
+`DATABASE_URL`은 `.env`에만 있으면 안 되고 **셸 환경에** 있어야 합니다. Prisma 7은 CLI 시점에 `prisma.config.ts`에서 데이터소스를 읽고, 그 파일은 변수를 환경에서 해석합니다. 런타임 코드는 대신 `lib/env.ts`의 `parseEnv`를 거치며 이쪽은 `.env`를 읽습니다.
 
-`pnpm test` needs the container up and migrations applied; it does not need `.env`, because `tests/setup/database-url.ts` defaults to the same URL. It defaults rather than overrides, so an explicit `DATABASE_URL` always wins and the suite can never silently truncate tables in a database the developer did not intend.
+`pnpm test`는 컨테이너가 떠 있고 마이그레이션이 적용되어 있어야 하지만 `.env`는 필요 없습니다. `tests/setup/database-url.ts`가 같은 URL을 기본값으로 두기 때문입니다. 덮어쓰기가 아니라 기본값이므로 명시적 `DATABASE_URL`이 항상 이기고, 개발자가 의도하지 않은 데이터베이스에서 테이블이 조용히 비워지는 일이 생길 수 없습니다.
 
-Registering the Discord commands to a test guild (immediate, versus roughly an hour for global) — requires `DISCORD_APPLICATION_ID`, `DISCORD_BOT_TOKEN` and `DISCORD_TEST_GUILD_ID` in the environment:
+테스트 길드에 디스코드 명령 등록(즉시 반영. 글로벌은 최대 1시간) — `DISCORD_APPLICATION_ID`, `DISCORD_BOT_TOKEN`, `DISCORD_TEST_GUILD_ID`가 환경에 필요합니다:
 
 ```bash
 pnpm exec tsx scripts/register-discord-commands.ts
 ```
 
-The merge gate is `pnpm lint`, `pnpm test`, `pnpm build`. The interaction endpoint requires real HTTPS with a valid certificate, so Discord-facing behavior is exercised against the deployment rather than locally.
+머지 게이트는 `pnpm lint`, `pnpm test`, `pnpm build`입니다. 인터랙션 엔드포인트는 유효한 인증서를 가진 진짜 HTTPS를 요구하므로, 디스코드 관련 동작은 로컬이 아니라 배포본에 대고 확인합니다.
 
-## AI-assisted development method
+## AI 활용 개발 방식
 
-This project was built with Claude Code as the primary implementer, with product and architecture judgment held by the human. The working pattern, and the evidence for it, was recorded continuously rather than reconstructed at the end:
+이 프로젝트는 Claude Code를 주 구현자로 삼아 만들었고, 제품과 아키텍처 판단은 사람이 쥐고 있었습니다. 작업 방식과 그 증거는 마지막에 재구성하지 않고 계속해서 기록했습니다.
 
-- Product semantics were frozen in a specification **before** any code generation, so implementation agents optimized the build rather than the product
-- Every wave was planned as atomic tasks with an explicit dependency graph — see [docs/tasks/00_DAG.md](docs/tasks/00_DAG.md)
-- Technical notes, dead ends and parked issues go to [docs/journal/](docs/journal/)
-- Assignment evidence — what the AI proposed, what was accepted, what was rejected and why, how it was verified — is appended to [docs/04_ASSIGNMENT_CUMULATIVE_SNAPSHOT.md](docs/04_ASSIGNMENT_CUMULATIVE_SNAPSHOT.md)
+- 제품 의미론은 코드 생성 **전에** 스펙으로 동결했습니다. 구현 에이전트가 제품이 아니라 구현을 최적화하도록
+- 모든 wave를 원자 단위 태스크와 명시적 의존 그래프로 계획했습니다 — [docs/tasks/00_DAG.md](docs/tasks/00_DAG.md)
+- 기술 노트, 막다른 길, 보류한 이슈는 [docs/journal/](docs/journal/)로
+- 과제 증거 — AI가 무엇을 제안했고, 무엇이 받아들여졌고, 무엇이 왜 거부됐고, 어떻게 검증됐는지 — 는 [docs/04_ASSIGNMENT_CUMULATIVE_SNAPSHOT.md](docs/04_ASSIGNMENT_CUMULATIVE_SNAPSHOT.md)에 append
 
-Failures were recorded when they happened, not summarized afterwards, and the log contains more of them than of successes. They converge on one shape worth stating here: **a rigorous check aimed one object to the left of the claim it was supposed to support.** A verification run against an image the manifest does not name. A ruling reasoned over two summaries of a design instead of the design. A blocker declared from a probe of the access path instead of the desired end state. A concurrency test that passed because the callers were never concurrent. In every case the work was careful, the evidence was real, and the conclusion was wrong — and in every case it was caught by a reader who had not written the thing.
+실패는 사후 요약이 아니라 발생 시점에 기록했고, 로그에는 성공보다 실패가 더 많습니다. 그리고 그 실패들은 하나의 형태로 수렴합니다. **엄밀한 검증이, 그것이 뒷받침해야 할 주장에서 한 칸 옆을 겨눴다.** 매니페스트가 지목하지 않는 이미지에 대고 돌린 검증. 디자인 원본 대신 그것의 요약본 두 개를 놓고 내린 판정. 원하는 최종 상태가 아니라 접근 경로만 찔러보고 선언한 블로커. 호출자들이 한 번도 동시였던 적이 없어서 통과한 동시성 테스트. 매번 작업은 성실했고, 증거는 진짜였고, 결론은 틀렸습니다 — 그리고 매번 **그것을 쓰지 않은 사람**이 잡아냈습니다.
 
-## Repository map
+## 저장소 지도
 
-| Path | Contents |
+| 경로 | 내용 |
 |---|---|
-| [docs/00_HANDOFF_INDEX.md](docs/00_HANDOFF_INDEX.md) | Entry point to the planning package and read order by role |
-| [docs/01_CLIP_PRODUCT_SPEC.md](docs/01_CLIP_PRODUCT_SPEC.md) | Approved product behavior, data model, invariants, failure cases |
-| [docs/02_CLIP_IMPLEMENTATION_PLAN.md](docs/02_CLIP_IMPLEMENTATION_PLAN.md) | Waves, tasks, tests, verification gates |
-| [docs/03_CLIP_RESEARCH_DECISION_LOG.md](docs/03_CLIP_RESEARCH_DECISION_LOG.md) | Why Clip, competitor attacks, rejected alternatives, reversals |
-| [docs/04_ASSIGNMENT_CUMULATIVE_SNAPSHOT.md](docs/04_ASSIGNMENT_CUMULATIVE_SNAPSHOT.md) | **Append-only evidence log** — the record behind every claim above |
-| [docs/07_ASSIGNMENT_ANSWERS.md](docs/07_ASSIGNMENT_ANSWERS.md) | **The four assignment answers** (Korean), written from the evidence log |
-| [docs/05_DESIGN_AGENT_BRIEF.md](docs/05_DESIGN_AGENT_BRIEF.md) | Functional screens and UX invariants given to the design pass |
-| [docs/06_DESIGN_HANDOFF.md](docs/06_DESIGN_HANDOFF.md) | **The UI specification** — design system, screens A–E, final Korean copy |
-| [docs/DESIGN_RATIONALE_APPEND.md](docs/DESIGN_RATIONALE_APPEND.md) | Design decision log (Korean) |
-| [docs/tasks/00_DAG.md](docs/tasks/00_DAG.md) | Dependency graph, critical path, cut order |
-| [docs/journal/](docs/journal/) | Technical notes and dead ends |
-| [design/](design/) | Design reference prototypes — **not code**, never imported or served |
-| [tokens.css](tokens.css) | The single source of visual values |
-| [k8s/](k8s/) | Deployment manifest template, rendered by `scripts/render-k8s-deployment.sh` |
-| [scripts/](scripts/) | Command registration, manifest rendering, kubeconfig tunnel |
+| [docs/00_HANDOFF_INDEX.md](docs/00_HANDOFF_INDEX.md) | 기획 패키지 진입점과 역할별 읽기 순서 |
+| [docs/01_CLIP_PRODUCT_SPEC.md](docs/01_CLIP_PRODUCT_SPEC.md) | 승인된 제품 동작, 데이터 모델, 불변식, 실패 케이스 |
+| [docs/02_CLIP_IMPLEMENTATION_PLAN.md](docs/02_CLIP_IMPLEMENTATION_PLAN.md) | wave, 태스크, 테스트, 검증 게이트 |
+| [docs/03_CLIP_RESEARCH_DECISION_LOG.md](docs/03_CLIP_RESEARCH_DECISION_LOG.md) | 왜 Clip인가, 경쟁 서비스 공격, 기각된 대안, 번복 기록 |
+| [docs/04_ASSIGNMENT_CUMULATIVE_SNAPSHOT.md](docs/04_ASSIGNMENT_CUMULATIVE_SNAPSHOT.md) | **append-only 증거 로그** — 위 모든 주장의 근거 |
+| [docs/07_ASSIGNMENT_ANSWERS.md](docs/07_ASSIGNMENT_ANSWERS.md) | **과제 네 문항 답변**, 증거 로그에서 작성 |
+| [docs/05_DESIGN_AGENT_BRIEF.md](docs/05_DESIGN_AGENT_BRIEF.md) | 디자인 단계에 넘긴 기능적 화면과 UX 불변식 |
+| [docs/06_DESIGN_HANDOFF.md](docs/06_DESIGN_HANDOFF.md) | **UI 스펙** — 디자인 시스템, 화면 A–E, 최종 한국어 카피 |
+| [docs/DESIGN_RATIONALE_APPEND.md](docs/DESIGN_RATIONALE_APPEND.md) | 디자인 결정 로그 |
+| [docs/tasks/00_DAG.md](docs/tasks/00_DAG.md) | 의존 그래프, 임계 경로, 컷 순서 |
+| [docs/journal/](docs/journal/) | 기술 노트와 막다른 길 |
+| [design/](design/) | 디자인 참조 프로토타입 — **코드가 아님**, 임포트하거나 서빙하지 않음 |
+| [tokens.css](tokens.css) | 시각 값의 단일 출처 |
+| [k8s/](k8s/) | 배포 매니페스트 템플릿, `scripts/render-k8s-deployment.sh`가 렌더링 |
+| [scripts/](scripts/) | 명령 등록, 매니페스트 렌더링, kubeconfig 터널 |
 
-## License
+## 라이선스
 
-Not yet determined.
+미정.
