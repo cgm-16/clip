@@ -13,11 +13,12 @@ import {
   deferredEphemeralReply,
   ephemeralReply,
   patchFollowupMessage,
+  removeButtonResultCopy,
   removeResultCopy,
   unclipResultCopy,
 } from '@/lib/discord/interaction-responses';
 import { createArchiveMarker } from '@/lib/discord/marker';
-import { notifyAuthorOfFirstArchival } from '@/lib/discord/notifications';
+import { handleRemoveButtonInteraction, notifyAuthorOfFirstArchival } from '@/lib/discord/notifications';
 import { hasManageGuild } from '@/lib/discord/permissions';
 import { createDiscordRestClient, DiscordApiError } from '@/lib/discord/rest-client';
 import { verifyInteractionRequest } from '@/lib/discord/verify-interaction';
@@ -30,6 +31,7 @@ import { logClipEvent } from '@/lib/logging/safe-log';
 // lets Discord accept this URL as the app's interaction endpoint.
 const PING_INTERACTION_TYPE = 1;
 const APPLICATION_COMMAND_INTERACTION_TYPE = 2;
+const MESSAGE_COMPONENT_INTERACTION_TYPE = 3;
 
 // The fields `/setup` needs from an invocation, all of which Discord sends
 // only for a guild invocation: in a DM there is no `member` and no
@@ -88,6 +90,20 @@ const MessageContextInvocationSchema = z.object({
       ),
     }),
   }),
+});
+
+/**
+ * The fields a click on the DM's `아카이브에서 제거` button needs. This
+ * interaction is delivered to a DM, which Discord never attaches a `guild_id`
+ * or `member` to -- the interacting member is only available as `user`, and
+ * the guild/message the button acts on travel in `custom_id`, encoded and
+ * re-verified server-side by `parseRemoveFromArchiveCustomId` rather than
+ * trusted from this payload.
+ */
+const RemoveButtonInvocationSchema = z.object({
+  token: z.string().min(1),
+  user: z.object({ id: z.string().min(1) }),
+  data: z.object({ custom_id: z.string().min(1) }),
 });
 
 /**
@@ -312,6 +328,66 @@ async function runRemoveCommand(ctx: ContextCommandContext, env: Env): Promise<v
   }
 }
 
+/**
+ * Runs the DM's `아카이브에서 제거` button after its deferred reply has
+ * already gone out. Mirrors `runRemoveCommand`, but there is no marker
+ * reaction to retract here: `custom_id` carries only the guild and source
+ * message id (never the source channel), so this path has no source channel
+ * id to remove the marker with. That is an existing limitation of the DM
+ * button's encoding, not something this handler can fix.
+ */
+async function runRemoveButtonInteraction(
+  interactionToken: string,
+  customId: string,
+  interactingUserId: string,
+  env: Env,
+): Promise<void> {
+  const gateway = createDiscordArchiveGateway({ botToken: env.DISCORD_BOT_TOKEN, fetchImpl: fetch });
+
+  const result = await handleRemoveButtonInteraction(
+    { customId, interactingUserId },
+    { gateway },
+  );
+
+  await sendFollowupSafely(env, interactionToken, removeButtonResultCopy(result));
+}
+
+/**
+ * Answers a click on the DM's `아카이브에서 제거` button (interaction type 3,
+ * MESSAGE_COMPONENT).
+ *
+ * Deferred the same way the context commands are: `handleRemoveButtonInteraction`
+ * does a locked read and a Discord delete, which does not reliably fit
+ * Discord's 3-second budget for the initial response.
+ *
+ * The interacting user's id is read from `interaction.user.id`, never
+ * `interaction.member.user.id` -- a DM interaction carries no `member` at
+ * all, so reaching for it here would either throw or (if a caller made this
+ * field optional in the schema instead) authorize a click no one made.
+ */
+function handleMessageComponent(interaction: unknown, env: Env): Response {
+  const invocation = RemoveButtonInvocationSchema.safeParse(interaction);
+  if (!invocation.success) {
+    // Unreachable from a real Discord invocation of this button; kept as a
+    // fail-closed answer rather than a thrown error on the (untrusted)
+    // chance the payload does not match what Discord signed.
+    return ephemeralReply(DISCORD_COPY.transientFailure);
+  }
+  const { token, user, data } = invocation.data;
+
+  const response = deferredEphemeralReply();
+  runRemoveButtonInteraction(token, data.custom_id, user.id, env).catch((error: unknown) => {
+    logClipEvent({
+      event: 'discord.remove_button_failed',
+      userId: user.id,
+      errorCode: discordErrorCode(error),
+    });
+    // Best-effort: the deferred placeholder should not stay unanswered.
+    void sendFollowupSafely(env, token, DISCORD_COPY.transientFailure);
+  });
+  return response;
+}
+
 const CONTEXT_COMMAND_RUNNERS: Record<
   string,
   (ctx: ContextCommandContext, env: Env) => Promise<void>
@@ -412,6 +488,10 @@ export async function POST(request: Request) {
         return response;
       }
     }
+  }
+
+  if (interaction.type === MESSAGE_COMPONENT_INTERACTION_TYPE) {
+    return handleMessageComponent(interaction, env);
   }
 
   return new Response(null, { status: 501 });

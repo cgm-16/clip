@@ -13,6 +13,7 @@
 
 import type { ClipCommandResult, RemoveResult, UnclipResult } from '@/lib/clip/types';
 import { DISCORD_COPY } from '@/lib/discord/copy';
+import type { RemoveButtonInteractionResult } from '@/lib/discord/notifications';
 import { createDiscordRestClient } from '@/lib/discord/rest-client';
 
 // Discord interaction callback types this module builds.
@@ -151,4 +152,25 @@ export function removeResultCopy(result: RemoveResult): string {
     default:
       return unreachableResult(result);
   }
+}
+
+/**
+ * Every `RemoveButtonInteractionResult` variant, mapped to exactly one line
+ * of copy. The `RemoveResult` variants defer to `removeResultCopy` rather
+ * than re-mapping them here -- the DM button and the `Remove from Clip
+ * Archive` command answer the same fact ("is this message still archived")
+ * and must never drift into two different sentences for it.
+ *
+ * `INVALID_CUSTOM_ID` has no row of its own in the handoff table. It reuses
+ * `nothingToUnclip` rather than `transientFailure`: a `custom_id` this
+ * module cannot parse names no Clip to act on, so "이 메시지를 보관한 기록이
+ * 없습니다" is the truthful sentence, while `transientFailure`'s "다시 시도해
+ * 주세요" would promise that retrying the same button might work, which it
+ * never can for a malformed id.
+ */
+export function removeButtonResultCopy(result: RemoveButtonInteractionResult): string {
+  if (result.kind === 'INVALID_CUSTOM_ID') {
+    return DISCORD_COPY.nothingToUnclip;
+  }
+  return removeResultCopy(result);
 }
