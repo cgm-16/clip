@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { SetupChannel } from '@/lib/discord/guild-lookup';
 import { ScreenA } from './ScreenA';
 import { ScreenB, type SetupSubmission } from './ScreenB';
 import { ScreenC } from './ScreenC';
+import { ScreenLoadError } from './ScreenLoadError';
 
 /** `/setup/save`'s success body — see `app/setup/save/route.ts`. */
 type SaveResult = {
@@ -17,17 +18,68 @@ type SaveResult = {
 type FlowState =
   | { status: 'loading' }
   | { status: 'expired' }
+  | { status: 'load-error'; canExchangeToken: boolean }
   | { status: 'ready'; guildId: string; channels: SetupChannel[] }
   | ({ status: 'complete'; guildId: string; channels: SetupChannel[] } & SaveResult);
 
 type SetupData = { guildId: string; channels: SetupChannel[] };
 
-async function fetchSetupData(): Promise<SetupData | null> {
-  const response = await fetch('/setup/data');
-  if (!response.ok) {
+type SetupDataResult =
+  | { status: 'ready'; data: SetupData }
+  | { status: 'unauthenticated' }
+  | { status: 'failed' };
+
+function isSetupChannel(value: unknown): value is SetupChannel {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const { id, name, type } = value as Record<string, unknown>;
+  return typeof id === 'string' && typeof name === 'string' && typeof type === 'number';
+}
+
+function parseSetupData(value: unknown): SetupData | null {
+  if (typeof value !== 'object' || value === null) {
     return null;
   }
-  return response.json();
+  const { guildId, channels } = value as Record<string, unknown>;
+  if (typeof guildId !== 'string' || !Array.isArray(channels) || !channels.every(isSetupChannel)) {
+    return null;
+  }
+  return { guildId, channels };
+}
+
+function parseSaveResult(value: unknown): SaveResult | null {
+  if (typeof value !== 'object' || value === null) {
+    return null;
+  }
+  const { archiveChannelId, archiveChannelName, autoCreated, clipCount } = value as Record<string, unknown>;
+  if (
+    typeof archiveChannelId !== 'string' ||
+    archiveChannelId.length === 0 ||
+    typeof archiveChannelName !== 'string' ||
+    typeof autoCreated !== 'boolean' ||
+    typeof clipCount !== 'number' ||
+    !Number.isFinite(clipCount)
+  ) {
+    return null;
+  }
+  return { archiveChannelId, archiveChannelName, autoCreated, clipCount };
+}
+
+async function fetchSetupData(): Promise<SetupDataResult> {
+  try {
+    const response = await fetch('/setup/data');
+    if (response.status === 401) {
+      return { status: 'unauthenticated' };
+    }
+    if (!response.ok) {
+      return { status: 'failed' };
+    }
+    const data = parseSetupData(await response.json());
+    return data ? { status: 'ready', data } : { status: 'failed' };
+  } catch {
+    return { status: 'failed' };
+  }
 }
 
 /**
@@ -40,18 +92,45 @@ async function fetchSetupData(): Promise<SetupData | null> {
  */
 export function SetupFlow({ token }: { token: string }) {
   const [state, setState] = useState<FlowState>({ status: 'loading' });
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const currentAttempt = useRef(0);
+  const tokenCapability = useRef({ token, canExchangeToken: true });
+  const retryPending = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
+    const attempt = ++currentAttempt.current;
+    if (tokenCapability.current.token !== token) {
+      tokenCapability.current = { token, canExchangeToken: true };
+    }
+    const capability = tokenCapability.current;
 
-    async function run() {
+    function ownsAttempt() {
+      return !cancelled && currentAttempt.current === attempt && tokenCapability.current === capability;
+    }
+
+    async function loadSetupData() {
       // A cookie from an earlier visit may already carry a live session —
       // try it first so a reload never re-spends the (one-time) setup token.
       const existing = await fetchSetupData();
-      if (existing) {
-        if (!cancelled) {
-          setState({ status: 'ready', ...existing });
-        }
+      if (!ownsAttempt()) {
+        return;
+      }
+      if (existing.status === 'ready') {
+        retryPending.current = false;
+        setState({ status: 'ready', ...existing.data });
+        return;
+      }
+
+      if (existing.status === 'failed') {
+        retryPending.current = false;
+        setState({ status: 'load-error', canExchangeToken: capability.canExchangeToken });
+        return;
+      }
+
+      if (!capability.canExchangeToken) {
+        retryPending.current = false;
+        setState({ status: 'expired' });
         return;
       }
 
@@ -60,24 +139,35 @@ export function SetupFlow({ token }: { token: string }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token }),
       });
+      if (!ownsAttempt()) {
+        return;
+      }
       if (!exchangeResponse.ok) {
-        if (!cancelled) {
-          setState({ status: 'expired' });
-        }
+        retryPending.current = false;
+        setState({ status: 'expired' });
         return;
       }
 
+      capability.canExchangeToken = false;
       const data = await fetchSetupData();
-      if (!cancelled) {
-        setState(data ? { status: 'ready', ...data } : { status: 'expired' });
+      if (!ownsAttempt()) {
+        return;
+      }
+      retryPending.current = false;
+      if (data.status === 'ready') {
+        setState({ status: 'ready', ...data.data });
+      } else if (data.status === 'failed') {
+        setState({ status: 'load-error', canExchangeToken: capability.canExchangeToken });
+      } else {
+        setState({ status: 'expired' });
       }
     }
 
-    run();
+    loadSetupData();
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [loadAttempt, token]);
 
   if (state.status === 'loading') {
     return null;
@@ -85,6 +175,21 @@ export function SetupFlow({ token }: { token: string }) {
 
   if (state.status === 'expired') {
     return <ScreenA />;
+  }
+
+  if (state.status === 'load-error') {
+    return (
+      <ScreenLoadError
+        onRetry={() => {
+          if (retryPending.current) {
+            return;
+          }
+          retryPending.current = true;
+          setState({ status: 'loading' });
+          setLoadAttempt((attempt) => attempt + 1);
+        }}
+      />
+    );
   }
 
   if (state.status === 'complete') {
@@ -114,13 +219,21 @@ export function SetupFlow({ token }: { token: string }) {
   // (`WEB_COPY_AUTHORED.saveFailed`) rather than silently doing nothing (see
   // `ScreenB.tsx`'s own doc comment on `onSubmit`).
   async function handleSubmit(submission: SetupSubmission): Promise<boolean> {
-    let response: Response;
     try {
-      response = await fetch('/setup/save', {
+      const response = await fetch('/setup/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(submission),
       });
+      if (!response.ok) {
+        return false;
+      }
+      const result = parseSaveResult(await response.json());
+      if (!result) {
+        return false;
+      }
+      setState({ status: 'complete', guildId, channels, ...result });
+      return true;
     } catch {
       // An offline or reset connection rejects instead of answering. That is
       // still a failed save, so it has to leave here as `false`; thrown, it
@@ -128,12 +241,6 @@ export function SetupFlow({ token }: { token: string }) {
       // with no error callout at all.
       return false;
     }
-    if (!response.ok) {
-      return false;
-    }
-    const result: SaveResult = await response.json();
-    setState({ status: 'complete', guildId, channels, ...result });
-    return true;
   }
 
   return <ScreenB channels={channels} onSubmit={handleSubmit} />;

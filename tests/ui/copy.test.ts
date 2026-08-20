@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { WEB_COPY, WEB_COPY_TEMPLATES } from '@/lib/ui/copy';
+import { WEB_COPY, WEB_COPY_AUTHORED, WEB_COPY_TEMPLATES } from '@/lib/ui/copy';
 
 /**
  * The handoff is the authority. These tests read it at run time and compare
@@ -146,5 +146,13 @@ describe('web UI copy', () => {
       expect(value).not.toContain('✓ 보관했습니다');
       expect(value).not.toContain('이미 보관된 메시지입니다');
     }
+  });
+
+  it('keeps the approved authored setup-recovery copy exact', () => {
+    expect(WEB_COPY_AUTHORED.setupExistingChannelPlaceholder).toBe('채널을 선택하세요');
+    expect(WEB_COPY_AUTHORED.setupDataLoadFailed).toBe(
+      '설정 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.',
+    );
+    expect(WEB_COPY_AUTHORED.retry).toBe('다시 시도');
   });
 });

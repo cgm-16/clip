@@ -71,6 +71,18 @@ describe('ScreenB — archive destination configuration', () => {
     expect(screen.getByRole('option', { name: '#general' })).toBeInTheDocument();
   });
 
+  it('starts existing-channel selection at the approved empty placeholder', async () => {
+    const user = userEvent.setup();
+    render(<ScreenB channels={CHANNELS} onSubmit={vi.fn()} />);
+
+    await user.click(screen.getByRole('radio', { name: WEB_COPY.setup.destinationExistingLabel }));
+
+    expect(screen.getByRole('combobox')).toHaveValue('');
+    expect(
+      screen.getByRole('option', { name: WEB_COPY_AUTHORED.setupExistingChannelPlaceholder }),
+    ).toHaveValue('');
+  });
+
   it('refuses submit with no channel selected, showing the handoff validation string', async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
@@ -329,6 +341,274 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
     await waitFor(() => expect(screen.getByText(WEB_COPY.expiredSetupLink.title)).toBeInTheDocument());
   });
 
+  it('shows a retryable load error without exchanging an unspent token', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/setup/data')) {
+        return new Response(null, { status: 502 });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<SetupFlow token="fresh-token" />);
+
+    expect(await screen.findByText(WEB_COPY_AUTHORED.setupDataLoadFailed)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: WEB_COPY_AUTHORED.retry })).toBeInTheDocument();
+    expect(screen.getByText(WEB_COPY.tags.error)).toBeInTheDocument();
+    expect(screen.queryByText(WEB_COPY.expiredSetupLink.title)).not.toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/setup/exchange', expect.anything());
+  });
+
+  it('retries setup data without exchanging when the token remains unspent', async () => {
+    const user = userEvent.setup();
+    let dataCalls = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/setup/data')) {
+        dataCalls += 1;
+        return dataCalls === 1
+          ? new Response(null, { status: 502 })
+          : Response.json({ guildId: 'g1', channels: CHANNELS });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<SetupFlow token="fresh-token" />);
+    await screen.findByText(WEB_COPY_AUTHORED.setupDataLoadFailed);
+
+    await user.click(screen.getByRole('button', { name: WEB_COPY_AUTHORED.retry }));
+
+    await waitFor(() => expect(screen.getByText(WEB_COPY.setup.destinationLegend)).toBeInTheDocument());
+    expect(dataCalls).toBe(2);
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/setup/exchange', expect.anything());
+  });
+
+  it('keeps only one retry active while retried setup data is pending', async () => {
+    const user = userEvent.setup();
+    let resolveRetryData: (response: Response) => void = () => {};
+    let dataCalls = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (!url.endsWith('/setup/data')) {
+        throw new Error(`unexpected fetch: ${url}`);
+      }
+      dataCalls += 1;
+      if (dataCalls === 1) {
+        return new Response(null, { status: 502 });
+      }
+      return new Promise<Response>((resolve) => {
+        resolveRetryData = resolve;
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<SetupFlow token="fresh-token" />);
+    await screen.findByText(WEB_COPY_AUTHORED.setupDataLoadFailed);
+
+    await user.click(screen.getByRole('button', { name: WEB_COPY_AUTHORED.retry }));
+
+    await waitFor(() => expect(dataCalls).toBe(2));
+    expect(screen.queryByRole('button', { name: WEB_COPY_AUTHORED.retry })).not.toBeInTheDocument();
+    expect(screen.queryByText(WEB_COPY_AUTHORED.setupDataLoadFailed)).not.toBeInTheDocument();
+
+    resolveRetryData(Response.json({ guildId: 'g1', channels: CHANNELS }));
+    await waitFor(() => expect(screen.getByText(WEB_COPY.setup.destinationLegend)).toBeInTheDocument());
+  });
+
+  it('does not let a stale retry exchange a replaced token', async () => {
+    const user = userEvent.setup();
+    let resolveStaleRetry: (response: Response) => void = () => {};
+    let resolveCurrentToken: (response: Response) => void = () => {};
+    let dataCalls = 0;
+    const exchangedTokens: string[] = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/setup/data')) {
+        dataCalls += 1;
+        if (dataCalls === 1) {
+          return new Response(null, { status: 502 });
+        }
+        if (dataCalls === 2) {
+          return new Promise<Response>((resolve) => {
+            resolveStaleRetry = resolve;
+          });
+        }
+        if (dataCalls === 3) {
+          return new Promise<Response>((resolve) => {
+            resolveCurrentToken = resolve;
+          });
+        }
+        return Response.json({ guildId: 'g1', channels: CHANNELS });
+      }
+      if (url.endsWith('/api/setup/exchange')) {
+        exchangedTokens.push(JSON.parse(String(init?.body)).token);
+        return new Response(null, { status: 204 });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const view = render(<SetupFlow token="stale-token" />);
+    await screen.findByText(WEB_COPY_AUTHORED.setupDataLoadFailed);
+    await user.click(screen.getByRole('button', { name: WEB_COPY_AUTHORED.retry }));
+    await waitFor(() => expect(dataCalls).toBe(2));
+
+    view.rerender(<SetupFlow token="current-token" />);
+    await waitFor(() => expect(dataCalls).toBe(3));
+
+    resolveStaleRetry(new Response(null, { status: 401 }));
+    resolveCurrentToken(new Response(null, { status: 401 }));
+
+    await waitFor(() => expect(screen.getByText(WEB_COPY.setup.destinationLegend)).toBeInTheDocument());
+    expect(exchangedTokens).toEqual(['current-token']);
+  });
+
+  it('does not let a stale exchange completion start post-exchange loading', async () => {
+    let resolveStaleExchange: (response: Response) => void = () => {};
+    let resolveCurrentExchange: (response: Response) => void = () => {};
+    let dataCalls = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/setup/data')) {
+        dataCalls += 1;
+        if (dataCalls <= 2) {
+          return new Response(null, { status: 401 });
+        }
+        return Response.json({ guildId: 'g1', channels: CHANNELS });
+      }
+      if (url.endsWith('/api/setup/exchange')) {
+        const { token } = JSON.parse(String(init?.body));
+        return new Promise<Response>((resolve) => {
+          if (token === 'stale-token') {
+            resolveStaleExchange = resolve;
+          } else {
+            resolveCurrentExchange = resolve;
+          }
+        });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const view = render(<SetupFlow token="stale-token" />);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    view.rerender(<SetupFlow token="current-token" />);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+
+    resolveStaleExchange(new Response(null, { status: 204 }));
+    resolveCurrentExchange(new Response(null, { status: 204 }));
+
+    await waitFor(() => expect(screen.getByText(WEB_COPY.setup.destinationLegend)).toBeInTheDocument());
+    expect(dataCalls).toBe(3);
+    expect(screen.queryByText(WEB_COPY.expiredSetupLink.title)).not.toBeInTheDocument();
+  });
+
+  it('does not load setup data after an unmounted exchange completes', async () => {
+    let resolveExchange: (response: Response) => void = () => {};
+    let dataCalls = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/setup/data')) {
+        dataCalls += 1;
+        return new Response(null, { status: 401 });
+      }
+      if (url.endsWith('/api/setup/exchange')) {
+        return new Promise<Response>((resolve) => {
+          resolveExchange = resolve;
+        });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const view = render(<SetupFlow token="fresh-token" />);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    view.unmount();
+    resolveExchange(new Response(null, { status: 204 }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(dataCalls).toBe(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not let stale post-exchange data replace a current loading flow', async () => {
+    let resolveStaleData: (response: Response) => void = () => {};
+    let resolveCurrentData: (response: Response) => void = () => {};
+    let dataCalls = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/setup/data')) {
+        dataCalls += 1;
+        if (dataCalls === 1) {
+          return new Response(null, { status: 401 });
+        }
+        return new Promise<Response>((resolve) => {
+          if (dataCalls === 2) {
+            resolveStaleData = resolve;
+          } else {
+            resolveCurrentData = resolve;
+          }
+        });
+      }
+      if (url.endsWith('/api/setup/exchange')) {
+        return new Response(null, { status: 204 });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const view = render(<SetupFlow token="stale-token" />);
+    await waitFor(() => expect(dataCalls).toBe(2));
+
+    view.rerender(<SetupFlow token="current-token" />);
+    await waitFor(() => expect(dataCalls).toBe(3));
+
+    resolveStaleData(new Response(null, { status: 502 }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(screen.queryByText(WEB_COPY_AUTHORED.setupDataLoadFailed)).not.toBeInTheDocument();
+    expect(screen.queryByText(WEB_COPY.expiredSetupLink.title)).not.toBeInTheDocument();
+
+    resolveCurrentData(Response.json({ guildId: 'g1', channels: CHANNELS }));
+    await waitFor(() => expect(screen.getByText(WEB_COPY.setup.destinationLegend)).toBeInTheDocument());
+  });
+
+  it('never exchanges again when retry follows a post-exchange load failure', async () => {
+    const user = userEvent.setup();
+    let dataCalls = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/setup/data')) {
+        dataCalls += 1;
+        if (dataCalls === 1) {
+          return new Response(null, { status: 401 });
+        }
+        if (dataCalls === 2) {
+          return new Response(null, { status: 502 });
+        }
+        return Response.json({ guildId: 'g1', channels: CHANNELS });
+      }
+      if (url.endsWith('/api/setup/exchange')) {
+        return new Response(null, { status: 204 });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<SetupFlow token="fresh-token" />);
+    await screen.findByText(WEB_COPY_AUTHORED.setupDataLoadFailed);
+
+    await user.click(screen.getByRole('button', { name: WEB_COPY_AUTHORED.retry }));
+
+    await waitFor(() => expect(screen.getByText(WEB_COPY.setup.destinationLegend)).toBeInTheDocument());
+    expect(dataCalls).toBe(3);
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/api/setup/exchange'))).toHaveLength(1);
+  });
+
   it('exchanges the token once, then renders Screen B with the fetched channels', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -412,6 +692,69 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
       'href',
       'https://discord.com/channels/g1/999',
     );
+  });
+
+  it('keeps Screen B for a 200 save response with the wrong shape', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/setup/data')) {
+        return Response.json({ guildId: 'g1', channels: CHANNELS });
+      }
+      if (url.endsWith('/setup/save')) {
+        return Response.json({ archiveChannelId: '999' });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<SetupFlow token="fresh-token" />);
+    await waitFor(() =>
+      expect(screen.getByText(WEB_COPY.setup.destinationLegend)).toBeInTheDocument(),
+    );
+
+    await user.click(screen.getByRole('button', { name: WEB_COPY.setup.save }));
+
+    expect(
+      await screen.findByText((_, node) => node?.textContent === WEB_COPY_AUTHORED.saveFailed),
+    ).toBeInTheDocument();
+    expect(screen.getByText(WEB_COPY.setup.destinationLegend)).toBeInTheDocument();
+    expect(screen.queryByText(WEB_COPY.setupComplete.title)).not.toBeInTheDocument();
+  });
+
+  it('keeps Screen B for malformed JSON in a 200 save response', async () => {
+    const user = userEvent.setup();
+    const unhandledRejection = vi.fn();
+    window.addEventListener('unhandledrejection', unhandledRejection);
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/setup/data')) {
+        return Response.json({ guildId: 'g1', channels: CHANNELS });
+      }
+      if (url.endsWith('/setup/save')) {
+        return new Response('{not-json', {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<SetupFlow token="fresh-token" />);
+    await waitFor(() =>
+      expect(screen.getByText(WEB_COPY.setup.destinationLegend)).toBeInTheDocument(),
+    );
+
+    await user.click(screen.getByRole('button', { name: WEB_COPY.setup.save }));
+
+    expect(
+      await screen.findByText((_, node) => node?.textContent === WEB_COPY_AUTHORED.saveFailed),
+    ).toBeInTheDocument();
+    expect(screen.getByText(WEB_COPY.setup.destinationLegend)).toBeInTheDocument();
+    expect(screen.queryByText(WEB_COPY.setupComplete.title)).not.toBeInTheDocument();
+    expect(unhandledRejection).not.toHaveBeenCalled();
+    window.removeEventListener('unhandledrejection', unhandledRejection);
   });
 
   it('shows the save-failed callout on Screen B when /setup/save fails, then clears it and advances to Screen C once a retry succeeds', async () => {

@@ -2,7 +2,7 @@ import { Callout } from '@/components/ui/Callout';
 import { MonoChip } from '@/components/ui/MonoChip';
 import { WEB_COPY } from '@/lib/ui/copy';
 import { Wordmark } from './Wordmark';
-import styles from './ScreenA.module.css';
+import styles from './SetupStatusCard.module.css';
 
 const RECOVERY_COMMAND = '/setup';
 

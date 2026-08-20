@@ -190,6 +190,10 @@ export const WEB_COPY_TEMPLATES = {
  * apply here. Every entry must record who authored it and when.
  */
 export const WEB_COPY_AUTHORED = {
+  /** Setup recovery UI — approved by Ori in PR #48 Task 5 on 2026-08-20. */
+  setupExistingChannelPlaceholder: '채널을 선택하세요',
+  setupDataLoadFailed: '설정 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.',
+  retry: '다시 시도',
   /**
    * Screen B save failure — expired session, channel gone, Discord refusing
    * channel creation, a 5xx, etc. The handoff has no string for this

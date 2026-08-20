@@ -161,10 +161,13 @@ export function ScreenB({ channels, onSubmit, onCancel, guildName, adminHandle }
               onChange={(event) => handleChannelChange(event.target.value)}
               onBlur={handleChannelBlur}
               aria-invalid={channelError ? true : undefined}
-              options={channels.map((channel) => ({
-                value: channel.id,
-                label: `#${channel.name}`,
-              }))}
+              options={[
+                { value: '', label: WEB_COPY_AUTHORED.setupExistingChannelPlaceholder },
+                ...channels.map((channel) => ({
+                  value: channel.id,
+                  label: `#${channel.name}`,
+                })),
+              ]}
             />
             {channelError && <Callout variant="confirm">{channelError}</Callout>}
             <p className={styles.warning}>{WEB_COPY.setup.destinationExistingWarning}</p>
