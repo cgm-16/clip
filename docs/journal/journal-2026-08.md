@@ -848,3 +848,59 @@ PR #48's body too, but a PR body is not a durable record once it is squashed.
   messages does not need it. The README over-states, so the fix belongs in the
   README, not the permission set. Touching it during a fix wave about
   permissions would have buried the change in an unrelated diff.
+
+## 2026-08-20 — Wave 7, documentation reconciliation
+
+`README.md` had said **"Status: pre-implementation. No application code has been
+written"** since before Wave 0. Four merged waves, 112 commits and a running
+deployment later, nothing had contradicted it, because nothing checks it. Every
+gate this project has — `pnpm lint`, `pnpm test`, `pnpm build`, the wave review,
+CI — reads code. Documentation drift is invisible to all of them and visible to
+the only audience a submission has.
+
+Facts re-derived from the running system rather than from the plan, since the
+plan is what was wrong:
+
+- `kubectl -n clip get deploy clip -o jsonpath` over both `initContainers` and
+  `containers` → `ghcr.io/cgm-16/clip:sha-7109e3d` on each, which is
+  `origin/main` HEAD. Checked in this order deliberately: the C1 finding on
+  PR #48 was a verification run against an image the manifest did not name.
+- `GET /applications/@me` → Discord holds
+  `https://clipendpoint.cc/api/discord/interactions`. Discord only stores that
+  URL after a signed PING succeeds, so this is gate `0.3b` observed rather than
+  remembered.
+- `GET /applications/{id}/guilds/{guild}/commands` → `setup`, `Clip`, `Unclip`,
+  `Remove from Clip Archive`.
+- `pnpm vitest run` from a clean worktree: **345 passed, 30 files**. The clean
+  worktree needs `pnpm prisma generate` with `DATABASE_URL` **in the shell**
+  first — `prisma.config.ts` resolves it from the environment at CLI time and
+  does not read `.env`. A fresh checkout without that step fails 10 files on a
+  missing `generated/prisma/client`, which looks like a broken suite and is not.
+
+### The `MANAGE_MESSAGES` row, flagged in the previous entry, is now fixed
+
+The permission table listed it as a steady-state requirement on the archive
+channel; `app/setup/save/route.ts` only ever asks for `VIEW_CHANNEL` and
+`SEND_MESSAGES`, and a bot deleting its own messages needs neither more nor
+`MANAGE_MESSAGES`. The row is removed and the removal is stated in the table's
+own note rather than done silently, because the over-statement was published.
+
+### Scope reconciliation
+
+Shipped: Waves 0–3 in full, `F.1`–`F.3`, `4.0`/`4.1`/`4.2`/`4.4`. Cut by Ori at
+`[2026-08-20 01:05 KST]`: Wave 5 entire, `4.3`, `6.4`, `7.1` — `F.4` and `F.5`
+follow mechanically, their only consumers being `4.3` and Screen D. Residual,
+decided by nobody: `6.1`, `6.2`, `6.3`, `F.6`. The distinction between the two
+groups is the whole point of writing it down; collapsing them into one
+"remaining work" list would make a human decision look like a slip and a slip
+look like a decision.
+
+### Not fixed, recorded instead
+
+- `/Users/ori/repos/clip-wave3` is still dirty with pre-merge drafts of
+  `SetupFlow.tsx`, `rest-client.ts` and two test files. They are superseded by
+  what landed in PR #48 — the worktree is behind `main` — and are scratch, not
+  documentation. Prune the worktree when convenient.
+- GitHub issues `4`, `5`, `6`, `44` (`0.1`, `0.2`, `0.3a`, `0.1b`) are open for
+  work merged days ago. The as-shipped table in `README.md` is derived from the
+  source tree specifically because of this, and closing them is Ori's call.

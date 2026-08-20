@@ -139,11 +139,14 @@ Clip never requests `Administrator`. Verified against the live application: the 
 |---|---|---|
 | `VIEW_CHANNEL` on source channels | Discord refuses to forward a message the application cannot read (error `160014`) | Steady state |
 | `VIEW_CHANNEL` + `SEND_MESSAGES` on the archive channel | Post provenance and the forwarded snapshot | Steady state |
-| `MANAGE_MESSAGES` on the archive channel | Delete an archive entry on unclip or removal | Steady state |
 | `ADD_REACTIONS` | The bot-owned 📎 marker on the source message | Steady state |
 | `MANAGE_CHANNELS` | Only to auto-create the private archive channel | Bootstrap only — revocable afterwards |
 
-This is the **assumed** minimum, derived from Discord's documented error cases. Task `6.1` — revoking each one on a fresh guild and recording what actually breaks — was not run, so no entry in this table has been falsified by experiment. One of them nearly went out wrong: the auto-created private channel originally denied `VIEW_CHANNEL` to `@everyone` without granting it back to the bot, which would have made the recommended default destination invisible to the application that created it. That was caught in review, and a test now fails if either overwrite is removed.
+This is the **assumed** minimum, derived from Discord's documented error cases. Earlier versions of this table
+also listed `MANAGE_MESSAGES` on the archive channel. That was wrong and is removed: a bot deleting its own
+messages does not need it, and the code never asks for it. The table over-stated the requirement for several
+days — which is the mundane version of the same problem this project kept hitting, since no test in the
+repository asserts anything about `README.md`. Task `6.1` — revoking each one on a fresh guild and recording what actually breaks — was not run, so no entry in this table has been falsified by experiment. One of them nearly went out wrong: the auto-created private channel originally denied `VIEW_CHANNEL` to `@everyone` without granting it back to the bot, which would have made the recommended default destination invisible to the application that created it. That was caught in review, and a test now fails if either overwrite is removed.
 
 ## Privacy and data behavior
 
