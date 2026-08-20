@@ -553,6 +553,7 @@ markRemovedByAdmin(...): Promise<void>;
 - [ ] Existing channel path validates bot permissions and refuses with explicit missing-permission copy; do not mutate permissions.
 - [ ] Auto-create path uses channel creation API + private/default overwrite; requires bootstrap permission.
 - [ ] Persist `archive_channel_id` only after success.
+- [ ] Reconfiguring an already-configured destination is refused (`409`) while `hasLiveClips` is true, and a `PENDING` or `FAILED` Clip that never posted an archive still counts as live; an operator locked out this way takes the stranded Clip to a tombstone through `Remove from Clip Archive` before the change is accepted.
 - [ ] Commit.
 
 ### Task 4.3: Role configuration
@@ -809,6 +810,12 @@ pnpm build
 kubectl rollout status deployment/clip
 curl -fsS https://<domain>/api/health
 kubectl logs deployment/clip --tail=200
+```
+
+Before that rollout, bump both `image:` fields in `k8s/deployment.yaml` — the `migrate` initContainer and the `clip` container — to the tag CI published to GHCR for the merge commit, then confirm the two agree (the field comments in that file explain why):
+
+```bash
+grep -n 'image:' k8s/deployment.yaml
 ```
 
 And manual Discord checks from Task 6.3.
