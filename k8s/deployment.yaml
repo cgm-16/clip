@@ -17,12 +17,35 @@ spec:
         runAsNonRoot: true
         runAsUser: 1001
 
-      # No migration initContainer yet, deliberately. Wave 0 ships no Prisma
-      # schema, so there is nothing to migrate, and the runtime image contains
-      # only the Next.js standalone bundle — no Prisma CLI and no migration SQL.
-      # An initContainer running `prisma migrate deploy` against this image
-      # would crash-loop. It lands with Wave 1, together with the schema and a
-      # Dockerfile stage that carries the migration tooling.
+      # `prisma migrate deploy` runs to completion before the app container
+      # starts. It is forward-only and idempotent, so running it on every pod
+      # start is safe; a non-zero exit here blocks the app container from
+      # starting at all, rather than letting it serve against a stale schema.
+      # Same image as the app — the Dockerfile bundles the Prisma CLI and its
+      # own dependency closure alongside the standalone server, so migration
+      # tooling can never drift out of sync with the code it migrates for.
+      initContainers:
+        - name: migrate
+          # Must be bumped in lockstep with the app container's tag below.
+          # Nothing enforces it, and a mismatch would run one wave's migrations
+          # against another wave's code.
+          image: ghcr.io/cgm-16/clip:sha-63a0ce1
+          # Everything the migration needs lives under /migrate, away from the
+          # standalone server's own traced node_modules. Running from /app fails
+          # with "Cannot find module 'prisma/config'": prisma.config.ts imports
+          # from the prisma package, and that only resolves next to it. The
+          # config is where the datasource URL comes from -- schema.prisma
+          # declares no `url` of its own.
+          workingDir: /migrate
+          command: ["node", "/migrate/node_modules/prisma/build/index.js", "migrate", "deploy"]
+          env:
+            # Same secret and key the app container reads its own
+            # DATABASE_URL from.
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: clip-db-app
+                  key: uri
 
       containers:
         - name: clip

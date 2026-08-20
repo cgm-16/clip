@@ -10,3 +10,8 @@ design
 coverage
 test-results
 playwright-report
+# Tests never belong in a production image, and `next build` type-checks
+# whatever is in the context -- so a test file referencing work-in-progress
+# code would fail the image build for a reason the image does not care about.
+tests
+vitest.config.mts
