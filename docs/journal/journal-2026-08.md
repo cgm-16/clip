@@ -821,3 +821,23 @@ which makes the auto-created archive channel **readable by the whole server**,
 against spec §5.3 — leaves **307/307 tests green**. The C2 test added this wave
 asserts the bot's *own* member overwrite and says nothing about the deny that
 makes the channel private. The privacy half of that array has no test at all.
+
+### Two things noticed while fixing, deliberately not fixed
+
+Recorded here rather than fixed, per the no-unrelated-changes rule. Both are in
+PR #48's body too, but a PR body is not a durable record once it is squashed.
+
+- **`SetupFlow.handleSubmit`'s `try` covers the request, not the parse.** The
+  `catch` added in `26c5047` returns `false` for a rejected `fetch`, but
+  `await response.json()` sits outside it, so a 200 carrying a malformed body
+  still throws past `ScreenB` and produces the same silence the fix set out to
+  close. Not urgent: `/setup/save` always answers with `Response.json`, so the
+  only route to it is an intermediary rewriting a 200 body. Widening the `try`
+  is one line, but it would change behaviour in a case with no test, and no test
+  exists because no realistic trigger does.
+- **`README.md`'s permission table and the code disagree about
+  `MANAGE_MESSAGES`.** The table lists it as a steady-state requirement on the
+  archive channel; the code omits it, correctly — a bot deleting its own
+  messages does not need it. The README over-states, so the fix belongs in the
+  README, not the permission set. Touching it during a fix wave about
+  permissions would have buried the change in an unrelated diff.
