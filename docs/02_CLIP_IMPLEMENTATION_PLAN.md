@@ -215,10 +215,18 @@ resources:
 ```
 
 - [ ] Reuse existing Traefik/TLS conventions; do not introduce a second ingress stack.
-- [ ] Apply manifests.
+- [ ] Render then apply manifests. Release CI must have published `CLIP_IMAGE` before rendering. `k8s/deployment.yaml` is an intentionally non-deployable template; renderer success must precede apply.
 
 ```bash
-kubectl apply -f k8s/
+git fetch origin main
+CLIP_IMAGE="ghcr.io/cgm-16/clip:sha-$(git rev-parse --short=7 origin/main)"
+mkdir -p k8s/rendered
+scripts/render-k8s-deployment.sh "$CLIP_IMAGE" k8s/rendered/deployment.yaml
+kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/postgres.yaml
+kubectl apply -f k8s/service.yaml
+kubectl apply -f k8s/ingress.yaml
+kubectl apply -f k8s/rendered/deployment.yaml
 ```
 
 - [ ] Verify.
@@ -812,11 +820,7 @@ curl -fsS https://<domain>/api/health
 kubectl logs deployment/clip --tail=200
 ```
 
-Before that rollout, bump both `image:` fields in `k8s/deployment.yaml` — the `migrate` initContainer and the `clip` container — to the tag CI published to GHCR for the merge commit, then confirm the two agree (the field comments in that file explain why):
-
-```bash
-grep -n 'image:' k8s/deployment.yaml
-```
+Before applying, release CI must have published `CLIP_IMAGE`; `k8s/deployment.yaml` is a non-deployable template and must never be passed directly to `kubectl`. Renderer success must precede applying the generated deployment. As part of rollout verification, inspect the successful completion of the `migrate` init-container as well as the app logs.
 
 And manual Discord checks from Task 6.3.
 

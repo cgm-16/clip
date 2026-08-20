@@ -41,7 +41,7 @@ spec:
           # pinned to `sha-63a0ce1`, the wave base commit, for exactly this
           # reason -- confirm the image was built from a commit with
           # `/migrate` before bumping either tag.
-          image: ghcr.io/cgm-16/clip:sha-63a0ce1
+          image: __CLIP_RELEASE_IMAGE__
           # Everything the migration needs lives under /migrate, away from the
           # standalone server's own traced node_modules. Running from /app fails
           # with "Cannot find module 'prisma/config'": prisma.config.ts imports
@@ -64,7 +64,7 @@ spec:
           # Must be the exact same tag as the `migrate` initContainer above
           # -- see that field's comment for why. Bump both together, never
           # one alone.
-          image: ghcr.io/cgm-16/clip:sha-63a0ce1
+          image: __CLIP_RELEASE_IMAGE__
           ports:
             - containerPort: 3000
 
