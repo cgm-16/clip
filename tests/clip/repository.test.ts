@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
+import type { ClipStatus } from '@/generated/prisma/client';
 import type { prisma as PrismaSingleton } from '@/lib/db';
 import {
   addClipper,
   claimClip,
   clearArchiveMessageIds,
+  countArchivedClips,
   countClippers,
   deleteClipWithClippers,
   deleteClippers,
@@ -16,6 +18,7 @@ import {
   markRemovedByAdmin,
   markRemovedByAuthor,
   removeClipper,
+  upsertGuildArchiveConfig,
 } from '@/lib/clip/repository';
 
 const CONCURRENT_CLAIMERS = 10;
@@ -508,5 +511,53 @@ describe('clip repository', () => {
 
   test('findGuildArchiveConfig returns null for a guild that never completed setup', async () => {
     expect(await findGuildArchiveConfig(fakeSnowflake())).toBeNull();
+  });
+
+  test('upsertGuildArchiveConfig overwrites in place on a repeat call for the same guild, never duplicates', async () => {
+    const guildId = trackedGuildId();
+    const userId = fakeSnowflake();
+    const firstChannelId = fakeSnowflake();
+    const secondChannelId = fakeSnowflake();
+
+    await upsertGuildArchiveConfig({
+      guildId,
+      archiveChannelId: firstChannelId,
+      configuredByUserId: userId,
+    });
+    await upsertGuildArchiveConfig({
+      guildId,
+      archiveChannelId: secondChannelId,
+      configuredByUserId: userId,
+    });
+
+    const rows = await prisma.guildConfig.findMany({ where: { guildId } });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].archiveChannelId).toBe(secondChannelId);
+  });
+
+  test('countArchivedClips counts only ACTIVE clips for the guild', async () => {
+    const guildId = trackedGuildId();
+
+    async function makeClip(status: ClipStatus) {
+      await prisma.clip.create({
+        data: {
+          guildId,
+          sourceMessageId: fakeSnowflake(),
+          sourceChannelId: fakeSnowflake(),
+          authorUserId: fakeSnowflake(),
+          status,
+          // ACTIVE requires non-null archive ids (clips_active_requires_archive).
+          archiveProvenanceMessageId: status === 'ACTIVE' ? fakeSnowflake() : null,
+          archiveForwardMessageId: status === 'ACTIVE' ? fakeSnowflake() : null,
+        },
+      });
+    }
+
+    await makeClip('ACTIVE');
+    await makeClip('ACTIVE');
+    await makeClip('PENDING');
+    await makeClip('REMOVED_BY_AUTHOR');
+
+    expect(await countArchivedClips(guildId)).toBe(2);
   });
 });

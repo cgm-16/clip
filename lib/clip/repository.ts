@@ -311,6 +311,39 @@ export async function deleteClipWithClippers(
   await tx.clip.delete({ where: clipKey(guildId, sourceMessageId) });
 }
 
+/**
+ * Persists the chosen archive destination for a guild, creating the config row
+ * on first setup and overwriting it in place on a repeat visit.
+ *
+ * An upsert, never a check-then-insert: `/setup` can be re-run for a guild
+ * that already completed it (a still-live setup token, or a later reconfigure
+ * screen), and this must update the one row rather than duplicate or crash on
+ * the primary key.
+ */
+export async function upsertGuildArchiveConfig(input: {
+  guildId: string;
+  archiveChannelId: string;
+  configuredByUserId: string;
+}): Promise<void> {
+  const { guildId, archiveChannelId, configuredByUserId } = input;
+  await prisma.guildConfig.upsert({
+    where: { guildId },
+    create: { guildId, archiveChannelId, configuredByUserId },
+    update: { archiveChannelId, configuredByUserId },
+  });
+}
+
+/**
+ * The number of Clips currently archived for a guild -- Screen C's `보관된
+ * 메시지` count. `ACTIVE` only: a tombstoned Clip is no longer preserved, and
+ * one whose Discord copy has vanished (Screen D's `누락` row) is still
+ * `ACTIVE` -- the archive *record* survives even when the Discord message
+ * does not, so it still counts as archived.
+ */
+export function countArchivedClips(guildId: string): Promise<number> {
+  return prisma.clip.count({ where: { guildId, status: 'ACTIVE' } });
+}
+
 /** Reads for the service. Null when the guild has never completed setup. */
 export async function findGuildArchiveConfig(
   guildId: string,
