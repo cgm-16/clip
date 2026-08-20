@@ -11,6 +11,7 @@ import {
   createDiscordGuildLookup,
   GuildUnavailableError,
 } from '@/lib/discord/guild-lookup';
+import { getDiscordBotUserId } from '@/lib/discord/bot-user';
 import { createDiscordRestClient, DiscordApiError } from '@/lib/discord/rest-client';
 import { parseEnv } from '@/lib/env';
 import { logClipEvent } from '@/lib/logging/safe-log';
@@ -60,8 +61,8 @@ const GUILD_TEXT_CHANNEL_TYPE = 0;
 
 // A permission overwrite's `type`: 0 targets a role, 1 targets a member. The
 // guild id doubles as the `@everyone` role's id, so a `type: 0` overwrite
-// keyed on it denies everyone; `DISCORD_APPLICATION_ID` is the bot's own
-// user id (see `Env`), so a `type: 1` overwrite keyed on it targets the bot.
+// keyed on it denies everyone; a `type: 1` overwrite keyed on the authenticated
+// bot user's id targets the bot.
 const ROLE_OVERWRITE_TYPE = 0;
 const MEMBER_OVERWRITE_TYPE = 1;
 
@@ -157,7 +158,7 @@ export async function POST(request: Request) {
   try {
     if (destination === 'existing') {
       const lookup = createDiscordGuildLookup({ botToken: env.DISCORD_BOT_TOKEN, fetchImpl: fetch });
-      const { channels } = await lookup.getGuildSetupTargets(guildId);
+      const channels = await lookup.getGuildSetupChannels(guildId);
       // The client's own channel list is never trusted -- re-checked against
       // this guild's eligible channels, fetched fresh from Discord.
       const eligible = channels.find((channel) => channel.id === channelId);
@@ -167,6 +168,13 @@ export async function POST(request: Request) {
       archiveChannelId = eligible.id;
       archiveChannelName = eligible.name;
     } else {
+      const botUserId = await getDiscordBotUserId({
+        botToken: env.DISCORD_BOT_TOKEN,
+        fetchImpl: fetch,
+      });
+      if (!botUserId) {
+        return new Response(null, { status: 502 });
+      }
       const client = createDiscordRestClient({ botToken: env.DISCORD_BOT_TOKEN, fetchImpl: fetch });
       const created = await client.request('POST', `/guilds/${guildId}/channels`, {
         name: ARCHIVE_CHANNEL_NAME,
@@ -192,7 +200,7 @@ export async function POST(request: Request) {
             deny: VIEW_CHANNEL_PERMISSION.toString(),
           },
           {
-            id: env.DISCORD_APPLICATION_ID,
+            id: botUserId,
             type: MEMBER_OVERWRITE_TYPE,
             allow: (VIEW_CHANNEL_PERMISSION | SEND_MESSAGES_PERMISSION).toString(),
           },

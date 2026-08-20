@@ -55,7 +55,7 @@ export async function GET(request: Request) {
   const lookup = createDiscordGuildLookup({ botToken: env.DISCORD_BOT_TOKEN, fetchImpl: fetch });
 
   try {
-    const { channels } = await lookup.getGuildSetupTargets(identity.guildId);
+    const channels = await lookup.getGuildSetupChannels(identity.guildId);
     return Response.json({ guildId: identity.guildId, channels });
   } catch (error) {
     // GuildUnavailableError: the bot can no longer see this guild (kicked,

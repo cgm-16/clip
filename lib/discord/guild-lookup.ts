@@ -40,26 +40,6 @@ export type SetupChannel = {
   type: number;
 };
 
-/**
- * A guild role narrowed for the setup form's role picker.
- *
- * `@everyone` is included, not filtered out: `docs/06_DESIGN_HANDOFF.md`
- * (Screen B, role multi-select) specifies it appears in the options list but
- * rendered unselectable. Dropping it here would silently remove that row
- * from the UI. Consumers identify it by `id` equal to the guild id -- Discord
- * gives the `@everyone` role the same id as the guild itself -- rather than
- * by name, since a role can be renamed but not reassigned to a different id.
- */
-export type SetupRole = {
-  id: string;
-  name: string;
-};
-
-export type GuildSetupTargets = {
-  channels: SetupChannel[];
-  roles: SetupRole[];
-};
-
 /** The guild does not exist, or the bot cannot see it. */
 export class GuildUnavailableError extends Error {}
 
@@ -117,27 +97,6 @@ function parseChannels(body: unknown): SetupChannel[] {
   return channels;
 }
 
-function parseRoles(body: unknown): SetupRole[] {
-  if (!Array.isArray(body)) {
-    return [];
-  }
-  const roles: SetupRole[] = [];
-  for (const item of body) {
-    if (typeof item !== 'object' || item === null) {
-      continue;
-    }
-    // Only id and name are lifted off the payload. The response also carries
-    // `permissions` (a bitfield), `color`, `managed` and more, and narrowing
-    // here is what keeps them from travelling any further.
-    const { id, name } = item as { id?: unknown; name?: unknown };
-    if (typeof id !== 'string' || typeof name !== 'string') {
-      continue;
-    }
-    roles.push({ id, name });
-  }
-  return roles;
-}
-
 export type DiscordGuildLookupOptions = {
   botToken: string;
   fetchImpl: typeof fetch;
@@ -145,39 +104,29 @@ export type DiscordGuildLookupOptions = {
 };
 
 export type DiscordGuildLookup = {
-  /**
-   * The channels and roles a setup form needs to render the "보관 위치" and
-   * "클립 허용 역할" fields for one guild.
-   */
-  getGuildSetupTargets(guildId: string): Promise<GuildSetupTargets>;
+  /** The channels a setup form may offer as archive destinations for one guild. */
+  getGuildSetupChannels(guildId: string): Promise<SetupChannel[]>;
 };
 
 export function createDiscordGuildLookup(options: DiscordGuildLookupOptions): DiscordGuildLookup {
   const client: DiscordRestClient = createDiscordRestClient(options);
 
-  async function fetchGuildResource(guildId: string, resource: 'channels' | 'roles') {
+  async function fetchGuildChannels(guildId: string) {
     try {
-      return await client.request('GET', `/guilds/${guildId}/${resource}`);
+      return await client.request('GET', `/guilds/${guildId}/channels`);
     } catch (error) {
       if (error instanceof DiscordApiError && isGuildUnavailable(error)) {
-        throw new GuildUnavailableError(`guild ${resource} could not be read`);
+        throw new GuildUnavailableError('guild channels could not be read');
       }
-      throw new GuildLookupFailedError(`could not read guild ${resource}`, {
+      throw new GuildLookupFailedError('could not read guild channels', {
         retryable: error instanceof DiscordApiError ? error.retryable : true,
       });
     }
   }
 
   return {
-    async getGuildSetupTargets(guildId: string): Promise<GuildSetupTargets> {
-      const [channelsBody, rolesBody] = await Promise.all([
-        fetchGuildResource(guildId, 'channels'),
-        fetchGuildResource(guildId, 'roles'),
-      ]);
-      return {
-        channels: parseChannels(channelsBody),
-        roles: parseRoles(rolesBody),
-      };
+    async getGuildSetupChannels(guildId: string): Promise<SetupChannel[]> {
+      return parseChannels(await fetchGuildChannels(guildId));
     },
   };
 }

@@ -6,8 +6,8 @@ import { DiscordApiError } from '@/lib/discord/rest-client';
 const authenticateAdminSession = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/admin-session/service', () => ({ authenticateAdminSession }));
 
-const getGuildSetupTargets = vi.hoisted(() => vi.fn());
-const createDiscordGuildLookup = vi.hoisted(() => vi.fn(() => ({ getGuildSetupTargets })));
+const getGuildSetupChannels = vi.hoisted(() => vi.fn());
+const createDiscordGuildLookup = vi.hoisted(() => vi.fn(() => ({ getGuildSetupChannels })));
 vi.mock('@/lib/discord/guild-lookup', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/discord/guild-lookup')>();
   return { ...actual, createDiscordGuildLookup };
@@ -39,10 +39,11 @@ const BASE_URL = 'https://clipendpoint.cc';
 const GUILD_ID = '1539212298600718416';
 const OTHER_GUILD_ID = '1539212298600718499';
 const USER_ID = '1539212298600718417';
-// Deliberately different from GUILD_ID: the bot's overwrite is keyed on the
-// application id and `@everyone`'s on the guild id, so a shared literal would
-// let an assertion on either one pass against the other.
+// Deliberately distinct: the application id belongs to application endpoints,
+// the bot user id belongs to the member overwrite, and the guild id identifies
+// the @everyone role. Shared literals could let the wrong target pass.
 const APPLICATION_ID = '1539212298600718888';
+const BOT_USER_ID = '1539212298600718999';
 const SESSION_COOKIE = `${ADMIN_SESSION_COOKIE_NAME}=session-bearer`;
 
 // Only the paths that reach parseEnv (an Origin header present, or code past
@@ -74,6 +75,15 @@ describe('POST /setup/save', () => {
     findGuildArchiveConfig.mockResolvedValue(null);
     hasLiveClips.mockResolvedValue(false);
     finalizeGuildArchiveConfig.mockResolvedValue({ kind: 'SAVED' });
+    discordRequest.mockImplementation(async (method: string, path: string) => {
+      if (method === 'GET' && path === '/users/@me') {
+        return { id: BOT_USER_ID };
+      }
+      if (method === 'POST' && path === `/guilds/${GUILD_ID}/channels`) {
+        return { id: '222', name: 'clip-archive', type: 0 };
+      }
+      throw new Error(`unexpected Discord request: ${method} ${path}`);
+    });
   });
 
   afterEach(() => {
@@ -114,10 +124,7 @@ describe('POST /setup/save', () => {
   test('an existing-channel save is refused when the channel is not in the session guild\'s eligible list', async () => {
     stubEnv();
     authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
-    getGuildSetupTargets.mockResolvedValue({
-      channels: [{ id: '111', name: 'general', type: 0 }],
-      roles: [],
-    });
+    getGuildSetupChannels.mockResolvedValue([{ id: '111', name: 'general', type: 0 }]);
 
     // Attempted cross-guild escalation: body names a foreign guild and a
     // channel id that is not among the *session* guild's channels.
@@ -126,17 +133,14 @@ describe('POST /setup/save', () => {
     );
 
     expect(response.status).toBe(422);
-    expect(getGuildSetupTargets).toHaveBeenCalledWith(GUILD_ID);
+    expect(getGuildSetupChannels).toHaveBeenCalledWith(GUILD_ID);
     expect(finalizeGuildArchiveConfig).not.toHaveBeenCalled();
   });
 
   test('the guild id always comes from the session, never the request body', async () => {
     stubEnv();
     authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
-    getGuildSetupTargets.mockResolvedValue({
-      channels: [{ id: '111', name: 'general', type: 0 }],
-      roles: [],
-    });
+    getGuildSetupChannels.mockResolvedValue([{ id: '111', name: 'general', type: 0 }]);
     countArchivedClips.mockResolvedValue(0);
 
     const response = await POST(
@@ -144,7 +148,7 @@ describe('POST /setup/save', () => {
     );
 
     expect(response.status).toBe(200);
-    expect(getGuildSetupTargets).toHaveBeenCalledWith(GUILD_ID);
+    expect(getGuildSetupChannels).toHaveBeenCalledWith(GUILD_ID);
     expect(finalizeGuildArchiveConfig).toHaveBeenCalledWith(
       expect.objectContaining({ guildId: GUILD_ID, configuredByUserId: USER_ID }),
     );
@@ -153,10 +157,7 @@ describe('POST /setup/save', () => {
   test('existing-channel save persists the eligible channel and reports it was not auto-created', async () => {
     stubEnv();
     authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
-    getGuildSetupTargets.mockResolvedValue({
-      channels: [{ id: '111', name: 'general', type: 0 }],
-      roles: [],
-    });
+    getGuildSetupChannels.mockResolvedValue([{ id: '111', name: 'general', type: 0 }]);
     countArchivedClips.mockResolvedValue(3);
 
     const response = await POST(postJson({ destination: 'existing', channelId: '111' }));
@@ -174,7 +175,6 @@ describe('POST /setup/save', () => {
   test('create-destination save creates a private channel via the REST client and persists it', async () => {
     stubEnv();
     authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
-    discordRequest.mockResolvedValue({ id: '222', name: 'clip-archive', type: 0 });
     countArchivedClips.mockResolvedValue(0);
 
     const response = await POST(postJson({ destination: 'create', channelId: null }));
@@ -202,15 +202,14 @@ describe('POST /setup/save', () => {
     stubEnv();
     authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
     findGuildArchiveConfig.mockResolvedValue({ archiveChannelId: '111', allowedRoleIds: [] });
-    discordRequest.mockResolvedValue({ id: '222', name: 'clip-archive', type: 0 });
     finalizeGuildArchiveConfig.mockResolvedValue({ kind: 'CONFLICT' });
     countArchivedClips.mockResolvedValue(0);
 
     const response = await POST(postJson({ destination: 'create', channelId: null }));
 
     expect(response.status).toBe(409);
-    expect(discordRequest).toHaveBeenCalledTimes(2);
-    expect(discordRequest).toHaveBeenNthCalledWith(2, 'DELETE', '/channels/222');
+    expect(discordRequest).toHaveBeenCalledTimes(3);
+    expect(discordRequest).toHaveBeenNthCalledWith(3, 'DELETE', '/channels/222');
     expect(upsertGuildArchiveConfig).not.toHaveBeenCalled();
   });
 
@@ -218,16 +217,13 @@ describe('POST /setup/save', () => {
     stubEnv();
     authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
     findGuildArchiveConfig.mockResolvedValue({ archiveChannelId: '111', allowedRoleIds: [] });
-    getGuildSetupTargets.mockResolvedValue({
-      channels: [{ id: '222', name: 'selected-existing-channel', type: 0 }],
-      roles: [],
-    });
+    getGuildSetupChannels.mockResolvedValue([{ id: '222', name: 'selected-existing-channel', type: 0 }]);
     finalizeGuildArchiveConfig.mockResolvedValue({ kind: 'CONFLICT' });
 
     const response = await POST(postJson({ destination: 'existing', channelId: '222' }));
 
     expect(response.status).toBe(409);
-    expect(getGuildSetupTargets).toHaveBeenCalledWith(GUILD_ID);
+    expect(getGuildSetupChannels).toHaveBeenCalledWith(GUILD_ID);
     expect(finalizeGuildArchiveConfig).toHaveBeenCalledWith({
       guildId: GUILD_ID,
       archiveChannelId: '222',
@@ -251,6 +247,9 @@ describe('POST /setup/save', () => {
       if (method === 'DELETE') {
         throw cleanupError;
       }
+      if (method === 'GET') {
+        return { id: BOT_USER_ID };
+      }
       return { id: '222', name: 'clip-archive', type: 0 };
     });
     finalizeGuildArchiveConfig.mockResolvedValue({ kind: 'CONFLICT' });
@@ -260,8 +259,8 @@ describe('POST /setup/save', () => {
     const response = await POST(postJson({ destination: 'create', channelId: null }));
 
     expect(response.status).toBe(409);
-    expect(discordRequest).toHaveBeenCalledTimes(2);
-    expect(discordRequest).toHaveBeenNthCalledWith(2, 'DELETE', '/channels/222');
+    expect(discordRequest).toHaveBeenCalledTimes(3);
+    expect(discordRequest).toHaveBeenNthCalledWith(3, 'DELETE', '/channels/222');
     const lines = logged.mock.calls.map(([line]) => JSON.parse(line as string));
     expect(lines).toEqual([
       {
@@ -280,20 +279,19 @@ describe('POST /setup/save', () => {
   // no ADMINISTRATOR (spec §15) and no overwrite of its own, so it inherits
   // @everyone's now-denied VIEW_CHANNEL. Every subsequent clip then fails the
   // provenance POST with Discord 50001. This asserts the create call also
-  // grants the application's own member overwrite the permissions
+  // grants the bot user's member overwrite the permissions
   // archive-message.ts actually needs in steady state: VIEW_CHANNEL (to
   // address the channel at all) and SEND_MESSAGES (to post the provenance
   // and forward messages). Nothing broader -- deleting the bot's own
   // messages needs no permission, and channel creation itself runs on the
   // guild-level MANAGE_CHANNELS the bot already holds, not a channel
   // overwrite.
-  test('create-destination save grants the bot itself VIEW_CHANNEL and SEND_MESSAGES on the new channel', async () => {
+  test('grants the authenticated bot user VIEW_CHANNEL and SEND_MESSAGES', async () => {
     stubEnv();
     authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
-    discordRequest.mockResolvedValue({ id: '222', name: 'clip-archive', type: 0 });
     countArchivedClips.mockResolvedValue(0);
 
-    await POST(postJson({ destination: 'create', channelId: null }));
+    const response = await POST(postJson({ destination: 'create', channelId: null }));
 
     const VIEW_CHANNEL = 1n << 10n;
     const SEND_MESSAGES = 1n << 11n;
@@ -303,13 +301,39 @@ describe('POST /setup/save', () => {
       expect.objectContaining({
         permission_overwrites: expect.arrayContaining([
           expect.objectContaining({
-            id: APPLICATION_ID,
+            id: BOT_USER_ID,
             type: 1,
             allow: (VIEW_CHANNEL | SEND_MESSAGES).toString(),
           }),
         ]),
       }),
     );
+    expect(discordRequest).toHaveBeenCalledWith('GET', '/users/@me');
+    const createCall = discordRequest.mock.calls.find(
+      ([method, path]) => method === 'POST' && path === `/guilds/${GUILD_ID}/channels`,
+    );
+    const overwrites = (createCall?.[2] as { permission_overwrites: Array<{ id: string }> })
+      .permission_overwrites;
+    expect(overwrites.map((overwrite) => overwrite.id)).not.toContain(APPLICATION_ID);
+    expect(finalizeGuildArchiveConfig).toHaveBeenCalledWith({
+      guildId: GUILD_ID,
+      archiveChannelId: '222',
+      configuredByUserId: USER_ID,
+    });
+    expect(response.status).toBe(200);
+  });
+
+  test('returns 502 before channel creation when bot identity is malformed', async () => {
+    stubEnv();
+    authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
+    discordRequest.mockResolvedValue({ username: 'clip' });
+
+    const response = await POST(postJson({ destination: 'create', channelId: null }));
+
+    expect(response.status).toBe(502);
+    expect(discordRequest).toHaveBeenCalledWith('GET', '/users/@me');
+    expect(discordRequest).not.toHaveBeenCalledWith('POST', `/guilds/${GUILD_ID}/channels`, expect.anything());
+    expect(finalizeGuildArchiveConfig).not.toHaveBeenCalled();
   });
 
   // The privacy half of the same array. Spec 5.3 makes the auto-created
@@ -319,7 +343,6 @@ describe('POST /setup/save', () => {
   test('create-destination save denies @everyone VIEW_CHANNEL on the new channel', async () => {
     stubEnv();
     authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
-    discordRequest.mockResolvedValue({ id: '222', name: 'clip-archive', type: 0 });
     countArchivedClips.mockResolvedValue(0);
 
     await POST(postJson({ destination: 'create', channelId: null }));
@@ -354,10 +377,10 @@ describe('POST /setup/save', () => {
       authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
       findGuildArchiveConfig.mockResolvedValue({ archiveChannelId: '111', allowedRoleIds: [] });
       hasLiveClips.mockResolvedValue(true);
-      getGuildSetupTargets.mockResolvedValue({
-        channels: [{ id: '111', name: 'general', type: 0 }, { id: '222', name: 'new-channel', type: 0 }],
-        roles: [],
-      });
+      getGuildSetupChannels.mockResolvedValue([
+        { id: '111', name: 'general', type: 0 },
+        { id: '222', name: 'new-channel', type: 0 },
+      ]);
 
       const response = await POST(postJson({ destination: 'existing', channelId: '222' }));
 
@@ -365,7 +388,7 @@ describe('POST /setup/save', () => {
       expect(finalizeGuildArchiveConfig).not.toHaveBeenCalled();
       // The guard fires before any Discord call: no eligibility lookup, no
       // channel-creation POST.
-      expect(getGuildSetupTargets).not.toHaveBeenCalled();
+      expect(getGuildSetupChannels).not.toHaveBeenCalled();
       expect(discordRequest).not.toHaveBeenCalled();
     });
 
@@ -386,10 +409,7 @@ describe('POST /setup/save', () => {
       stubEnv();
       authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
       findGuildArchiveConfig.mockResolvedValue(null); // no prior setup
-      getGuildSetupTargets.mockResolvedValue({
-        channels: [{ id: '111', name: 'general', type: 0 }],
-        roles: [],
-      });
+      getGuildSetupChannels.mockResolvedValue([{ id: '111', name: 'general', type: 0 }]);
       countArchivedClips.mockResolvedValue(0);
 
       const response = await POST(postJson({ destination: 'existing', channelId: '111' }));
@@ -403,10 +423,7 @@ describe('POST /setup/save', () => {
       authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
       findGuildArchiveConfig.mockResolvedValue({ archiveChannelId: '111', allowedRoleIds: [] });
       hasLiveClips.mockResolvedValue(true);
-      getGuildSetupTargets.mockResolvedValue({
-        channels: [{ id: '111', name: 'general', type: 0 }],
-        roles: [],
-      });
+      getGuildSetupChannels.mockResolvedValue([{ id: '111', name: 'general', type: 0 }]);
       countArchivedClips.mockResolvedValue(5);
 
       const response = await POST(postJson({ destination: 'existing', channelId: '111' }));
@@ -419,7 +436,7 @@ describe('POST /setup/save', () => {
   test('a guild the bot can no longer see is reported as 404', async () => {
     stubEnv();
     authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
-    getGuildSetupTargets.mockRejectedValue(new GuildUnavailableError('gone'));
+    getGuildSetupChannels.mockRejectedValue(new GuildUnavailableError('gone'));
 
     const response = await POST(postJson({ destination: 'existing', channelId: '111' }));
 
@@ -441,10 +458,7 @@ describe('POST /setup/save', () => {
   test('a same-origin POST is still accepted', async () => {
     stubEnv();
     authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
-    getGuildSetupTargets.mockResolvedValue({
-      channels: [{ id: '111', name: 'general', type: 0 }],
-      roles: [],
-    });
+    getGuildSetupChannels.mockResolvedValue([{ id: '111', name: 'general', type: 0 }]);
     countArchivedClips.mockResolvedValue(0);
 
     const response = await POST(

@@ -14,8 +14,6 @@ const ANNOUNCEMENT_CHANNEL_ID = '2000000000000000002';
 const VOICE_CHANNEL_ID = '2000000000000000003';
 const CATEGORY_CHANNEL_ID = '2000000000000000004';
 
-const MODERATOR_ROLE_ID = '3000000000000000001';
-
 // Discord channel types (developers.discord.com/docs/resources/channel#channel-object-channel-types).
 const GUILD_TEXT = 0;
 const GUILD_VOICE = 2;
@@ -42,27 +40,6 @@ function rawChannel(id: string, name: string, type: number) {
   };
 }
 
-/**
- * A full role payload. `permissions` is the field that matters most here --
- * a bitfield is exactly the kind of incidental data this module must not
- * forward to a setup form.
- */
-function rawRole(id: string, name: string) {
-  return {
-    id,
-    name,
-    color: 0,
-    hoist: false,
-    position: 1,
-    permissions: '8', // ADMINISTRATOR -- must never appear on the narrowed result
-    managed: false,
-    mentionable: true,
-  };
-}
-
-const EVERYONE_ROLE = rawRole(GUILD_ID, '@everyone');
-const MODERATOR_ROLE = rawRole(MODERATOR_ROLE_ID, 'moderator');
-
 type StubResponse = { status: number; body: unknown };
 
 function json(body: unknown, status = 200): StubResponse {
@@ -77,18 +54,14 @@ type Call = { url: string; method: string; headers: Headers };
  * to each other, so routing by call order would make the tests brittle to a
  * harmless reordering of the implementation.
  */
-function stubFetch(routes: { channels?: StubResponse; roles?: StubResponse }) {
+function stubFetch(routes: { channels?: StubResponse }) {
   const calls: Call[] = [];
 
   const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
     const href = String(url);
     calls.push({ url: href, method: init?.method ?? 'GET', headers: new Headers(init?.headers) });
 
-    const route = href.includes('/roles')
-      ? routes.roles
-      : href.includes('/channels')
-        ? routes.channels
-        : undefined;
+    const route = href.includes('/channels') ? routes.channels : undefined;
     if (route === undefined) {
       throw new Error(`unexpected fetch call: ${href}`);
     }
@@ -105,78 +78,34 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('getGuildSetupTargets', () => {
-  test('requests both the channel list and the role list for the guild', async () => {
+describe('getGuildSetupChannels', () => {
+  test('requests only the guild channel list and returns narrowed channels', async () => {
     const { fetchImpl, calls } = stubFetch({
       channels: json([rawChannel(TEXT_CHANNEL_ID, 'general', GUILD_TEXT)]),
-      roles: json([EVERYONE_ROLE]),
     });
     const lookup = createDiscordGuildLookup({ botToken: BOT_TOKEN, fetchImpl });
 
-    await lookup.getGuildSetupTargets(GUILD_ID);
+    const result = await lookup.getGuildSetupChannels(GUILD_ID);
 
-    expect(calls.some((c) => c.method === 'GET' && c.url.includes(`/guilds/${GUILD_ID}/channels`))).toBe(
-      true
-    );
-    expect(calls.some((c) => c.method === 'GET' && c.url.includes(`/guilds/${GUILD_ID}/roles`))).toBe(
-      true
-    );
-    for (const call of calls) {
-      expect(call.headers.get('Authorization')).toBe(`Bot ${BOT_TOKEN}`);
-    }
-  });
-
-  test('narrows a channel to exactly id, name and type', async () => {
-    const { fetchImpl } = stubFetch({
-      channels: json([rawChannel(TEXT_CHANNEL_ID, 'general', GUILD_TEXT)]),
-      roles: json([]),
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      method: 'GET',
+      url: `https://discord.com/api/v10/guilds/${GUILD_ID}/channels`,
     });
-    const lookup = createDiscordGuildLookup({ botToken: BOT_TOKEN, fetchImpl });
-
-    const result = await lookup.getGuildSetupTargets(GUILD_ID);
-
-    expect(result.channels).toEqual([{ id: TEXT_CHANNEL_ID, name: 'general', type: GUILD_TEXT }]);
-    expect(Object.keys(result.channels[0]).sort()).toEqual(['id', 'name', 'type']);
-  });
-
-  test('narrows a role to exactly id and name, dropping the permission bitfield', async () => {
-    const { fetchImpl } = stubFetch({
-      channels: json([]),
-      roles: json([MODERATOR_ROLE]),
-    });
-    const lookup = createDiscordGuildLookup({ botToken: BOT_TOKEN, fetchImpl });
-
-    const result = await lookup.getGuildSetupTargets(GUILD_ID);
-
-    expect(result.roles).toEqual([{ id: MODERATOR_ROLE_ID, name: 'moderator' }]);
-    expect(Object.keys(result.roles[0]).sort()).toEqual(['id', 'name']);
-    expect(JSON.stringify(result)).not.toContain('"8"');
-  });
-
-  test('includes the @everyone role: the setup form renders it present but unselectable', async () => {
-    const { fetchImpl } = stubFetch({
-      channels: json([]),
-      roles: json([EVERYONE_ROLE, MODERATOR_ROLE]),
-    });
-    const lookup = createDiscordGuildLookup({ botToken: BOT_TOKEN, fetchImpl });
-
-    const result = await lookup.getGuildSetupTargets(GUILD_ID);
-
-    expect(result.roles.map((r) => r.id)).toContain(GUILD_ID);
-    const everyone = result.roles.find((r) => r.id === GUILD_ID);
-    expect(everyone?.name).toBe('@everyone');
+    expect(calls[0].headers.get('Authorization')).toBe(`Bot ${BOT_TOKEN}`);
+    expect(calls.some((call) => call.url.endsWith('/roles'))).toBe(false);
+    expect(result).toEqual([{ id: TEXT_CHANNEL_ID, name: 'general', type: GUILD_TEXT }]);
   });
 
   test('keeps text and announcement-adjacent filtering: GUILD_TEXT is included', async () => {
     const { fetchImpl } = stubFetch({
       channels: json([rawChannel(TEXT_CHANNEL_ID, 'general', GUILD_TEXT)]),
-      roles: json([]),
     });
     const lookup = createDiscordGuildLookup({ botToken: BOT_TOKEN, fetchImpl });
 
-    const result = await lookup.getGuildSetupTargets(GUILD_ID);
+    const result = await lookup.getGuildSetupChannels(GUILD_ID);
 
-    expect(result.channels.map((c) => c.id)).toEqual([TEXT_CHANNEL_ID]);
+    expect(result.map((c) => c.id)).toEqual([TEXT_CHANNEL_ID]);
   });
 
   test('excludes channel types the bot cannot post plain messages in', async () => {
@@ -187,23 +116,21 @@ describe('getGuildSetupTargets', () => {
         rawChannel(VOICE_CHANNEL_ID, 'voice', GUILD_VOICE),
         rawChannel(CATEGORY_CHANNEL_ID, 'category', GUILD_CATEGORY),
       ]),
-      roles: json([]),
     });
     const lookup = createDiscordGuildLookup({ botToken: BOT_TOKEN, fetchImpl });
 
-    const result = await lookup.getGuildSetupTargets(GUILD_ID);
+    const result = await lookup.getGuildSetupChannels(GUILD_ID);
 
-    expect(result.channels.map((c) => c.id)).toEqual([TEXT_CHANNEL_ID]);
+    expect(result.map((c) => c.id)).toEqual([TEXT_CHANNEL_ID]);
   });
 
   test('maps an unknown guild (10004) to GuildUnavailableError', async () => {
     const { fetchImpl } = stubFetch({
       channels: json({ code: 10004, message: 'Unknown Guild' }, 404),
-      roles: json([]),
     });
     const lookup = createDiscordGuildLookup({ botToken: BOT_TOKEN, fetchImpl });
 
-    await expect(lookup.getGuildSetupTargets(GUILD_ID)).rejects.toBeInstanceOf(
+    await expect(lookup.getGuildSetupChannels(GUILD_ID)).rejects.toBeInstanceOf(
       GuildUnavailableError
     );
   });
@@ -211,11 +138,10 @@ describe('getGuildSetupTargets', () => {
   test('maps a guild the bot cannot access (50001) to GuildUnavailableError', async () => {
     const { fetchImpl } = stubFetch({
       channels: json({ code: DISCORD_ERROR.MISSING_ACCESS, message: 'Missing Access' }, 403),
-      roles: json([]),
     });
     const lookup = createDiscordGuildLookup({ botToken: BOT_TOKEN, fetchImpl });
 
-    await expect(lookup.getGuildSetupTargets(GUILD_ID)).rejects.toBeInstanceOf(
+    await expect(lookup.getGuildSetupChannels(GUILD_ID)).rejects.toBeInstanceOf(
       GuildUnavailableError
     );
   });
@@ -223,29 +149,26 @@ describe('getGuildSetupTargets', () => {
   test('a generic failure maps to a retryable GuildLookupFailedError', async () => {
     const { fetchImpl } = stubFetch({
       channels: json({ code: 0, message: 'Internal Server Error' }, 500),
-      roles: json([]),
     });
     const lookup = createDiscordGuildLookup({ botToken: BOT_TOKEN, fetchImpl });
 
-    const error = await lookup.getGuildSetupTargets(GUILD_ID).catch((e: unknown) => e);
+    const error = await lookup.getGuildSetupChannels(GUILD_ID).catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(GuildLookupFailedError);
     expect((error as GuildLookupFailedError).retryable).toBe(true);
   });
 
-  test('no log line carries a role permission bitfield or a channel topic', async () => {
+  test('no log line carries a channel topic', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { fetchImpl } = stubFetch({
       channels: json([rawChannel(TEXT_CHANNEL_ID, 'general', GUILD_TEXT)]),
-      roles: json([MODERATOR_ROLE]),
     });
     const lookup = createDiscordGuildLookup({ botToken: BOT_TOKEN, fetchImpl });
 
-    await lookup.getGuildSetupTargets(GUILD_ID);
+    await lookup.getGuildSetupChannels(GUILD_ID);
 
     const written = [...log.mock.calls, ...error.mock.calls].flat().map(String).join('\n');
     expect(written).not.toContain('incidental channel description');
-    expect(written).not.toContain('"8"');
   });
 });
