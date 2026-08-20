@@ -110,6 +110,7 @@ Clip은 메시지 본문, 첨부 바이너리, 임베드 페이로드, 아바타
 docker run -d --name clip-pg -p 5433:5432 \
   -e POSTGRES_USER=clip -e POSTGRES_PASSWORD=clip -e POSTGRES_DB=clip_dev postgres:17-alpine
 DATABASE_URL='postgresql://clip:clip@localhost:5433/clip_dev' pnpm prisma migrate deploy
+pnpm prisma generate
 pnpm test
 ```
 
