@@ -1,6 +1,6 @@
 # PR #48 Review Fixes Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (- [ ]) syntax for tracking.
+> Steps use checkbox (- [ ]) syntax for tracking.
 
 **Goal:** Address the technically valid review threads on PR #48, preserve the two approved scope pushbacks, and leave the branch deployable and fully verified before its 2026-08-20 deadline.
 
@@ -19,7 +19,7 @@
 - Follow strict TDD for production behavior: write one failing test, run it and confirm the expected failure, implement only enough to pass, then rerun it. Concurrency tests use real PostgreSQL and deterministic barriers, never mocks or sleeps.
 - Tests assert observable behavior at the project boundary. External Discord HTTP may use injected fetch doubles; database concurrency may not.
 - Run the task's focused tests after each RED/GREEN cycle. Before each commit run pnpm lint, pnpm test against the real clip-pg database, and pnpm build. Output must contain no errors or warnings.
-- Conventional Commits only, one logical commit per task. The controller supplies review and push actions; implementers do not push, reply on GitHub, resolve threads, or dispatch subagents.
+- Conventional Commits only, one logical commit per task.
 - Keep all Discord I/O outside database transactions.
 - Never log raw Discord message bodies, attachments, embeds, or arbitrary error objects. Use the SafeClipLog allowlist only.
 - Do not vendor Pretendard, add a font dependency, or change font configuration. Ori rejected that review request because the deadline cannot absorb its time and cost.
@@ -192,21 +192,30 @@ Rerun and require all invalid cases to pass without creating or overwriting outp
 
 Add k8s/rendered/ to .gitignore.
 
-In docs/02_CLIP_IMPLEMENTATION_PLAN.md, replace both the initial direct kubectl apply -f k8s/ step and the final grep-only image check. Render first, then apply the explicit tracked resources and the validated generated deployment:
+In docs/02_CLIP_IMPLEMENTATION_PLAN.md, replace both the initial direct kubectl apply -f k8s/ step and the final grep-only image check. After merge, the deployer manually selects the successful `release` Actions run triggered by the post-merge push to `refs/heads/main`, then uses that run's `main` commit-specific GHCR `sha-<7>` tag (never a tag run, the PR head, or moving `origin/main`). The runnable procedure must require externally supplied `CLIP_IMAGE`, fail fast when it is unset, inspect and record that value, then render first and apply the explicit tracked resources and the validated generated deployment:
 
 ~~~sh
-git fetch origin main
-CLIP_IMAGE="ghcr.io/cgm-16/clip:sha-$(git rev-parse --short=7 origin/main)"
+# Example only — set this externally before running the block:
+# CLIP_IMAGE=ghcr.io/cgm-16/clip:sha-<release-run-main-commit-first-7>
+set -euo pipefail
+: "${CLIP_IMAGE:?Set CLIP_IMAGE externally to the selected release run immutable GHCR sha-<7> tag}"
+docker buildx imagetools inspect "$CLIP_IMAGE" >/dev/null
+printf 'CLIP_IMAGE=%s\n' "$CLIP_IMAGE"
 mkdir -p k8s/rendered
 scripts/render-k8s-deployment.sh "$CLIP_IMAGE" k8s/rendered/deployment.yaml
+[ "$(grep -Fxc "          image: $CLIP_IMAGE" k8s/rendered/deployment.yaml)" -eq 2 ]
 kubectl apply -f k8s/namespace.yaml
 kubectl apply -f k8s/postgres.yaml
 kubectl apply -f k8s/service.yaml
 kubectl apply -f k8s/ingress.yaml
-kubectl apply -f k8s/rendered/deployment.yaml
+applied_generation="$(kubectl apply -f k8s/rendered/deployment.yaml -o jsonpath='{.metadata.generation}')"
+case "$applied_generation" in
+  ''|*[!0-9]*) echo "Deployment apply did not return a numeric metadata.generation" >&2; exit 1 ;;
+esac
+[ "$applied_generation" -gt 0 ] || { echo "Deployment apply returned a non-positive metadata.generation" >&2; exit 1; }
 ~~~
 
-State that release CI must have published CLIP_IMAGE before rendering, k8s/deployment.yaml is a non-deployable template, renderer success precedes apply, and rollout verification must inspect successful migrate init-container completion.
+State the conditional Docker authentication caveat for private GHCR packages, that `k8s/deployment.yaml` is non-deployable, renderer success precedes apply, and `metadata.generation` is captured directly from the final Deployment apply response and required to be positive numeric. Verification waits until that generation is observed, requires it to remain current before and after rollout/evidence checks, then derives the revision and verifies the recorded `CLIP_IMAGE` in the applied Deployment and its controller-owned ReplicaSet before selecting the one running pod by ReplicaSet controller UID and matching template hash. Verification must require successful migrate completion, retrieve both container logs from that pod, query that pod through the Kubernetes pod proxy before ingress health, and state that same-image concurrent updates cannot be proven atomic so deployments require serialization or operator coordination; generation mismatches abort distinguishable concurrent updates.
 
 - [ ] **Step 8: Verify and commit**
 
@@ -744,25 +753,27 @@ git commit -m "fix(setup): recover from transient responses"
 
 ## Final Review Delta: Block Reconfiguration While Cleanup IDs Remain
 
-The whole-branch review found that a removed Clip can retain `archiveMessageId` or `archiveMetaMessageId` after Discord cleanup fails. `hasLiveClips` currently ignores that tombstone, so reconfiguration can switch the guild destination before removal retry; retry then targets the new channel and can orphan the old archive. This extends Task 3's guard invariant without changing removal states or adding automatic cleanup.
+The whole-branch review found that a removed Clip can retain `archiveProvenanceMessageId` or `archiveForwardMessageId` after Discord cleanup fails. `hasLiveClips` currently ignores that tombstone, so reconfiguration can switch the guild destination before removal retry; retry then targets the new channel and can orphan the old archive. This extends Task 3's guard invariant without changing removal states or adding automatic cleanup.
 
 - [x] Add a real-Postgres regression for failed removal retaining an archive ID: `finalizeGuildArchiveConfig` must return `CONFLICT`; after a successful removal retry clears both IDs, finalization may succeed.
 - [x] Change the shared guard predicate so any Clip retaining either archive ID blocks reconfiguration, regardless of tombstone status; preserve the existing live-status rule for rows without IDs.
 - [x] Correct the now-false two-request guild-lookup test comment and the deployment template comments that claim image equality is unenforced.
 - [x] Run the focused repository/service/setup suites, lint, full tests, and build; independently review this final delta before final verification.
 
-## Final Verification and Authorized GitHub Actions
+## Final Local Verification
 
-After all task reviews are clean:
+After all task work is complete:
 
 - Run pnpm lint.
 - Run pnpm test against the already-running real clip-pg database.
 - Run pnpm build with Ori's approved elevated build permission if sandboxed Next build stalls.
 - Run scripts/render-k8s-deployment.sh with ghcr.io/cgm-16/clip:sha-7139b60 into a temporary directory and inspect exactly two identical image values.
 - Confirm git status is clean and git diff 7139b603..HEAD contains only planned files.
-- Dispatch one whole-branch reviewer against the implementation range.
-- Push verified detached HEAD to refs/heads/wave/3-discord-archive.
-- Reply in each inline thread using its root comment database ID and resolve only its GraphQL thread ID.
+
+### Controller-only GitHub handoff
+
+The controller, not an implementer, owns branch review, pushing, GitHub replies, and thread resolution after local verification.
+
 - For accepted comments, state the concrete fix and test evidence.
 - For Pretendard, state that vendoring a licensed asset is intentionally deferred because the same-day deadline cannot absorb its time and cost and current system fallback remains.
 - For role copy, cite Ori's recorded admin-only P0 decision.

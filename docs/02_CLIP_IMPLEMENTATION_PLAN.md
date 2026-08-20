@@ -215,29 +215,101 @@ resources:
 ```
 
 - [ ] Reuse existing Traefik/TLS conventions; do not introduce a second ingress stack.
-- [ ] Render then apply manifests. Release CI must have published `CLIP_IMAGE` before rendering. `k8s/deployment.yaml` is an intentionally non-deployable template; renderer success must precede apply.
+- [ ] Render then apply manifests. After the merge, select the successful `release` Actions run triggered by the post-merge push to `refs/heads/main`, then use the GHCR `sha-<7>` tag for that run's `main` commit. Do not use a tag run, the PR head, or derive an image from moving `origin/main`. `k8s/deployment.yaml` is an intentionally non-deployable template; renderer success must precede apply.
 
 ```bash
-git fetch origin main
-CLIP_IMAGE="ghcr.io/cgm-16/clip:sha-$(git rev-parse --short=7 origin/main)"
+# Example only — set this externally, before pasting the runnable commands:
+# CLIP_IMAGE=ghcr.io/cgm-16/clip:sha-<release-run-main-commit-first-7>
+set -euo pipefail
+: "${CLIP_IMAGE:?Set CLIP_IMAGE externally to the selected release run immutable GHCR sha-<7> tag}"
+
+# This fails if that exact registry tag does not exist. If GHCR returns an
+# authorization error because the package is private, authenticate Docker with
+# credentials that can read the package, then run this command again.
+docker buildx imagetools inspect "$CLIP_IMAGE" >/dev/null
+
+# Record this exact value in the deployment evidence. The renderer accepts it
+# as its only image input and requires it for both migrate and clip.
+printf 'CLIP_IMAGE=%s\n' "$CLIP_IMAGE"
 mkdir -p k8s/rendered
 scripts/render-k8s-deployment.sh "$CLIP_IMAGE" k8s/rendered/deployment.yaml
+[ "$(grep -Fxc "          image: $CLIP_IMAGE" k8s/rendered/deployment.yaml)" -eq 2 ]
 kubectl apply -f k8s/namespace.yaml
 kubectl apply -f k8s/postgres.yaml
 kubectl apply -f k8s/service.yaml
 kubectl apply -f k8s/ingress.yaml
-kubectl apply -f k8s/rendered/deployment.yaml
+applied_generation="$(kubectl apply -f k8s/rendered/deployment.yaml -o jsonpath='{.metadata.generation}')"
+case "$applied_generation" in
+  ''|*[!0-9]*) echo "Deployment apply did not return a numeric metadata.generation" >&2; exit 1 ;;
+esac
+[ "$applied_generation" -gt 0 ] || { echo "Deployment apply returned a non-positive metadata.generation" >&2; exit 1; }
+printf 'CLIP_IMAGE=%s APPLIED_GENERATION=%s\n' "$CLIP_IMAGE" "$applied_generation"
 ```
 
-- [ ] Verify.
+- [ ] Verify the applied deployment's ownership chain and exact image. Run this in the shell that applied the Deployment, with `CLIP_IMAGE` and `applied_generation` still set. This does not use `kubectl logs deployment/...`, because that command can select a different pod from the revision being verified.
 
 ```bash
-curl -fsS https://<domain>/api/health
-kubectl get pods
-kubectl logs deployment/clip --tail=100
+set -euo pipefail
+namespace=clip
+deployment=clip
+
+is_generation() {
+  case "$1" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  [ "$1" -gt 0 ]
+}
+
+assert_applied_generation() {
+  current_generation="$(kubectl -n "$namespace" get deployment "$deployment" -o jsonpath='{.metadata.generation}')"
+  observed_generation="$(kubectl -n "$namespace" get deployment "$deployment" -o jsonpath='{.status.observedGeneration}')"
+  is_generation "$current_generation" && is_generation "$observed_generation" || { echo "Deployment did not report numeric generations" >&2; exit 1; }
+  [ "$current_generation" = "$applied_generation" ] && [ "$observed_generation" = "$applied_generation" ] || { echo "Deployment generation changed or was not observed: applied=$applied_generation current=$current_generation observed=$observed_generation" >&2; exit 1; }
+}
+
+is_generation "${applied_generation:?Run the apply block first to set applied_generation}" || { echo "applied_generation is not a positive integer" >&2; exit 1; }
+kubectl -n "$namespace" wait --for=jsonpath='{.status.observedGeneration}'="$applied_generation" "deployment/$deployment" --timeout=5m
+assert_applied_generation
+
+deployment_uid="$(kubectl -n "$namespace" get deployment "$deployment" -o jsonpath='{.metadata.uid}')"
+revision="$(kubectl -n "$namespace" get deployment "$deployment" -o jsonpath='{.metadata.annotations.deployment\.kubernetes\.io/revision}')"
+: "${deployment_uid:?Deployment did not report metadata.uid}"
+is_generation "$revision" || { echo "Deployment did not report a positive numeric revision" >&2; exit 1; }
+
+expected_images="$(printf '%s\n%s' "$CLIP_IMAGE" "$CLIP_IMAGE")"
+deployment_images="$(kubectl -n "$namespace" get deployment "$deployment" -o go-template='{{range .spec.template.spec.initContainers}}{{.image}}{{"\n"}}{{end}}{{range .spec.template.spec.containers}}{{.image}}{{"\n"}}{{end}}')"
+[ "$deployment_images" = "$expected_images" ] || { echo "Deployment template does not contain exactly the recorded CLIP_IMAGE twice" >&2; exit 1; }
+kubectl -n "$namespace" rollout status "deployment/$deployment" --revision="$revision" --timeout=5m
+assert_applied_generation
+
+replica_sets="$(kubectl -n "$namespace" get rs -o go-template='{{range .items}}{{.metadata.name}}{{"\t"}}{{.metadata.uid}}{{"\t"}}{{index .metadata.annotations "deployment.kubernetes.io/revision"}}{{"\t"}}{{range .metadata.ownerReferences}}{{if .controller}}{{.uid}}{{end}}{{end}}{{"\t"}}{{index .metadata.labels "pod-template-hash"}}{{"\n"}}{{end}}' | awk -F '\t' -v deployment_uid="$deployment_uid" -v revision="$revision" '$3 == revision && $4 == deployment_uid && $5 != "" { print $1 "\t" $2 "\t" $5 }')"
+replica_set_count="$(printf '%s\n' "$replica_sets" | sed '/^$/d' | wc -l | tr -d ' ')"
+[ "$replica_set_count" -eq 1 ] || { echo "expected one controller-owned ReplicaSet for Deployment UID $deployment_uid revision $revision" >&2; exit 1; }
+replica_set="$(printf '%s\n' "$replica_sets" | awk -F '\t' 'NR == 1 { print $1 }')"
+replica_set_uid="$(printf '%s\n' "$replica_sets" | awk -F '\t' 'NR == 1 { print $2 }')"
+pod_template_hash="$(printf '%s\n' "$replica_sets" | awk -F '\t' 'NR == 1 { print $3 }')"
+replica_set_images="$(kubectl -n "$namespace" get rs "$replica_set" -o go-template='{{range .spec.template.spec.initContainers}}{{.image}}{{"\n"}}{{end}}{{range .spec.template.spec.containers}}{{.image}}{{"\n"}}{{end}}')"
+[ "$replica_set_images" = "$expected_images" ] || { echo "ReplicaSet template does not contain exactly the recorded CLIP_IMAGE twice" >&2; exit 1; }
+
+pods="$(kubectl -n "$namespace" get pods -o go-template='{{range .items}}{{.metadata.name}}{{"\t"}}{{.status.phase}}{{"\t"}}{{range .metadata.ownerReferences}}{{if .controller}}{{.uid}}{{end}}{{end}}{{"\t"}}{{index .metadata.labels "pod-template-hash"}}{{"\n"}}{{end}}' | awk -F '\t' -v replica_set_uid="$replica_set_uid" -v pod_template_hash="$pod_template_hash" '$2 == "Running" && $3 == replica_set_uid && $4 == pod_template_hash { print $1 }')"
+pod_count="$(printf '%s\n' "$pods" | sed '/^$/d' | wc -l | tr -d ' ')"
+[ "$pod_count" -eq 1 ] || { echo "expected one running pod controller-owned by ReplicaSet UID $replica_set_uid" >&2; exit 1; }
+pod="$(printf '%s\n' "$pods" | sed -n '1p')"
+
+migrate_status="$(kubectl -n "$namespace" get pod "$pod" -o jsonpath='{range .status.initContainerStatuses[?(@.name=="migrate")]}{.state.terminated.reason}{"\t"}{.state.terminated.exitCode}{"\n"}{end}')"
+[ "$migrate_status" = $'Completed\t0' ] || { echo "migrate init-container was not Completed with exit 0: $migrate_status" >&2; exit 1; }
+kubectl -n "$namespace" logs "$pod" -c migrate --tail=200
+kubectl -n "$namespace" logs "$pod" -c clip --tail=200
+pod_health="$(kubectl -n "$namespace" get --raw "/api/v1/namespaces/$namespace/pods/$pod:3000/proxy/api/health")"
+[ "$pod_health" = '{"ok":true}' ] || { echo "selected pod health check failed: $pod_health" >&2; exit 1; }
+ingress_health="$(curl -fsS https://<domain>/api/health)"
+[ "$ingress_health" = '{"ok":true}' ] || { echo "ingress health check failed: $ingress_health" >&2; exit 1; }
+assert_applied_generation
 ```
 
-Expected: HTTPS health returns `{"ok":true}` and pod remains ready.
+`kubectl apply` and the follow-up reads are separate API requests, so they cannot prove atomic ownership of a concurrent same-image update. Deployments for this Deployment must therefore be serialized or operator-coordinated. A generation mismatch aborts verification for distinguishable concurrent Deployment updates; the recorded image, Deployment UID/template, ReplicaSet controller UID/revision/template, and Pod controller UID/template-hash checks remain the evidence invariant.
+
+Expected: the applied generation is observed and remains current before and after rollout/evidence checks, the selected revision becomes ready, its Deployment and controller-owned ReplicaSet templates each contain the recorded `CLIP_IMAGE` exactly twice, exactly one controller-owned running pod has the matching template hash, `migrate` on that pod is `Completed` with exit 0, its migration and app logs are available, its Kubernetes pod-proxy health response is `{"ok":true}`, and then ingress health returns `{"ok":true}`.
 
 - [ ] Record domain recurring cost and environment in `README.md` / cumulative snapshot.
 - [ ] Commit deployment manifests.
@@ -815,12 +887,9 @@ Adapt to actual repo scripts, but final gate should include at least:
 pnpm lint
 pnpm test
 pnpm build
-kubectl rollout status deployment/clip
-curl -fsS https://<domain>/api/health
-kubectl logs deployment/clip --tail=200
 ```
 
-Before applying, release CI must have published `CLIP_IMAGE`; `k8s/deployment.yaml` is a non-deployable template and must never be passed directly to `kubectl`. Renderer success must precede applying the generated deployment. As part of rollout verification, inspect the successful completion of the `migrate` init-container as well as the app logs.
+Before applying, follow Task 0.2's immutable release-image selection, registry inspection, render/apply, and revision-pinned pod verification exactly. `k8s/deployment.yaml` is a non-deployable template and must never be passed directly to `kubectl`. The recorded `CLIP_IMAGE` must be the same value rendered for both `migrate` and `clip`.
 
 And manual Discord checks from Task 6.3.
 
