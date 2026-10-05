@@ -67,3 +67,17 @@ Never rewrite snapshot history, and never record planned work as implemented.
 ## When you change the design
 
 If implementation forces a visual or copy change, record it in `docs/DESIGN_RATIONALE_APPEND.md` (append, don't rewrite) so the decision log stays complete.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs live in GitHub Issues for `cgm-16/clip`. Before tracker operations, read `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the five default triage labels. Before triage, read `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout: root `CONTEXT.md` and `docs/adr/`. Before exploring the domain, read `docs/agents/domain.md`.
