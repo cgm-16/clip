@@ -13,29 +13,8 @@ function createPrismaClient(): PrismaClient {
   return new PrismaClient({ adapter });
 }
 
-function getPrismaClient(): PrismaClient {
-  // Must cache unconditionally, not just in dev: the Proxy below calls this
-  // on every property access, and skipping the cache would open a fresh
-  // connection pool per query.
-  if (!globalForPrisma.prisma) {
-    globalForPrisma.prisma = createPrismaClient();
-  }
-  return globalForPrisma.prisma;
+// Keep construction lazy: importing a repository during a build must not
+// require Discord/session environment variables or open a connection pool.
+export function getPrismaClient(): PrismaClient {
+  return globalForPrisma.prisma ??= createPrismaClient();
 }
-
-// `createPrismaClient` calls `parseEnv`, which validates the full Env, not
-// just DATABASE_URL. Building the client eagerly at module load would force
-// every importer -- including build-time bundling and tests that never
-// touch the database -- to have Discord/session vars set just to satisfy
-// that unrelated validation. A Proxy defers construction to the first
-// actual property access instead, so importing this module only requires
-// what the caller's own code path actually needs.
-export const prisma = new Proxy({} as PrismaClient, {
-  get(_target, prop) {
-    const client = getPrismaClient();
-    const value = Reflect.get(client, prop);
-    // Prisma Client methods close over `this`; grabbing them off the proxy
-    // (e.g. `const { clip } = prisma`) must not lose that binding.
-    return typeof value === 'function' ? value.bind(client) : value;
-  },
-});

@@ -1,3 +1,4 @@
+import type { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { authenticateAdminSession } from '@/lib/admin-session/service';
 import { ADMIN_SESSION_COOKIE_NAME } from '@/lib/admin-session/tokens';
@@ -15,30 +16,6 @@ import { getDiscordBotUserId } from '@/lib/discord/bot-user';
 import { createDiscordRestClient, DiscordApiError } from '@/lib/discord/rest-client';
 import { parseEnv } from '@/lib/env';
 import { logClipEvent } from '@/lib/logging/safe-log';
-
-/**
- * Reads one cookie's value out of a raw `Cookie` request header. Duplicated
- * from `app/setup/data/route.ts` rather than shared: that route's own doc
- * comment explains why it reads headers directly off the `Request` instead
- * of `next/headers`' `cookies()` helper, and this stays consistent with it.
- * Two call sites, not three -- see CLAUDE.md's rule-of-three DRY guidance --
- * so this is noted rather than extracted.
- */
-function readCookie(header: string | null, name: string): string | null {
-  if (!header) {
-    return null;
-  }
-  for (const part of header.split(';')) {
-    const separator = part.indexOf('=');
-    if (separator === -1) {
-      continue;
-    }
-    if (part.slice(0, separator).trim() === name) {
-      return part.slice(separator + 1).trim();
-    }
-  }
-  return null;
-}
 
 // `channelId` is required only for "existing" -- "create" never carries a
 // caller-chosen id (see `SetupSubmission` in `ScreenB.tsx`, which this
@@ -103,7 +80,7 @@ function parseCreatedChannel(body: unknown): { id: string; name: string } | null
  * Allowed-role configuration is cut from P0 per the task brief; only the
  * archive channel and who configured it are persisted here.
  */
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   // Same CSRF reasoning as `app/api/setup/exchange/route.ts`: `request.json()`
   // ignores Content-Type, so a cross-origin `text/plain` POST is a CORS
   // *simple* request with no preflight, and the admin session cookie is sent
@@ -115,7 +92,7 @@ export async function POST(request: Request) {
     return new Response(null, { status: 403 });
   }
 
-  const sessionToken = readCookie(request.headers.get('Cookie'), ADMIN_SESSION_COOKIE_NAME);
+  const sessionToken = request.cookies.get(ADMIN_SESSION_COOKIE_NAME)?.value;
   if (!sessionToken) {
     return new Response(null, { status: 401 });
   }

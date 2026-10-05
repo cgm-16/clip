@@ -47,7 +47,30 @@ describe('POST /api/setup/exchange', () => {
     const cookie = response.headers.get('Set-Cookie');
     expect(cookie).toContain(`${ADMIN_SESSION_COOKIE_NAME}=session-bearer`);
     expect(cookie).toContain('HttpOnly');
+    expect(cookie?.toLowerCase()).toContain('samesite=lax');
+    expect(cookie).toContain('Path=/');
+    expect(cookie).toContain('Max-Age=1800');
+    expect(await response.text()).toBe('');
   });
+
+  test.each(['development', 'production'] as const)(
+    'the session cookie is Secure only in production (%s)',
+    async (nodeEnv) => {
+      vi.stubEnv('NODE_ENV', nodeEnv);
+      exchangeSetupToken.mockResolvedValue({
+        token: 'session-bearer',
+        guildId: '1539212298600718416',
+        userId: '1539212298600718417',
+        expiresAt: new Date(),
+      });
+
+      const response = await POST(postJson({ token: 'setup-bearer' }));
+
+      expect(response.headers.get('Set-Cookie')?.includes('Secure')).toBe(
+        nodeEnv === 'production',
+      );
+    },
+  );
 
   test('a used, expired or unknown token is refused with one indistinguishable 401', async () => {
     exchangeSetupToken.mockResolvedValue(null);

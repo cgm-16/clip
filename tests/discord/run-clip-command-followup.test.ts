@@ -1,6 +1,6 @@
 import { generateKeyPairSync, randomUUID, sign } from 'node:crypto';
 import { afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
-import type { prisma as PrismaSingleton } from '@/lib/db';
+import type { PrismaClient } from '@/generated/prisma/client';
 import { CLIP_COMMAND_NAME } from '@/lib/discord/commands';
 import { DISCORD_COPY } from '@/lib/discord/copy';
 
@@ -84,7 +84,7 @@ function followupUrl(token: string): string {
 }
 
 describe('runClipCommand: nothing after the member is answered may overwrite that answer', () => {
-  let prisma: typeof PrismaSingleton;
+  let prisma: PrismaClient;
   let POST: (request: Request) => Promise<Response>;
 
   beforeAll(async () => {
@@ -94,7 +94,7 @@ describe('runClipCommand: nothing after the member is answered may overwrite tha
     vi.stubEnv('ADMIN_SESSION_SECRET', 'x'.repeat(32));
     vi.stubEnv('PUBLIC_BASE_URL', BASE_URL);
 
-    ({ prisma } = await import('@/lib/db'));
+    prisma = (await import('@/lib/db')).getPrismaClient();
     ({ POST } = await import('@/app/api/discord/interactions/route'));
   });
 

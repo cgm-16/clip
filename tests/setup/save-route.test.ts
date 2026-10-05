@@ -1,3 +1,4 @@
+import { NextRequest } from 'next/server';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { ADMIN_SESSION_COOKIE_NAME } from '@/lib/admin-session/tokens';
 import { GuildUnavailableError } from '@/lib/discord/guild-lookup';
@@ -58,8 +59,8 @@ function stubEnv(): void {
   vi.stubEnv('PUBLIC_BASE_URL', BASE_URL);
 }
 
-function postJson(body: unknown, headers: Record<string, string> = {}): Request {
-  return new Request(`${BASE_URL}/setup/save`, {
+function postJson(body: unknown, headers: Record<string, string> = {}): NextRequest {
+  return new NextRequest(`${BASE_URL}/setup/save`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Cookie: SESSION_COOKIE, ...headers },
     body: JSON.stringify(body),
@@ -93,7 +94,7 @@ describe('POST /setup/save', () => {
 
   test('no session cookie is refused with 401 before touching auth', async () => {
     const response = await POST(
-      new Request(`${BASE_URL}/setup/save`, {
+      new NextRequest(`${BASE_URL}/setup/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ destination: 'create', channelId: null }),

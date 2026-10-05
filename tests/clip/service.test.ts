@@ -14,7 +14,7 @@ import {
   ArchiveTargetUnavailableError,
   type ClipInput,
 } from '@/lib/clip/types';
-import type { prisma as PrismaSingleton } from '@/lib/db';
+import type { PrismaClient } from '@/generated/prisma/client';
 import { createFakeGateway, type FakeDiscordArchiveGateway } from './fake-gateway';
 
 // Discord snowflakes are opaque strings to us; a random per-test id keeps
@@ -24,7 +24,7 @@ function fakeSnowflake(): string {
 }
 
 describe('clip service', () => {
-  let prisma: typeof PrismaSingleton;
+  let prisma: PrismaClient;
   let gateway: FakeDiscordArchiveGateway;
   let service: ReturnType<typeof createClipService>;
 
@@ -40,7 +40,7 @@ describe('clip service', () => {
     vi.stubEnv('ADMIN_SESSION_SECRET', 'x'.repeat(32));
     vi.stubEnv('PUBLIC_BASE_URL', 'https://clipendpoint.cc');
 
-    ({ prisma } = await import('@/lib/db'));
+    prisma = (await import('@/lib/db')).getPrismaClient();
   });
 
   const cleanupGuildIds: string[] = [];

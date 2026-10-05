@@ -31,7 +31,7 @@ RUN pnpm build
 # standalone` traces only what app code imports, so it never picks up the
 # `prisma` package (only invoked from a script, never imported). Installing
 # it here instead of in `deps` keeps devDependencies unrelated to migrating
-# (eslint, vitest, tailwind, typescript, ...) out of every image entirely,
+# (eslint, vitest, typescript, ...) out of every image entirely,
 # app and migration alike. The pinned version must be bumped by hand
 # alongside package.json's `prisma` devDependency; nothing enforces that.
 FROM node:24-alpine AS migrate-deps

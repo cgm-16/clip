@@ -6,6 +6,8 @@
  * script can share one client without either reaching for a module mock.
  */
 
+import { setTimeout as defaultSleep } from 'node:timers/promises';
+
 const API_BASE = 'https://discord.com/api/v10';
 
 /**
@@ -72,10 +74,6 @@ const MAX_ATTEMPTS = 3;
 // it exactly would hold the request open well past the point of usefulness.
 const MAX_RETRY_DELAY_MS = 5_000;
 const DISCORD_REQUEST_TIMEOUT_MS = 10_000;
-
-function defaultSleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 /**
  * Reads the JSON body, tolerating a response that has none.

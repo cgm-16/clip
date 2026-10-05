@@ -1,3 +1,4 @@
+import type { NextRequest } from 'next/server';
 import { authenticateAdminSession } from '@/lib/admin-session/service';
 import { ADMIN_SESSION_COOKIE_NAME } from '@/lib/admin-session/tokens';
 import {
@@ -5,29 +6,6 @@ import {
   GuildUnavailableError,
 } from '@/lib/discord/guild-lookup';
 import { parseEnv } from '@/lib/env';
-
-/**
- * Reads one cookie's value out of a raw `Cookie` request header. Not
- * `next/headers`' `cookies()` helper: every other route handler in this
- * codebase (`app/api/setup/exchange/route.ts`, `app/api/discord/interactions
- * /route.ts`) reads headers directly off the `Request`, and this stays
- * consistent with that rather than introducing a second pattern.
- */
-function readCookie(header: string | null, name: string): string | null {
-  if (!header) {
-    return null;
-  }
-  for (const part of header.split(';')) {
-    const separator = part.indexOf('=');
-    if (separator === -1) {
-      continue;
-    }
-    if (part.slice(0, separator).trim() === name) {
-      return part.slice(separator + 1).trim();
-    }
-  }
-  return null;
-}
 
 /**
  * `SetupFlow`'s data source once an admin session cookie exists — the guild
@@ -40,8 +18,8 @@ function readCookie(header: string | null, name: string): string | null {
  * session" identically — `SetupFlow` reacts to either by attempting the
  * setup-token exchange next, not by distinguishing the cause.
  */
-export async function GET(request: Request) {
-  const sessionToken = readCookie(request.headers.get('Cookie'), ADMIN_SESSION_COOKIE_NAME);
+export async function GET(request: NextRequest) {
+  const sessionToken = request.cookies.get(ADMIN_SESSION_COOKIE_NAME)?.value;
   if (!sessionToken) {
     return new Response(null, { status: 401 });
   }

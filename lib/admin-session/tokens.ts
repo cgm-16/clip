@@ -29,27 +29,3 @@ export function generateBearerToken(): string {
 export function hashBearerToken(bearer: string, secret: string): string {
   return createHmac('sha256', secret).update(bearer).digest('hex');
 }
-
-/**
- * Serializes the admin session cookie.
- *
- * `Path=/` is the narrowest path that reaches every admin surface: the pages
- * live under `/admin/*` and their APIs under `/api/admin/*`, which share no
- * segment prefix. `Secure` is conditional because local development serves
- * plain http, where a Secure cookie would simply never be sent back.
- */
-export function buildAdminSessionCookie(bearer: string): string {
-  const attributes = [
-    `${ADMIN_SESSION_COOKIE_NAME}=${bearer}`,
-    'HttpOnly',
-    'SameSite=Lax',
-    'Path=/',
-    `Max-Age=${ADMIN_SESSION_TTL_MS / 1000}`,
-  ];
-  // NODE_ENV is set by the framework and is deliberately absent from the Env
-  // schema and from `.env`, so it is read directly rather than via parseEnv.
-  if (process.env.NODE_ENV === 'production') {
-    attributes.push('Secure');
-  }
-  return attributes.join('; ');
-}
