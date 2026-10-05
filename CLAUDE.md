@@ -80,4 +80,4 @@ Use the five default triage labels. Before triage, read `docs/agents/triage-labe
 
 ### Domain docs
 
-Single-context layout: root `CONTEXT.md` and `docs/adr/`. Before exploring the domain, read `docs/agents/domain.md`.
+Single-context layout: root `GLOSSARY.md` and `docs/adr/`. Before exploring the domain, read `docs/agents/domain.md`.

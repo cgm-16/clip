@@ -4,16 +4,16 @@
 
 This repo uses a single-context layout:
 
-- Read root `CONTEXT.md` for domain terms.
+- Read root `GLOSSARY.md` for domain terms.
 - Read relevant decisions in `docs/adr/`.
 - Continue to use `docs/01_CLIP_PRODUCT_SPEC.md` for settled product semantics and `docs/03_CLIP_RESEARCH_DECISION_LOG.md` for existing rationale. Domain docs supplement these sources.
 
-If `CONTEXT.md` or `docs/adr/` is absent, proceed silently. Do not suggest creating them upfront. The `domain-modeling` skill creates them lazily when terms or decisions are resolved.
+If `GLOSSARY.md` or `docs/adr/` is absent, proceed silently. Do not suggest creating them upfront. The `domain-modeling` skill creates them lazily when terms or decisions are resolved.
 
 ## Layout
 
 ```text
-CONTEXT.md
+GLOSSARY.md
 docs/adr/
   0001-<decision>.md
 ```
