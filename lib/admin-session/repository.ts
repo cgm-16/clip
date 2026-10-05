@@ -1,4 +1,4 @@
-import { prisma } from '@/lib/db';
+import { getPrismaClient } from '@/lib/db';
 
 /** The `(guild, admin)` pair a setup token or admin session is bound to. */
 export type AdminIdentity = {
@@ -15,7 +15,7 @@ export type BearerCredential = {
 export type StoredCredential = AdminIdentity & BearerCredential;
 
 export async function insertSetupToken(credential: StoredCredential): Promise<void> {
-  await prisma.setupToken.create({ data: credential });
+  await getPrismaClient().setupToken.create({ data: credential });
 }
 
 /**
@@ -44,7 +44,7 @@ export async function exchangeSetupTokenForSession(
   session: BearerCredential,
   now: Date,
 ): Promise<AdminIdentity | null> {
-  return prisma.$transaction(async (tx) => {
+  return getPrismaClient().$transaction(async (tx) => {
     const { count } = await tx.setupToken.updateMany({
       where: { tokenHash: setupTokenHash, usedAt: null, expiresAt: { gt: now } },
       data: { usedAt: now },
@@ -70,7 +70,7 @@ export async function findLiveAdminSession(
   tokenHash: string,
   now: Date,
 ): Promise<AdminIdentity | null> {
-  return prisma.adminSession.findFirst({
+  return getPrismaClient().adminSession.findFirst({
     where: { tokenHash, revokedAt: null, expiresAt: { gt: now } },
     select: { guildId: true, userId: true },
   });

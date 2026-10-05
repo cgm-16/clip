@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
 import type { ClipStatus } from '@/generated/prisma/client';
-import type { prisma as PrismaSingleton } from '@/lib/db';
+import type { PrismaClient } from '@/generated/prisma/client';
 import {
   addClipper,
   claimClip,
@@ -35,7 +35,7 @@ function fakeSnowflake(): string {
 }
 
 describe('clip repository', () => {
-  let prisma: typeof PrismaSingleton;
+  let prisma: PrismaClient;
 
   beforeAll(async () => {
     // lib/db.ts validates the full Env, not just DATABASE_URL, on first use of
@@ -49,7 +49,7 @@ describe('clip repository', () => {
     vi.stubEnv('ADMIN_SESSION_SECRET', 'x'.repeat(32));
     vi.stubEnv('PUBLIC_BASE_URL', 'https://clipendpoint.cc');
 
-    ({ prisma } = await import('@/lib/db'));
+    prisma = (await import('@/lib/db')).getPrismaClient();
   });
 
   const cleanupGuildIds: string[] = [];

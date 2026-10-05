@@ -1,6 +1,6 @@
 import type { AuthorNotificationStatus, ClipStatus, Prisma } from '@/generated/prisma/client';
 import type { ArchiveMessageIds } from '@/lib/clip/types';
-import { prisma } from '@/lib/db';
+import { getPrismaClient } from '@/lib/db';
 
 /** A Prisma client scoped to an open transaction. See `lockClip`. */
 export type TxClient = Prisma.TransactionClient;
@@ -90,7 +90,7 @@ async function claimClipWithClient(
 }
 
 export function claimClip(input: ClaimClipInput): Promise<{ created: boolean; clip: ClipRecord }> {
-  return claimClipWithClient(prisma, input);
+  return claimClipWithClient(getPrismaClient(), input);
 }
 
 export function claimClipInTransaction(
@@ -116,13 +116,13 @@ export function claimClipInTransaction(
  * then lock.
  *
  * The transaction client is handed to the callback as a parameter rather than
- * left for it to reach through the module-level `prisma`: a callback that used
+ * left for it to reach through the shared Prisma client: a callback that used
  * the singleton would check out a second pool connection while holding the
  * first, which deadlocks under load rather than merely running slowly.
  *
  * The `tx`-first parameter on every mutation below is a convention, not an
  * enforcement. `TxClient` is `Omit<PrismaClient, ITXClientDenyList>`, which any
- * `prisma.$transaction` client satisfies without holding this row's lock, so
+ * `PrismaClient.$transaction` client satisfies without holding this row's lock, so
  * the compiler cannot tell a locked client from an unlocked one. It makes the
  * requirement visible at every call site; honouring it is the caller's
  * obligation, and the count-dependent ones -- `removeClipper` and
@@ -134,7 +134,7 @@ export function lockClip<T>(
   sourceMessageId: string,
   fn: (tx: TxClient, clip: ClipRecord) => Promise<T>,
 ): Promise<T | null> {
-  return prisma.$transaction(async (tx) => {
+  return getPrismaClient().$transaction(async (tx) => {
     const locked = await tx.$executeRaw`
       SELECT 1 FROM clips
       WHERE guild_id = ${guildId} AND source_message_id = ${sourceMessageId}
@@ -165,7 +165,7 @@ export function lockGuildConfig<T>(
   guildId: string,
   fn: (tx: TxClient, config: GuildArchiveConfig) => Promise<T>,
 ): Promise<T | null> {
-  return prisma.$transaction(async (tx) => {
+  return getPrismaClient().$transaction(async (tx) => {
     const locked = await tx.$executeRaw`
       SELECT 1 FROM guild_configs
       WHERE guild_id = ${guildId}
@@ -406,14 +406,7 @@ async function upsertGuildArchiveConfigWithClient(
 }
 
 export function upsertGuildArchiveConfig(input: UpsertGuildArchiveConfigInput): Promise<void> {
-  return upsertGuildArchiveConfigWithClient(prisma, input);
-}
-
-function upsertGuildArchiveConfigInTransaction(
-  tx: TxClient,
-  input: UpsertGuildArchiveConfigInput,
-): Promise<void> {
-  return upsertGuildArchiveConfigWithClient(tx, input);
+  return upsertGuildArchiveConfigWithClient(getPrismaClient(), input);
 }
 
 /**
@@ -462,11 +455,7 @@ async function hasLiveClipsWithClient(
 }
 
 export function hasLiveClips(guildId: string): Promise<boolean> {
-  return hasLiveClipsWithClient(prisma, guildId);
-}
-
-function hasLiveClipsInTransaction(tx: TxClient, guildId: string): Promise<boolean> {
-  return hasLiveClipsWithClient(tx, guildId);
+  return hasLiveClipsWithClient(getPrismaClient(), guildId);
 }
 
 /**
@@ -479,11 +468,11 @@ export async function finalizeGuildArchiveConfig(
   const outcome = await lockGuildConfig(input.guildId, async (tx, config) => {
     if (
       config.archiveChannelId !== input.archiveChannelId &&
-      (await hasLiveClipsInTransaction(tx, input.guildId))
+      (await hasLiveClipsWithClient(tx, input.guildId))
     ) {
       return { kind: 'CONFLICT' as const };
     }
-    await upsertGuildArchiveConfigInTransaction(tx, input);
+    await upsertGuildArchiveConfigWithClient(tx, input);
     return { kind: 'SAVED' as const };
   });
   if (outcome !== null) {
@@ -504,21 +493,14 @@ export async function finalizeGuildArchiveConfig(
  * does not, so it still counts as archived.
  */
 export function countArchivedClips(guildId: string): Promise<number> {
-  return prisma.clip.count({ where: { guildId, status: 'ACTIVE' } });
+  return getPrismaClient().clip.count({ where: { guildId, status: 'ACTIVE' } });
 }
 
 /** Reads for the service. Null when the guild has never completed setup. */
 export async function findGuildArchiveConfig(
   guildId: string,
 ): Promise<GuildArchiveConfig | null> {
-  return findGuildArchiveConfigWithClient(prisma, guildId);
-}
-
-async function findGuildArchiveConfigWithClient(
-  client: Pick<TxClient, 'guildConfig'>,
-  guildId: string,
-): Promise<GuildArchiveConfig | null> {
-  const config = await client.guildConfig.findUnique({
+  const config = await getPrismaClient().guildConfig.findUnique({
     where: { guildId },
     select: guildArchiveConfigSelect,
   });
@@ -553,14 +535,14 @@ export async function claimAuthorNotification(
   guildId: string,
   sourceMessageId: string,
 ): Promise<{ authorUserId: string; sourceChannelId: string } | null> {
-  const { count } = await prisma.clip.updateMany({
+  const { count } = await getPrismaClient().clip.updateMany({
     where: { guildId, sourceMessageId, authorNotificationStatus: 'PENDING' satisfies AuthorNotificationStatus },
     data: { authorNotificationStatus: 'UNDELIVERABLE' satisfies AuthorNotificationStatus },
   });
   if (count !== 1) {
     return null;
   }
-  const clip = await prisma.clip.findUniqueOrThrow({
+  const clip = await getPrismaClient().clip.findUniqueOrThrow({
     where: clipKey(guildId, sourceMessageId),
     select: { authorUserId: true, sourceChannelId: true },
   });
@@ -579,7 +561,7 @@ export async function markAuthorNotificationDelivered(
   guildId: string,
   sourceMessageId: string,
 ): Promise<void> {
-  await prisma.clip.updateMany({
+  await getPrismaClient().clip.updateMany({
     where: { guildId, sourceMessageId, authorNotificationStatus: 'UNDELIVERABLE' satisfies AuthorNotificationStatus },
     data: { authorNotificationStatus: 'DELIVERED' satisfies AuthorNotificationStatus },
   });

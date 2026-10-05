@@ -16,7 +16,7 @@ import {
   unclipResultCopy,
 } from '@/lib/discord/interaction-responses';
 import { DISCORD_COPY } from '@/lib/discord/copy';
-import type { prisma as PrismaSingleton } from '@/lib/db';
+import type { PrismaClient } from '@/generated/prisma/client';
 
 const { publicKey, privateKey } = generateKeyPairSync('ed25519');
 const publicKeyHex = publicKey.export({ format: 'der', type: 'spki' }).subarray(-32).toString('hex');
@@ -205,7 +205,7 @@ describe('context command result copy mapping', () => {
 });
 
 describe('Clip / Unclip / Remove context commands', () => {
-  let prisma: typeof PrismaSingleton;
+  let prisma: PrismaClient;
   let POST: (request: Request) => Promise<Response>;
 
   beforeAll(async () => {
@@ -215,7 +215,7 @@ describe('Clip / Unclip / Remove context commands', () => {
     vi.stubEnv('ADMIN_SESSION_SECRET', 'x'.repeat(32));
     vi.stubEnv('PUBLIC_BASE_URL', BASE_URL);
 
-    ({ prisma } = await import('@/lib/db'));
+    prisma = (await import('@/lib/db')).getPrismaClient();
     ({ POST } = await import('@/app/api/discord/interactions/route'));
   });
 

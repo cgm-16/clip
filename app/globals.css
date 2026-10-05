@@ -1,12 +1,60 @@
-@import "tailwindcss";
-
 /*
  * `tokens.css` at the repository root is the single source of visual values.
  * It is imported, never copied: no colour, size, spacing or radius is written
- * down a second time in this file. It comes after Tailwind so the token
- * declarations sit downstream of Tailwind's preflight.
+ * down a second time in this file.
  */
 @import "../tokens.css";
+
+/* Reset browser defaults used by the setup screens and UI primitives. */
+*,
+::before,
+::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: 0 solid;
+}
+
+html {
+  height: 100%;
+  line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1 {
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+a {
+  color: inherit;
+  text-decoration: inherit;
+}
+
+button,
+input,
+select {
+  font: inherit;
+  font-feature-settings: inherit;
+  font-variation-settings: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  border-radius: 0;
+  background-color: transparent;
+  opacity: 1;
+}
+
+button,
+input:where([type="button"], [type="reset"], [type="submit"]) {
+  appearance: button;
+}
+
+::placeholder {
+  opacity: 1;
+}
 
 /*
  * `next/font` self-hosts JetBrains Mono under a generated family name and
@@ -24,6 +72,9 @@
 }
 
 body {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
   background: var(--page);
   color: var(--text);
   font-family: var(--font-ui);

@@ -1,7 +1,8 @@
+import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { exchangeSetupToken } from '@/lib/admin-session/service';
 import { parseEnv } from '@/lib/env';
-import { buildAdminSessionCookie } from '@/lib/admin-session/tokens';
+import { ADMIN_SESSION_COOKIE_NAME, ADMIN_SESSION_TTL_MS } from '@/lib/admin-session/tokens';
 
 const ExchangeRequestSchema = z.object({ token: z.string().min(1) });
 
@@ -31,8 +32,16 @@ export async function POST(request: Request) {
     return new Response(null, { status: 401 });
   }
 
-  return new Response(null, {
-    status: 204,
-    headers: { 'Set-Cookie': buildAdminSessionCookie(grant.token) },
+  const response = new NextResponse(null, { status: 204 });
+  // Path=/ reaches the setup pages and their APIs. Secure stays conditional
+  // so local development over plain http can send the cookie back.
+  // NODE_ENV is set by the framework, not part of the validated Env schema.
+  response.cookies.set(ADMIN_SESSION_COOKIE_NAME, grant.token, {
+    httpOnly: true,
+    sameSite: 'lax',
+    path: '/',
+    maxAge: ADMIN_SESSION_TTL_MS / 1000,
+    secure: process.env.NODE_ENV === 'production',
   });
+  return response;
 }

@@ -47,7 +47,7 @@ export interface ScreenBProps {
   adminHandle?: string;
 }
 
-const DESTINATION_OPTIONS = (channels: SetupChannel[]) => [
+const DESTINATION_OPTIONS = [
   {
     value: 'create' as const,
     label: WEB_COPY.setup.destinationCreateLabel,
@@ -148,7 +148,7 @@ export function ScreenB({ channels, onSubmit, onCancel, guildName, adminHandle }
           name="destination"
           value={destination}
           onChange={handleDestinationChange}
-          options={DESTINATION_OPTIONS(channels)}
+          options={DESTINATION_OPTIONS}
         />
 
         {destination === 'existing' && (

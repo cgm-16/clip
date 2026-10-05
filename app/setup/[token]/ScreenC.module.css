@@ -116,23 +116,8 @@
   gap: 9px;
 }
 
-/* Mirrors components/ui/Button.module.css's `.button.primary` -- an `<a>`
-   needs its own element (Button only renders a <button>), so the primary
-   button's visual is duplicated here rather than hand-rolling new values. */
 .primaryLink {
-  font: 500 var(--fs-label) / 1 var(--font-ui);
-  border-radius: var(--radius);
-  border: var(--hairline) solid var(--btn-primary-bg);
-  padding: var(--sp-control-y) var(--sp-4);
-  background: var(--btn-primary-bg);
-  color: var(--btn-primary-fg);
-  cursor: pointer;
-  transition: background-color 120ms, border-color 120ms;
+  composes: button primary from "../../../components/ui/Button.module.css";
   text-decoration: none;
   display: inline-block;
-}
-
-.primaryLink:hover {
-  background: var(--btn-primary-bg-hover);
-  border-color: var(--btn-primary-bg-hover);
 }

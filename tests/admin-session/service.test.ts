@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto';
+import { NextRequest } from 'next/server';
 import { afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
-import type { prisma as PrismaSingleton } from '@/lib/db';
+import type { PrismaClient } from '@/generated/prisma/client';
+import { POST } from '@/app/api/setup/exchange/route';
 import {
   ADMIN_SESSION_COOKIE_NAME,
   ADMIN_SESSION_TTL_MS,
   SETUP_TOKEN_TTL_MS,
-  buildAdminSessionCookie,
   hashBearerToken,
 } from '@/lib/admin-session/tokens';
 import {
@@ -25,7 +26,7 @@ function fakeSnowflake(): string {
 }
 
 describe('admin session service', () => {
-  let prisma: typeof PrismaSingleton;
+  let prisma: PrismaClient;
 
   beforeAll(async () => {
     // The service validates the full Env on first use, so every required var
@@ -38,7 +39,7 @@ describe('admin session service', () => {
     vi.stubEnv('ADMIN_SESSION_SECRET', SESSION_SECRET);
     vi.stubEnv('PUBLIC_BASE_URL', 'https://clipendpoint.cc');
 
-    ({ prisma } = await import('@/lib/db'));
+    prisma = (await import('@/lib/db')).getPrismaClient();
   });
 
   const cleanupGuildIds: string[] = [];
@@ -87,21 +88,34 @@ describe('admin session service', () => {
     expect(grant).toMatchObject({ guildId, userId });
     expect(grant?.expiresAt.getTime()).toBe(exchangedAt.getTime() + ADMIN_SESSION_TTL_MS);
 
-    // Authenticate the value a browser would send back, not the raw grant:
-    // that is the only assertion that crosses the cookie serialization
-    // boundary the route relies on.
-    const cookie = buildAdminSessionCookie(grant!.token);
-    const returnedByBrowser = cookie.slice(
-      `${ADMIN_SESSION_COOKIE_NAME}=`.length,
-      cookie.indexOf(';'),
-    );
-    const identity = await authenticateAdminSession(returnedByBrowser);
+    const identity = await authenticateAdminSession(grant!.token);
     expect(identity).toEqual({ guildId, userId });
 
     const sessions = await prisma.adminSession.findMany({ where: { guildId } });
     expect(sessions).toHaveLength(1);
     expect(sessions[0].tokenHash).toBe(hashBearerToken(grant!.token, SESSION_SECRET));
     expect(JSON.stringify(sessions[0])).not.toContain(grant!.token);
+  });
+
+  test('the exchanged cookie authenticates a browser request for the same guild and user', async () => {
+    const guildId = trackedGuildId();
+    const userId = fakeSnowflake();
+    const issued = await issueSetupToken(guildId, userId);
+
+    const response = await POST(
+      new Request('https://clipendpoint.cc/api/setup/exchange', {
+        method: 'POST',
+        body: JSON.stringify({ token: issued.token }),
+      }),
+    );
+    expect(response.status).toBe(204);
+    const cookie = response.headers.get('Set-Cookie')!;
+    const browserRequest = new NextRequest('https://clipendpoint.cc/setup/data', {
+      headers: { Cookie: cookie.split(';')[0] },
+    });
+    const bearer = browserRequest.cookies.get(ADMIN_SESSION_COOKIE_NAME)!.value;
+
+    expect(await authenticateAdminSession(bearer)).toEqual({ guildId, userId });
   });
 
   test('a second exchange of the same token fails', async () => {
