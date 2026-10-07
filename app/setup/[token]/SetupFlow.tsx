@@ -292,6 +292,15 @@ export function SetupFlow({ token }: { token: string }) {
           setState({
             status: 'ready',
             ...state.setup,
+            // The channel list was read before an auto-created channel
+            // existed; without it the select would show its placeholder and
+            // invite the admin to repoint the archive.
+            channels: state.setup.channels.some((channel) => channel.id === state.archiveChannelId)
+              ? state.setup.channels
+              : [
+                  ...state.setup.channels,
+                  { id: state.archiveChannelId, name: state.archiveChannelName, type: 0 },
+                ],
             config: {
               archiveChannelId: state.archiveChannelId,
               allowedRoleIds: state.allowedRoles.map((role) => role.id),

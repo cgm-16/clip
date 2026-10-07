@@ -1246,4 +1246,33 @@ describe('Wave 4 — clipping roles and refused destinations', () => {
 
     expect(await screen.findByText('g1')).toBeInTheDocument();
   });
+
+  it('after auto-creating the channel, 설정 다시 보기 shows the new channel selected', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith('/setup/data')) {
+          return Response.json(setupDataBody());
+        }
+        if (url.endsWith('/setup/save')) {
+          return Response.json({
+            archiveChannelId: '999',
+            archiveChannelName: 'clip-archive-new',
+            autoCreated: true,
+            clipCount: 0,
+            allowedRoles: [],
+          });
+        }
+        throw new Error(`unexpected fetch: ${url}`);
+      }),
+    );
+
+    render(<SetupFlow token="live-token" />);
+    await user.click(await screen.findByRole('button', { name: WEB_COPY.setup.save }));
+    await user.click(await screen.findByRole('button', { name: WEB_COPY.setupComplete.reviewSettings }));
+
+    expect(await screen.findByRole('combobox')).toHaveDisplayValue('#clip-archive-new');
+  });
 });
