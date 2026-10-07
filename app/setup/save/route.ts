@@ -13,6 +13,7 @@ import {
   GuildUnavailableError,
 } from '@/lib/discord/guild-lookup';
 import { getDiscordBotUserId } from '@/lib/discord/bot-user';
+import { PERMISSION } from '@/lib/discord/permissions';
 import { createDiscordRestClient, DiscordApiError } from '@/lib/discord/rest-client';
 import { parseEnv } from '@/lib/env';
 import { logClipEvent } from '@/lib/logging/safe-log';
@@ -42,14 +43,6 @@ const GUILD_TEXT_CHANNEL_TYPE = 0;
 // bot user's id targets the bot.
 const ROLE_OVERWRITE_TYPE = 0;
 const MEMBER_OVERWRITE_TYPE = 1;
-
-// VIEW_CHANNEL and SEND_MESSAGES, from Discord's permission bitflags
-// (developers.discord.com/docs/topics/permissions#permissions-bitwise-permission-flags).
-// `lib/discord/permissions.ts` only exports the one flag it currently tests
-// (`MANAGE_GUILD`); these stay local rather than growing that file for a
-// second caller, matching `guild-lookup.ts`'s own `UNKNOWN_GUILD` precedent.
-const VIEW_CHANNEL_PERMISSION = 1n << 10n;
-const SEND_MESSAGES_PERMISSION = 1n << 11n;
 
 const ARCHIVE_CHANNEL_NAME = 'clip-archive';
 
@@ -174,12 +167,12 @@ export async function POST(request: NextRequest) {
           {
             id: guildId,
             type: ROLE_OVERWRITE_TYPE,
-            deny: VIEW_CHANNEL_PERMISSION.toString(),
+            deny: PERMISSION.VIEW_CHANNEL.toString(),
           },
           {
             id: botUserId,
             type: MEMBER_OVERWRITE_TYPE,
-            allow: (VIEW_CHANNEL_PERMISSION | SEND_MESSAGES_PERMISSION).toString(),
+            allow: (PERMISSION.VIEW_CHANNEL | PERMISSION.SEND_MESSAGES).toString(),
           },
         ],
       });
