@@ -303,3 +303,7 @@ The handoff's auto-create description promised that only configured roles could 
 Two refusal strings with no handoff source — missing destination permissions and a destination change blocked by live Clips — were added to `WEB_COPY_AUTHORED` from the restoration design's draft table after Ori's approval. A role deleted in Discord after it was saved is refused with the existing generic save-failure copy for now; Ori accepted that until a specific string is approved.
 
 The role multi-select's highlighted option uses the existing `--hover-surface` (`#17191d`) rather than the handoff's `#16191d`; one step of difference does not justify a near-duplicate token.
+
+## 14. 2026-10-08 — Role chip removal announcement
+
+The role multi-select removed chips silently for screen-reader users: Backspace on the add control said nothing, and a chip click only moved focus to the add control. Issue #11 requires the selection state to be announced, so the PR #55 review flagged it. Both removal paths now write `{role} 역할이 제거되었습니다.` into a visually hidden polite live region inside the component, with `{role}` filled by the role exactly as its chip shows it. The handoff had no string for this; Ori supplied the copy on 2026-10-08, and it lives in `WEB_COPY_AUTHORED` and the handoff's "Role multi-select" section.

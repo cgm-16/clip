@@ -217,4 +217,11 @@ export const WEB_COPY_AUTHORED = {
    */
   destinationChangeBlocked:
     '보관 중인 메시지가 있어 아카이브 채널을 변경할 수 없습니다. 기존 메시지를 보관에서 제거한 뒤 다시 시도해 주세요.',
+  /**
+   * Role multi-select — the polite live-region announcement when a chip is
+   * removed (chip click or Backspace). `{role}` is the role exactly as its
+   * chip shows it. Supplied by Ori on 2026-10-08 in the PR #55 review; see
+   * `docs/DESIGN_RATIONALE_APPEND.md` §14.
+   */
+  roleRemoved: '{role} 역할이 제거되었습니다.',
 } as const;

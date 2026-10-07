@@ -101,6 +101,7 @@ Four variants; `padding: 10px 16px` (md) or `7px 12px` (sm); `font: 500 12.5px` 
 A bordered field containing chips + an inline "역할 추가…" placeholder, with a dropdown list below.
 Chip: bg `#1b1e22`, border `#2f3339`, radius 1px, `padding: 5px 7px`, `400 11.5px` mono, trailing `×` in `--muted`. Options list: rows `padding: 8px 10px`, divider between, highlighted row bg `#16191d`. `@everyone` is present but unselectable (`#4a4e54`).
 Must be keyboard-operable: arrow keys to move, Enter/Space to toggle, Backspace to remove the last chip, Escape to close. Real `<fieldset>`/checkbox semantics or a proper ARIA listbox — not a div soup.
+Removing a chip (click or Backspace) is announced through a visually hidden polite live region: `{role} 역할이 제거되었습니다.` — `{role}` is the role exactly as its chip shows it.
 
 ### Radio group (archive destination)
 Selected row: border `#4A5A8C`, bg `#131721`, 12px dot ring `#8f9fd6` with 5px fill. Unselected: border `#26292e`, ring `#4a4e54`. Each option carries a description paragraph in 11.5px `#a9aeb5`; the "existing channel" option reveals its channel `<select>` indented 34px when chosen.

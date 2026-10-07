@@ -71,3 +71,13 @@
   color: var(--faint);
   cursor: not-allowed;
 }
+
+/* The removal announcement: read by screen readers, never drawn. */
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

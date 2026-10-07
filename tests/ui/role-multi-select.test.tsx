@@ -85,3 +85,18 @@ test('removing a chip from the keyboard keeps focus in the control', async () =>
   await user.keyboard('{Enter}');
   expect(screen.getByRole('button', { name: '역할 추가…' })).toHaveFocus();
 });
+
+test('removing a chip by click announces the removed role politely', async () => {
+  const { user } = renderSelect(['m', 'a']);
+  await user.click(screen.getByRole('button', { name: 'moderator', pressed: true }));
+  const status = screen.getByRole('status');
+  expect(status).toHaveAttribute('aria-live', 'polite');
+  expect(status).toHaveTextContent('moderator 역할이 제거되었습니다.');
+});
+
+test('Backspace on the add button announces the removed last role', async () => {
+  const { user } = renderSelect(['m', 'a']);
+  screen.getByRole('button', { name: '역할 추가…' }).focus();
+  await user.keyboard('{Backspace}');
+  expect(screen.getByRole('status')).toHaveTextContent('기록관리 역할이 제거되었습니다.');
+});

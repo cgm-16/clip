@@ -2,6 +2,7 @@
 
 import { useRef, useState, type KeyboardEvent } from 'react';
 import type { SetupRole } from '@/lib/discord/guild-lookup';
+import { WEB_COPY_AUTHORED } from '@/lib/ui/copy';
 import { Fieldset } from './Fieldset';
 import styles from './RoleMultiSelect.module.css';
 
@@ -22,13 +23,15 @@ export interface RoleMultiSelectProps {
  * named by the role (pressing removes it, so no extra label copy is needed),
  * the add control is a disclosure, and options are real checkboxes. Arrow
  * keys move between enabled options, Enter/Space toggle, Backspace on the add
- * control removes the last chip, Escape closes and returns focus.
+ * control removes the last chip, Escape closes and returns focus. Either
+ * removal is announced through a polite live region.
  *
  * A selected id missing from `roles` (deleted in Discord) still renders, by
  * id, so it is never silently dropped from a save.
  */
 export function RoleMultiSelect({ legend, placeholder, roles, value, onChange }: RoleMultiSelectProps) {
   const [open, setOpen] = useState(false);
+  const [announcement, setAnnouncement] = useState('');
   const toggleRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
 
@@ -40,6 +43,11 @@ export function RoleMultiSelect({ legend, placeholder, roles, value, onChange }:
     onChange(value.includes(id) ? value.filter((selected) => selected !== id) : [...value, id]);
   }
 
+  function remove(id: string) {
+    onChange(value.filter((selected) => selected !== id));
+    setAnnouncement(WEB_COPY_AUTHORED.roleRemoved.replace('{role}', nameOf(id)));
+  }
+
   function enabledBoxes(): HTMLInputElement[] {
     return Array.from(listRef.current?.querySelectorAll<HTMLInputElement>('input:not(:disabled)') ?? []);
   }
@@ -47,7 +55,7 @@ export function RoleMultiSelect({ legend, placeholder, roles, value, onChange }:
   function handleAddKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
     if (event.key === 'Backspace' && value.length > 0) {
       event.preventDefault();
-      onChange(value.slice(0, -1));
+      remove(value[value.length - 1]);
     } else if (event.key === 'ArrowDown' && open) {
       event.preventDefault();
       enabledBoxes()[0]?.focus();
@@ -84,7 +92,7 @@ export function RoleMultiSelect({ legend, placeholder, roles, value, onChange }:
             aria-pressed="true"
             className={styles.chip}
             onClick={() => {
-              toggle(id);
+              remove(id);
               // The chip unmounts once removed; keep keyboard users in the control.
               toggleRef.current?.focus();
             }}
@@ -124,6 +132,9 @@ export function RoleMultiSelect({ legend, placeholder, roles, value, onChange }:
           ))}
         </ul>
       )}
+      <div role="status" aria-live="polite" className={styles.visuallyHidden}>
+        {announcement}
+      </div>
     </Fieldset>
   );
 }
