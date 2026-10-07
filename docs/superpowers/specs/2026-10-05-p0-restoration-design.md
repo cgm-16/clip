@@ -117,7 +117,7 @@ Ori authorized drafting, not approval of text that did not yet exist. These prop
 
 | Condition | Proposed Korean copy |
 | --- | --- |
-| Replace auto-create description — **approved by Ori 2026-10-07** | Clip이 #clip-archive를 비공개 채널로 만듭니다. 클립 가능 역할은 채널 열람 권한이 없습니다. 해당 권한은 서버 관리자가 설정합니다. (선택적) 생성이 끝나면 채널 관리 역할을 회수해 주세요. |
+| Replace auto-create description — **approved by Ori 2026-10-07** (first wording ended `채널 관리 역할`; Ori confirmed `권한`; `(선택적)` renders) | Clip이 #clip-archive를 비공개 채널로 만듭니다. 클립 가능 역할은 채널 열람 권한이 없습니다. 해당 권한은 서버 관리자가 설정합니다. (선택적) 생성이 끝나면 채널 관리 권한을 회수해 주세요. |
 | Destination missing runtime permissions | 이 채널에서 Clip에 필요한 권한이 없습니다. Discord에서 아래 권한을 확인한 뒤 다시 시도해 주세요. |
 | Destination change blocked by live clips | 보관 중인 메시지가 있어 아카이브 채널을 변경할 수 없습니다. 기존 메시지를 보관에서 제거한 뒤 다시 시도해 주세요. |
 | Archive fetch failed transiently | 보관된 내용을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요. |
