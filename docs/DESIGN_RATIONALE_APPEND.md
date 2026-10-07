@@ -295,3 +295,11 @@ The existing setup sentence in the handoff/string table still promises role-read
 The design also distinguishes a confirmed missing Discord copy from permission/transient read failures. The latter must not use the missing-copy explanation that suggests a message was deleted. Metadata remains visible in either case.
 
 This entry records design decisions and a draft, not implemented functionality or new test results.
+
+## 13. 2026-10-07 — Auto-create description and setup refusal copy
+
+The handoff's auto-create description promised that only configured roles could view the archive. §12 separated clipping authority from readership, so the sentence was replaced with Ori's approved text in the handoff and the string table together. Ori's first wording ended "채널 관리 역할을 회수해 주세요"; Ori confirmed the intended word is 권한 (the `MANAGE_CHANNELS` permission, not the bot's role), and that "(선택적)" renders on screen.
+
+Two refusal strings with no handoff source — missing destination permissions and a destination change blocked by live Clips — were added to `WEB_COPY_AUTHORED` from the restoration design's draft table after Ori's approval. A role deleted in Discord after it was saved is refused with the existing generic save-failure copy for now; Ori accepted that until a specific string is approved.
+
+The role multi-select's highlighted option uses the existing `--hover-surface` (`#17191d`) rather than the handoff's `#16191d`; one step of difference does not justify a near-duplicate token.

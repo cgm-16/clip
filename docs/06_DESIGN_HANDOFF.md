@@ -145,7 +145,7 @@ Reachable without a session. No navigation.
 Container 560px. A guild identity bar (wordmark · divider · guild name; right side `관리자 · @handle`), then the form card, `gap: 22px` between groups.
 
 1. **보관 위치** radio group
-   - `비공개 아카이브 채널 새로 만들기 — 권장` + description: `Clip이 #clip-archive 를 만들고, 설정된 역할만 볼 수 있도록 권한을 지정합니다. 생성이 끝나면 채널 관리 권한은 회수해도 됩니다.`
+   - `비공개 아카이브 채널 새로 만들기 — 권장` + description: `Clip이 #clip-archive를 비공개 채널로 만듭니다. 클립 가능 역할은 채널 열람 권한이 없습니다. 해당 권한은 서버 관리자가 설정합니다. (선택적) 생성이 끝나면 채널 관리 권한을 회수해 주세요.`
    - `기존 채널 사용` + revealed channel select + warning line: `기존 채널을 쓰면 해당 채널을 볼 수 있는 모든 멤버가 아카이브를 볼 수 있습니다.`
 2. **클립 허용 역할** multi-select + NOTE: `서버 관리자는 이 목록과 무관하게 항상 클립할 수 있습니다. 역할을 비워 두면 관리자만 클립합니다.`
 3. **이 설정으로 일어나는 일** — three em-dash bullets, 12px `--text-2`:
