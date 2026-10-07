@@ -78,7 +78,17 @@ export function RoleMultiSelect({ legend, placeholder, roles, value, onChange }:
     <Fieldset legend={legend}>
       <div className={styles.field}>
         {value.map((id) => (
-          <button key={id} type="button" aria-pressed="true" className={styles.chip} onClick={() => toggle(id)}>
+          <button
+            key={id}
+            type="button"
+            aria-pressed="true"
+            className={styles.chip}
+            onClick={() => {
+              toggle(id);
+              // The chip unmounts once removed; keep keyboard users in the control.
+              toggleRef.current?.focus();
+            }}
+          >
             {nameOf(id)}
             <span className={styles.remove} aria-hidden="true">
               ×

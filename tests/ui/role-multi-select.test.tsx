@@ -78,3 +78,10 @@ test('a stale selected id stays visible by id', () => {
   renderSelect(['999']);
   expect(screen.getByRole('button', { name: '999', pressed: true })).toBeInTheDocument();
 });
+
+test('removing a chip from the keyboard keeps focus in the control', async () => {
+  const { user } = renderSelect(['m', 'a']);
+  screen.getByRole('button', { name: 'moderator', pressed: true }).focus();
+  await user.keyboard('{Enter}');
+  expect(screen.getByRole('button', { name: '역할 추가…' })).toHaveFocus();
+});
