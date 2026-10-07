@@ -527,11 +527,13 @@ describe('clip repository', () => {
       guildId,
       archiveChannelId: firstChannelId,
       configuredByUserId: userId,
+      allowedRoleIds: [],
     });
     await upsertGuildArchiveConfig({
       guildId,
       archiveChannelId: secondChannelId,
       configuredByUserId: userId,
+      allowedRoleIds: [],
     });
 
     const rows = await prisma.guildConfig.findMany({ where: { guildId } });
@@ -554,6 +556,7 @@ describe('clip repository', () => {
       guildId,
       archiveChannelId: oldChannelId,
       configuredByUserId,
+      allowedRoleIds: [],
     });
     await warmConnectionPool(2);
 
@@ -571,6 +574,7 @@ describe('clip repository', () => {
       guildId,
       archiveChannelId: newChannelId,
       configuredByUserId,
+      allowedRoleIds: [],
     });
 
     let blockedLockConditionError: unknown;
@@ -678,5 +682,70 @@ describe('clip repository', () => {
         expect(await hasLiveClips(guildId)).toBe(true);
       },
     );
+  });
+
+  test('first setup stores the configuration and its allowed roles', async () => {
+    const guildId = trackedGuildId();
+    const roles = [fakeSnowflake(), fakeSnowflake()];
+    await finalizeGuildArchiveConfig({
+      guildId,
+      archiveChannelId: fakeSnowflake(),
+      configuredByUserId: fakeSnowflake(),
+      allowedRoleIds: roles,
+    });
+    expect((await findGuildArchiveConfig(guildId))?.allowedRoleIds.sort()).toEqual([...roles].sort());
+  });
+
+  test('a later save replaces the role set rather than merging it', async () => {
+    const guildId = trackedGuildId();
+    const channel = fakeSnowflake();
+    const [kept, dropped, added] = [fakeSnowflake(), fakeSnowflake(), fakeSnowflake()];
+    await finalizeGuildArchiveConfig({
+      guildId,
+      archiveChannelId: channel,
+      configuredByUserId: fakeSnowflake(),
+      allowedRoleIds: [kept, dropped],
+    });
+    await finalizeGuildArchiveConfig({
+      guildId,
+      archiveChannelId: channel,
+      configuredByUserId: fakeSnowflake(),
+      allowedRoleIds: [kept, added],
+    });
+    expect((await findGuildArchiveConfig(guildId))?.allowedRoleIds.sort()).toEqual([kept, added].sort());
+  });
+
+  test('an empty selection clears every allowed role', async () => {
+    const guildId = trackedGuildId();
+    const channel = fakeSnowflake();
+    await finalizeGuildArchiveConfig({
+      guildId,
+      archiveChannelId: channel,
+      configuredByUserId: fakeSnowflake(),
+      allowedRoleIds: [fakeSnowflake()],
+    });
+    await finalizeGuildArchiveConfig({
+      guildId,
+      archiveChannelId: channel,
+      configuredByUserId: fakeSnowflake(),
+      allowedRoleIds: [],
+    });
+    expect((await findGuildArchiveConfig(guildId))?.allowedRoleIds).toEqual([]);
+  });
+
+  test('first setup leaves no configuration row when the role write fails', async () => {
+    const guildId = trackedGuildId();
+    // A duplicate id violates the (guild_id, role_id) primary key inside the
+    // transaction; the route dedupes first, so only this test sends one.
+    const duplicate = fakeSnowflake();
+    await expect(
+      finalizeGuildArchiveConfig({
+        guildId,
+        archiveChannelId: fakeSnowflake(),
+        configuredByUserId: fakeSnowflake(),
+        allowedRoleIds: [duplicate, duplicate],
+      }),
+    ).rejects.toThrow();
+    expect(await findGuildArchiveConfig(guildId)).toBeNull();
   });
 });

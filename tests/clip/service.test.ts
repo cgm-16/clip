@@ -497,6 +497,7 @@ describe('clip service', () => {
         guildId: fixture.guildId,
         archiveChannelId: replacementArchiveChannelId,
         configuredByUserId: replacementConfiguredByUserId,
+        allowedRoleIds: [],
       }),
     ).toEqual({ kind: 'CONFLICT' });
     expect(
@@ -515,6 +516,7 @@ describe('clip service', () => {
         guildId: fixture.guildId,
         archiveChannelId: replacementArchiveChannelId,
         configuredByUserId: replacementConfiguredByUserId,
+        allowedRoleIds: [],
       }),
     ).toEqual({ kind: 'SAVED' });
     expect(
@@ -824,5 +826,41 @@ describe('clip service', () => {
     expect(await countClipperRows(fixture)).toBe(0);
     expect(gateway.createCalls).toHaveLength(1);
     expect(gateway.deleteCalls).toHaveLength(1);
+  });
+
+  test('a role-only edit with a live Clip is allowed and does not touch clippers', async () => {
+    const fixture = await seedConfiguredGuild();
+    await service.clip(clipInput(fixture, fakeSnowflake()));
+
+    const result = await finalizeGuildArchiveConfig({
+      guildId: fixture.guildId,
+      archiveChannelId: fixture.archiveChannelId,
+      configuredByUserId: fakeSnowflake(),
+      allowedRoleIds: [],
+    });
+
+    expect(result).toEqual({ kind: 'SAVED' });
+    expect(await countClipperRows(fixture)).toBe(1);
+  });
+
+  test('a member who lost their clipping role cannot clip again but can still unclip', async () => {
+    const fixture = await seedConfiguredGuild();
+    const clipperUserId = fakeSnowflake();
+    await service.clip(clipInput(fixture, clipperUserId));
+    await finalizeGuildArchiveConfig({
+      guildId: fixture.guildId,
+      archiveChannelId: fixture.archiveChannelId,
+      configuredByUserId: fakeSnowflake(),
+      allowedRoleIds: [],
+    });
+
+    expect(await service.clip(clipInput(fixture, fakeSnowflake()))).toEqual({ kind: 'NOT_AUTHORIZED' });
+    expect(
+      await service.unclip({
+        guildId: fixture.guildId,
+        sourceMessageId: fixture.sourceMessageId,
+        clipperUserId,
+      }),
+    ).toEqual({ kind: 'UNCLIPPED', remaining: 0 });
   });
 });

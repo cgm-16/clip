@@ -202,6 +202,7 @@ export async function POST(request: NextRequest) {
     guildId,
     archiveChannelId,
     configuredByUserId: identity.userId,
+    allowedRoleIds: [],
   });
   if (finalized.kind === 'CONFLICT') {
     if (destination === 'create') {
