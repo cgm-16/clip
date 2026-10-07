@@ -171,3 +171,124 @@ describe('getGuildSetupChannels', () => {
     expect(written).not.toContain('incidental channel description');
   });
 });
+
+const BOT_USER_ID = '3000000000000000001';
+const ROLE_ID = '4000000000000000001';
+
+/**
+ * Like `stubFetch`, but routes by exact API path so each method's single
+ * request is asserted, and anything else fails loudly.
+ */
+function stubPaths(routes: Record<string, StubResponse>) {
+  const calls: Call[] = [];
+  const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
+    const href = String(url);
+    calls.push({ url: href, method: init?.method ?? 'GET', headers: new Headers(init?.headers) });
+    const path = href.replace('https://discord.com/api/v10', '');
+    const route = routes[path];
+    if (route === undefined) {
+      throw new Error(`unexpected fetch call: ${href}`);
+    }
+    return new Response(route.body === null ? null : JSON.stringify(route.body), {
+      status: route.status,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as unknown as typeof fetch;
+  return { fetchImpl, calls };
+}
+
+describe('getGuildRoles', () => {
+  test('returns id, name and BigInt permissions only, skipping malformed roles', async () => {
+    const { fetchImpl, calls } = stubPaths({
+      [`/guilds/${GUILD_ID}/roles`]: json([
+        { id: GUILD_ID, name: '@everyone', permissions: '1024', color: 0, icon: null, tags: {} },
+        { id: ROLE_ID, name: 'moderator', permissions: '9007199254740993', managed: false },
+        { id: '4000000000000000002', name: 'broken', permissions: 1024 },
+      ]),
+    });
+    const lookup = createDiscordGuildLookup({ botToken: BOT_TOKEN, fetchImpl });
+
+    const roles = await lookup.getGuildRoles(GUILD_ID);
+
+    expect(calls).toHaveLength(1);
+    expect(roles).toEqual([
+      { id: GUILD_ID, name: '@everyone', permissions: 1024n },
+      { id: ROLE_ID, name: 'moderator', permissions: 9007199254740993n },
+    ]);
+  });
+
+  test('maps an unknown guild (10004) to GuildUnavailableError', async () => {
+    const { fetchImpl } = stubPaths({
+      [`/guilds/${GUILD_ID}/roles`]: json({ code: 10004, message: 'Unknown Guild' }, 404),
+    });
+    const lookup = createDiscordGuildLookup({ botToken: BOT_TOKEN, fetchImpl });
+
+    await expect(lookup.getGuildRoles(GUILD_ID)).rejects.toBeInstanceOf(GuildUnavailableError);
+  });
+});
+
+describe('getChannelOverwrites', () => {
+  test('returns only role/member overwrites with BigInt allow and deny', async () => {
+    const { fetchImpl } = stubPaths({
+      [`/channels/${TEXT_CHANNEL_ID}`]: json({
+        ...rawChannel(TEXT_CHANNEL_ID, 'general', GUILD_TEXT),
+        permission_overwrites: [
+          { id: GUILD_ID, type: 0, allow: '0', deny: '1024' },
+          { id: BOT_USER_ID, type: 1, allow: '3072', deny: '0' },
+          { id: 'weird', type: 7, allow: '0', deny: '0' },
+        ],
+      }),
+    });
+    const lookup = createDiscordGuildLookup({ botToken: BOT_TOKEN, fetchImpl });
+
+    expect(await lookup.getChannelOverwrites(TEXT_CHANNEL_ID)).toEqual([
+      { id: GUILD_ID, type: 0, allow: 0n, deny: 1024n },
+      { id: BOT_USER_ID, type: 1, allow: 3072n, deny: 0n },
+    ]);
+  });
+});
+
+describe('getMemberRoleIds', () => {
+  test("returns the member's role ids", async () => {
+    const { fetchImpl } = stubPaths({
+      [`/guilds/${GUILD_ID}/members/${BOT_USER_ID}`]: json({
+        user: { id: BOT_USER_ID, username: 'Clip' },
+        roles: [ROLE_ID],
+        nick: null,
+      }),
+    });
+    const lookup = createDiscordGuildLookup({ botToken: BOT_TOKEN, fetchImpl });
+
+    expect(await lookup.getMemberRoleIds(GUILD_ID, BOT_USER_ID)).toEqual([ROLE_ID]);
+  });
+});
+
+describe('display lookups', () => {
+  test('getGuildName returns the guild name', async () => {
+    const { fetchImpl } = stubPaths({ [`/guilds/${GUILD_ID}`]: json({ id: GUILD_ID, name: 'Test guild' }) });
+    const lookup = createDiscordGuildLookup({ botToken: BOT_TOKEN, fetchImpl });
+
+    expect(await lookup.getGuildName(GUILD_ID)).toBe('Test guild');
+  });
+
+  test('getGuildName falls back to null when the lookup fails', async () => {
+    const { fetchImpl } = stubPaths({ [`/guilds/${GUILD_ID}`]: json({ code: 50001 }, 403) });
+    const lookup = createDiscordGuildLookup({ botToken: BOT_TOKEN, fetchImpl });
+
+    expect(await lookup.getGuildName(GUILD_ID)).toBeNull();
+  });
+
+  test('getUserHandle returns the username', async () => {
+    const { fetchImpl } = stubPaths({ [`/users/${BOT_USER_ID}`]: json({ id: BOT_USER_ID, username: 'admin' }) });
+    const lookup = createDiscordGuildLookup({ botToken: BOT_TOKEN, fetchImpl });
+
+    expect(await lookup.getUserHandle(BOT_USER_ID)).toBe('admin');
+  });
+
+  test('getUserHandle falls back to null when the user is unknown', async () => {
+    const { fetchImpl } = stubPaths({ [`/users/${BOT_USER_ID}`]: json({ code: 10013 }, 404) });
+    const lookup = createDiscordGuildLookup({ botToken: BOT_TOKEN, fetchImpl });
+
+    expect(await lookup.getUserHandle(BOT_USER_ID)).toBeNull();
+  });
+});
