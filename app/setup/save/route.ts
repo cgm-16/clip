@@ -10,10 +10,15 @@ import {
 } from '@/lib/clip/repository';
 import {
   createDiscordGuildLookup,
+  GuildLookupFailedError,
   GuildUnavailableError,
 } from '@/lib/discord/guild-lookup';
 import { getDiscordBotUserId } from '@/lib/discord/bot-user';
-import { PERMISSION } from '@/lib/discord/permissions';
+import {
+  computeChannelPermissions,
+  missingArchivePermissions,
+  PERMISSION,
+} from '@/lib/discord/permissions';
 import { createDiscordRestClient, DiscordApiError } from '@/lib/discord/rest-client';
 import { parseEnv } from '@/lib/env';
 import { logClipEvent } from '@/lib/logging/safe-log';
@@ -25,6 +30,7 @@ const SaveRequestSchema = z
   .object({
     destination: z.enum(['create', 'existing']),
     channelId: z.string().min(1).nullable(),
+    allowedRoleIds: z.array(z.string().min(1)).max(250),
   })
   .refine((data) => data.destination !== 'existing' || data.channelId !== null, {
     message: 'channelId is required when destination is "existing"',
@@ -70,8 +76,10 @@ function parseCreatedChannel(body: unknown): { id: string; name: string } | null
  * Either way the result is persisted only after a final locked recheck, so a
  * Clip claimed during the Discord round-trip cannot be orphaned by the save.
  *
- * Allowed-role configuration is cut from P0 per the task brief; only the
- * archive channel and who configured it are persisted here.
+ * Allowed roles are validated against a fresh role list and replace the
+ * configured set in the same transaction as the destination. An existing
+ * channel is accepted only if the bot's effective permissions there cover
+ * what the archive needs; that check reads Discord and never writes to it.
  */
 export async function POST(request: NextRequest) {
   // Same CSRF reasoning as `app/api/setup/exchange/route.ts`: `request.json()`
@@ -101,6 +109,7 @@ export async function POST(request: NextRequest) {
     return new Response(null, { status: 400 });
   }
   const { destination, channelId } = parsed.data;
+  const requestedRoleIds = [...new Set(parsed.data.allowedRoleIds)];
 
   const env = parseEnv(process.env);
   const guildId = identity.guildId;
@@ -119,32 +128,62 @@ export async function POST(request: NextRequest) {
     existingConfig !== null &&
     (destination === 'create' || existingConfig.archiveChannelId !== channelId);
   if (isReconfigure && (await hasLiveClips(guildId))) {
-    return new Response(null, { status: 409 });
+    return liveClipsConflict();
   }
 
   let archiveChannelId: string;
   let archiveChannelName: string;
+  let allowedRoles: { id: string; name: string }[];
 
   try {
+    const lookup = createDiscordGuildLookup({ botToken: env.DISCORD_BOT_TOKEN, fetchImpl: fetch });
+    // One role read serves both the allowed-role validation and the
+    // existing channel's permission computation.
+    const roles = await lookup.getGuildRoles(guildId);
+    const roleNames = new Map(roles.map((role) => [role.id, role.name]));
+    // `@everyone` (id === guild id) is never a clipping role, and an id
+    // missing from this guild's roles -- deleted, or another guild's -- is
+    // refused rather than silently dropped.
+    if (requestedRoleIds.some((roleId) => roleId === guildId || !roleNames.has(roleId))) {
+      return Response.json({ reason: 'INVALID_ROLE' }, { status: 422 });
+    }
+    allowedRoles = requestedRoleIds.map((id) => ({ id, name: roleNames.get(id)! }));
+
+    const botUserId = await getDiscordBotUserId({
+      botToken: env.DISCORD_BOT_TOKEN,
+      fetchImpl: fetch,
+    });
+    if (!botUserId) {
+      return new Response(null, { status: 502 });
+    }
+
     if (destination === 'existing') {
-      const lookup = createDiscordGuildLookup({ botToken: env.DISCORD_BOT_TOKEN, fetchImpl: fetch });
       const channels = await lookup.getGuildSetupChannels(guildId);
       // The client's own channel list is never trusted -- re-checked against
       // this guild's eligible channels, fetched fresh from Discord.
       const eligible = channels.find((channel) => channel.id === channelId);
       if (!eligible) {
-        return new Response(null, { status: 422 });
+        return Response.json({ reason: 'INVALID_CHANNEL' }, { status: 422 });
+      }
+      const [memberRoleIds, overwrites] = await Promise.all([
+        lookup.getMemberRoleIds(guildId, botUserId),
+        lookup.getChannelOverwrites(eligible.id),
+      ]);
+      const missingPermissions = missingArchivePermissions(
+        computeChannelPermissions({
+          guildId,
+          memberId: botUserId,
+          memberRoleIds,
+          rolePermissions: new Map(roles.map((role) => [role.id, role.permissions])),
+          overwrites,
+        }),
+      );
+      if (missingPermissions.length > 0) {
+        return Response.json({ reason: 'MISSING_PERMISSIONS', missingPermissions }, { status: 422 });
       }
       archiveChannelId = eligible.id;
       archiveChannelName = eligible.name;
     } else {
-      const botUserId = await getDiscordBotUserId({
-        botToken: env.DISCORD_BOT_TOKEN,
-        fetchImpl: fetch,
-      });
-      if (!botUserId) {
-        return new Response(null, { status: 502 });
-      }
       const client = createDiscordRestClient({ botToken: env.DISCORD_BOT_TOKEN, fetchImpl: fetch });
       const created = await client.request('POST', `/guilds/${guildId}/channels`, {
         name: ARCHIVE_CHANNEL_NAME,
@@ -159,7 +198,8 @@ export async function POST(request: NextRequest) {
         // overwrite here it could not see the private channel it just
         // created. VIEW_CHANNEL lets it address the channel at all;
         // SEND_MESSAGES is what `archive-message.ts`'s provenance and
-        // forward posts need once it can. Nothing broader: deleting the
+        // forward posts need once it can; READ_MESSAGE_HISTORY is what the
+        // admin archive's content reads need. Nothing broader: deleting the
         // bot's own messages needs no permission, and the create call above
         // already ran on the guild-level MANAGE_CHANNELS the bot holds, not
         // a channel overwrite.
@@ -172,7 +212,11 @@ export async function POST(request: NextRequest) {
           {
             id: botUserId,
             type: MEMBER_OVERWRITE_TYPE,
-            allow: (PERMISSION.VIEW_CHANNEL | PERMISSION.SEND_MESSAGES).toString(),
+            allow: (
+              PERMISSION.VIEW_CHANNEL |
+              PERMISSION.SEND_MESSAGES |
+              PERMISSION.READ_MESSAGE_HISTORY
+            ).toString(),
           },
         ],
       });
@@ -192,7 +236,7 @@ export async function POST(request: NextRequest) {
     if (error instanceof GuildUnavailableError) {
       return new Response(null, { status: 404 });
     }
-    if (error instanceof DiscordApiError) {
+    if (error instanceof DiscordApiError || error instanceof GuildLookupFailedError) {
       return new Response(null, { status: 502 });
     }
     throw error;
@@ -202,7 +246,7 @@ export async function POST(request: NextRequest) {
     guildId,
     archiveChannelId,
     configuredByUserId: identity.userId,
-    allowedRoleIds: [],
+    allowedRoleIds: requestedRoleIds,
   });
   if (finalized.kind === 'CONFLICT') {
     if (destination === 'create') {
@@ -220,7 +264,7 @@ export async function POST(request: NextRequest) {
         });
       }
     }
-    return new Response(null, { status: 409 });
+    return liveClipsConflict();
   }
   const clipCount = await countArchivedClips(guildId);
 
@@ -229,5 +273,11 @@ export async function POST(request: NextRequest) {
     archiveChannelName,
     autoCreated: destination === 'create',
     clipCount,
+    allowedRoles,
   });
+}
+
+/** Live Clips depend on the current archive channel (finding C3). */
+function liveClipsConflict(): Response {
+  return Response.json({ reason: 'LIVE_CLIPS' }, { status: 409 });
 }
