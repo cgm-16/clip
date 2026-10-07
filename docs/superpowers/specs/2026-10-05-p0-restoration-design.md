@@ -163,7 +163,7 @@ Update README/status and the issue briefs after each completed wave, and record 
 - Target 2026-10-31 23:59 KST. If it bites, cut deployed Playwright first, then the F.6 guard; never cut roles, archive, deletion, accessibility or 6.1–6.3.
 - P1 selection waits until this P0 is complete and verified.
 - The advisory lock with `configurationId` and the server-side effective-permission check are kept as designed.
-- Ori edits the Korean draft table in this file; implementation copies the result verbatim. Only the auto-create description blocks Wave 4.
+- Ori edits the Korean draft table in this file; implementation copies the result verbatim. Wave 4 needs three of them: the auto-create description, the missing-destination-permissions refusal and the live-clips destination refusal.
 - Ori runs the manual scenarios and permission matrix from a prepared checklist with three accounts; creating a fresh 6.1 guild is a checklist prep step.
 - Only the test guild uses the deployment, so the boundary release uses a plain recreate rollout without announcement.
 - Implementation is inline per wave, with one independent review before each PR. Waves: `wave/4-p0-restoration` (this design, 4.3, F.4, destination permission check), `wave/5-web-archive` (5.1–5.4, F.5, deletion lock and `configurationId`), `wave/6-verification` (F.6, 6.1–6.4, 7.1). Reopen #11, #12, #29, #31–34, #38 and #39; #35–37 and #43 remain open.
