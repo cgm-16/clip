@@ -5,7 +5,7 @@ Code baseline: `3e5e6133f9ce4f5f07af37a9488c4adac88d7b9f` (`main`).
 
 ## Outcome and approved decisions
 
-Restore the approved P0 capabilities cut for the August submission deadline. An administrator can configure additional clippers, browse the cross-channel archive in a browser, inspect/edit configuration, and delete Clip's guild data. The restored product must pass the previously deferred verification work. Ori confirmed this scope, removed the deadline constraint, selected clipping-only role authority, and authorized Korean copy drafts for review.
+Restore the approved P0 capabilities cut for the August submission deadline. An administrator can configure additional clippers, browse the cross-channel archive in a browser, inspect/edit configuration, and delete Clip's guild data. The restored product must pass the previously deferred verification work. Ori confirmed this scope, replaced the August deadline with a 2026-10-31 target, selected clipping-only role authority, and authorized Korean copy drafts for review.
 
 Clipping authority and Discord readership are separate. An allowed role permits Clip commands; it does not grant archive-channel visibility. A newly created archive retains its private default and bot overwrite. Administrators manage readership in Discord. Clip never rewrites an existing channel's permissions, and `MANAGE_CHANNELS` remains bootstrap-only and revocable.
 
@@ -156,7 +156,17 @@ Require `pnpm lint`, `pnpm test`, `pnpm build` and the restored design guard bef
 
 Complete all 17 original manual scenarios, including the three excluded by the deadline cuts. Record the permissions individually revoked/tested, Discord/application configuration, immutable app/migration image, test commands, observations and failures. For destructive checks, use a dedicated test guild and verify actual archive/source messages before and after data deletion. Do not purge the community's existing guild data as a test fixture.
 
-Update README/status, the issue briefs and append-only evidence after each completed wave. The 2026-08-20 results remain historical evidence, not evidence that this implementation passes. Deployment requires appropriate live access; a missing credential/environment is reported with preserved progress rather than silently replaced by a mock.
+Update README/status and the issue briefs after each completed wave, and record evidence in the journal and PR body; the assignment snapshot is frozen. The 2026-08-20 results remain historical evidence, not evidence that this implementation passes. Deployment requires appropriate live access; a missing credential/environment is reported with preserved progress rather than silently replaced by a mock.
+
+## Decisions confirmed 2026-10-07
+
+- Target 2026-10-31 23:59 KST. If it bites, cut deployed Playwright first, then the F.6 guard; never cut roles, archive, deletion, accessibility or 6.1–6.3.
+- P1 selection waits until this P0 is complete and verified.
+- The advisory lock with `configurationId` and the server-side effective-permission check are kept as designed.
+- Ori edits the Korean draft table in this file; implementation copies the result verbatim. Only the auto-create description blocks Wave 4.
+- Ori runs the manual scenarios and permission matrix from a prepared checklist with three accounts; creating a fresh 6.1 guild is a checklist prep step.
+- Only the test guild uses the deployment, so the boundary release uses a plain recreate rollout without announcement.
+- Implementation is inline per wave, with one independent review before each PR. Waves: `wave/4-p0-restoration` (this design, 4.3, F.4, destination permission check), `wave/5-web-archive` (5.1–5.4, F.5, deletion lock and `configurationId`), `wave/6-verification` (F.6, 6.1–6.4, 7.1). Reopen #11, #12, #29, #31–34, #38 and #39; #35–37 and #43 remain open.
 
 ## Review and next step
 

@@ -2,7 +2,7 @@
 
 Read `README.md` for what the product is. The UI specification is `docs/06_DESIGN_HANDOFF.md` and is self-sufficient for the web UI. Product semantics live in `docs/01_CLIP_PRODUCT_SPEC.md` and are settled — do not redesign them.
 
-**Deadline: 2026-08-20 23:59 KST.** If scope is endangered, cut polish before correctness, consent, or deployment.
+**Target: 2026-10-31 23:59 KST** for the P0 restoration in `docs/superpowers/specs/2026-10-05-p0-restoration-design.md`. If the date bites, cut the Playwright e2e first, then the F.6 design guard. Never cut correctness, consent, deployment, roles, the web archive, data deletion, the accessibility pass, or the 6.1–6.3 live-guild verification.
 
 ## Stack
 
@@ -57,12 +57,12 @@ Reaction/vote/rank counts anywhere in the web UI. Dark/light theme switcher UI (
 - TDD: write the failing test first. Concurrency invariants get tests against a real Postgres, not mocks.
 - Playwright e2e runs against the deployment, not in the merge gate. Discord interaction scenarios are the manual suite in `docs/tasks/` Wave 6.
 
-## Journaling — two files, different jobs
+## Journaling
 
 - **`docs/journal/journal-YYYY-MM.md`** — technical notes, dead ends, debugging findings, unrelated issues you must not fix now. Cheap and frequent. Write here before you forget.
-- **`docs/04_ASSIGNMENT_CUMULATIVE_SNAPSHOT.md`** — assignment evidence, append-only, using the dated template in its §0. Append **once per wave**, plus **immediately** whenever an AI proposal turns out wrong. Those failures are the Q4 answer and are unrecoverable if deferred.
+- **`docs/04_ASSIGNMENT_CUMULATIVE_SNAPSHOT.md`** — the frozen record of the 2026-08-20 assignment submission. Do not append to it or rewrite it. Evidence for later work, including AI proposals that turn out wrong, goes in the journal and the PR body.
 
-Never rewrite snapshot history, and never record planned work as implemented.
+Never record planned work as implemented.
 
 ## When you change the design
 
