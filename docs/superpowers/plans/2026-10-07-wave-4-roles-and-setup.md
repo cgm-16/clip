@@ -37,6 +37,13 @@ Three strings need Ori's sign-off before their tasks commit. The plan uses these
 
 Use exactly the text Ori finally approves. Also confirm whether `(선택적)` is meant to render in the UI.
 
+## Interim behaviour until Wave 5 (accepted by Ori at plan review)
+
+- A fresh `/setup` link on a configured guild opens a prefilled Screen B; the design's current-settings view (Screen E) arrives in Wave 5.
+- A successful edit shows Screen C, not the handoff's `설정을 저장했습니다.` toast.
+- A roles-only edit re-runs the destination permission check on the unchanged channel. A channel auto-created before this wave has no bot `READ_MESSAGE_HISTORY` overwrite, so roles cannot be edited until history reads are granted in Discord (guild-level or overwrite). That is a Discord-side fix, never a code bypass; live check 1 exercises it.
+- A saved role that was later deleted in Discord appears as a chip by id; saving with it returns `INVALID_ROLE`, which the UI shows as the generic `saveFailed` callout unless Ori approves a specific string.
+
 ## Review Focus
 
 1. **A configured guild re-saving only its roles must not create a second `#clip-archive`.** Screen B currently defaults to `create`; the edit path must prefill `existing` with the current channel. Pinned in Task 7.
@@ -196,16 +203,31 @@ describe('computeChannelPermissions', () => {
       0n],
     ['a role allow beats another role deny',
       input({ rolePermissions: new Map([[GUILD, ARCHIVE], [ROLE_A, 0n], [ROLE_B, 0n]]),
+        // Allow listed first: applying role overwrites one by one in array
+        // order would let the later deny win, so this order catches it.
         overwrites: [
-          { id: ROLE_A, type: 0, allow: 0n, deny: SEND_MESSAGES },
           { id: ROLE_B, type: 0, allow: SEND_MESSAGES, deny: 0n },
+          { id: ROLE_A, type: 0, allow: 0n, deny: SEND_MESSAGES },
+        ] }),
+      ARCHIVE],
+    ['a role deny with no counter-allow removes the permission',
+      input({ rolePermissions: new Map([[GUILD, ARCHIVE], [ROLE_A, 0n], [ROLE_B, 0n]]),
+        overwrites: [{ id: ROLE_A, type: 0, allow: 0n, deny: READ_MESSAGE_HISTORY }] }),
+      VIEW_CHANNEL | SEND_MESSAGES],
+    ['a role allow restores VIEW_CHANNEL denied to @everyone (the usual private channel)',
+      input({ rolePermissions: new Map([[GUILD, ARCHIVE], [ROLE_A, 0n], [ROLE_B, 0n]]),
+        overwrites: [
+          { id: ROLE_A, type: 0, allow: VIEW_CHANNEL, deny: 0n },
+          { id: GUILD, type: 0, allow: 0n, deny: VIEW_CHANNEL },
         ] }),
       ARCHIVE],
     ['a member overwrite beats role overwrites',
       input({ rolePermissions: new Map([[GUILD, ARCHIVE], [ROLE_A, 0n], [ROLE_B, 0n]]),
+        // Member overwrite listed first, so an implementation that ignores
+        // `type` and applies in array order lets the role allow win.
         overwrites: [
-          { id: ROLE_A, type: 0, allow: READ_MESSAGE_HISTORY, deny: 0n },
           { id: BOT, type: 1, allow: 0n, deny: READ_MESSAGE_HISTORY },
+          { id: ROLE_A, type: 0, allow: READ_MESSAGE_HISTORY, deny: 0n },
         ] }),
       VIEW_CHANNEL | SEND_MESSAGES],
     ['a denied VIEW_CHANNEL leaves nothing',
@@ -355,16 +377,16 @@ git commit -m "feat(discord): compute a member's effective channel permissions"
   getGuildRoles(guildId: string): Promise<GuildRole[]>;            // includes @everyone (id === guildId)
   getChannelOverwrites(channelId: string): Promise<PermissionOverwrite[]>;
   getMemberRoleIds(guildId: string, userId: string): Promise<string[]>;
-  getGuildName(guildId: string): Promise<string>;
+  getGuildName(guildId: string): Promise<string | null>;          // null on any failure — display only, the id is the fallback
   getUserHandle(userId: string): Promise<string | null>;           // null on any failure — display only
   ```
-  All but `getUserHandle` throw `GuildUnavailableError` / `GuildLookupFailedError` exactly as `getGuildSetupChannels` does.
+  All but `getGuildName` and `getUserHandle` throw `GuildUnavailableError` / `GuildLookupFailedError` exactly as `getGuildSetupChannels` does.
 
 - [ ] **Step 1: Write failing tests** — follow the file's existing stub-fetch style (`json()`, recorded `Call`s). One test per method:
   - `getGuildRoles` calls `GET /guilds/{id}/roles`, returns `{id,name,permissions: BigInt(...)}` and drops `color`, `icon`, `tags`, etc.; skips entries whose `permissions` is not a decimal string.
   - `getChannelOverwrites` calls `GET /channels/{id}`, returns only `permission_overwrites` parsed to bigint `allow`/`deny`, and only `type` 0 or 1.
   - `getMemberRoleIds` calls `GET /guilds/{g}/members/{u}` and returns `roles`.
-  - `getGuildName` calls `GET /guilds/{id}` and returns `name`.
+  - `getGuildName` calls `GET /guilds/{id}` and returns `name`; any failure returns `null`.
   - `getUserHandle` calls `GET /users/{id}` and returns `username`; a 404 returns `null` instead of throwing.
   - A 404 with code `10004` from `getGuildRoles` throws `GuildUnavailableError`.
 
@@ -401,7 +423,7 @@ function parseOverwrites(body: unknown): PermissionOverwrite[] {
 }
 ```
 
-`getMemberRoleIds` returns `roles` filtered to strings; `getGuildName` throws `GuildLookupFailedError` (retryable false) when `name` is not a string; `getUserHandle` wraps its request in `try { … } catch { return null; }`.
+`getMemberRoleIds` returns `roles` filtered to strings; `getGuildName` and `getUserHandle` wrap their request in `try { … } catch { return null; }` and return `null` for a non-string field.
 
 Keep the module comment that says `GET /guilds/{id}/channels` does not return effective permissions; add one line pointing to `computeChannelPermissions` as where that check now lives.
 
@@ -626,6 +648,13 @@ test.each([
   expect(finalizeGuildArchiveConfig).not.toHaveBeenCalled();
 });
 
+test('role validation runs before the archive channel is created', async () => {
+  stubEnv();
+  const response = await POST(postJson({ destination: 'create', channelId: null, allowedRoleIds: [GUILD_ID] }));
+  expect(response.status).toBe(422);
+  expect(discordRequest).not.toHaveBeenCalledWith('POST', expect.anything(), expect.anything());
+});
+
 test('refuses an existing channel the bot cannot read history in, naming the permission', async () => {
   stubEnv();
   getChannelOverwrites.mockResolvedValue([
@@ -718,7 +747,7 @@ Flow changes, in order, inside the existing `try`:
 
 Replace the doc-comment sentence "Allowed-role configuration is cut from P0 per the task brief; only the archive channel and who configured it are persisted here." with: "Allowed roles are validated against a fresh role list and replace the configured set in the same transaction as the destination."
 
-- [ ] **Step 4: Run tests** — `pnpm vitest run tests/setup/save-route.test.ts` → PASS. Then mutation check: temporarily delete the `roleDeny` application line in `computeChannelPermissions`; the "a role allow beats another role deny" test (Task 2) must fail. Restore.
+- [ ] **Step 4: Run tests** — `pnpm vitest run tests/setup/save-route.test.ts` → PASS. Then mutation checks, each restored afterwards: (a) make the role step apply only `roleAllow` (drop `& ~roleDeny`) — "a role deny with no counter-allow removes the permission" must fail; (b) move the `@everyone` step after the role step — "a role allow restores VIEW_CHANNEL denied to @everyone" must fail. Read the failure reason, not the count.
 
 - [ ] **Step 5: Commit**
 
@@ -741,7 +770,7 @@ git commit -m "feat(setup): save allowed roles and refuse archive channels the b
   type SetupRole = { id: string; name: string; selectable: boolean }; // selectable === false only for @everyone
   type SetupData = {
     guildId: string;
-    guildName: string;
+    guildName: string | null;   // ScreenB falls back to guildId for the identity bar
     adminHandle: string | null;
     channels: SetupChannel[];
     roles: SetupRole[];
@@ -753,7 +782,7 @@ git commit -m "feat(setup): save allowed roles and refuse archive channels the b
 - [ ] **Step 1: Write failing tests** — mock `authenticateAdminSession`, the lookup (`getGuildSetupChannels`, `getGuildRoles`, `getGuildName`, `getUserHandle`) and `findGuildArchiveConfig`, mirroring `save-route.test.ts`'s mocking style:
   - returns `config: null` for an unconfigured guild and the current `{ archiveChannelId, allowedRoleIds }` for a configured one;
   - lists `@everyone` with `selectable: false` and other roles `selectable: true`, and never includes a `permissions` field;
-  - returns `adminHandle: null` when `getUserHandle` resolves null (display falls back, request still 200);
+  - returns `guildName: null` / `adminHandle: null` when those lookups resolve null (request still 200);
   - still 401 without a session, 404 on `GuildUnavailableError`, 502 on other lookup errors;
   - sets `Cache-Control: private, no-store`.
 
@@ -799,6 +828,7 @@ git commit -m "feat(setup): return current configuration, roles and identity to 
 
 **Files:**
 - Create: `components/ui/RoleMultiSelect.tsx`, `components/ui/RoleMultiSelect.module.css`
+- Modify: `tokens.css` (three named tokens)
 - Test: `tests/ui/role-multi-select.test.tsx`
 
 **Interfaces:**
@@ -887,6 +917,7 @@ test('a stale selected id stays visible by id', () => {
 
 import { useRef, useState, type KeyboardEvent } from 'react';
 import type { SetupRole } from '@/lib/discord/guild-lookup';
+import { Fieldset } from './Fieldset';
 import styles from './RoleMultiSelect.module.css';
 
 export interface RoleMultiSelectProps {
@@ -946,8 +977,7 @@ export function RoleMultiSelect({ legend, placeholder, roles, value, onChange }:
   }
 
   return (
-    <fieldset className={styles.fieldset}>
-      <legend className={styles.legend}>{legend}</legend>
+    <Fieldset legend={legend}>
       <div className={styles.field}>
         {value.map((id) => (
           <button key={id} type="button" aria-pressed="true" className={styles.chip} onClick={() => toggle(id)}>
@@ -988,18 +1018,26 @@ export function RoleMultiSelect({ legend, placeholder, roles, value, onChange }:
           ))}
         </ul>
       )}
-    </fieldset>
+    </Fieldset>
   );
 }
 ```
 
 If the "moves with arrows" test shows focus does not reach the first option after `Enter` then `ArrowDown` (the list renders after the click), keep the `onKeyUp` fallback; otherwise delete it — do not keep both paths without a failing test for each.
 
-CSS (`RoleMultiSelect.module.css`) — tokens only:
+Tokens first. `DESIGN_RATIONALE_APPEND.md` §10.7 rules that handoff component values off the 4px scale become **named tokens in `tokens.css`**, never literals in component CSS. Add, next to `--sp-chip-x`, with the same comment style:
 
 ```css
-.fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: var(--sp-field-gap); }
-.legend { font: 500 var(--fs-label) / var(--lh-label) var(--font-ui); color: var(--text-2); padding: 0; }
+  --sp-role-chip-y: 5px;  /* role chip vertical padding (horizontal reuses --sp-chip-x). docs/06_DESIGN_HANDOFF.md "Role multi-select" */
+  --sp-option-x: 10px;    /* role option row horizontal padding (vertical reuses --sp-2). docs/06_DESIGN_HANDOFF.md "Role multi-select" */
+  --chip-surface: #1b1e22; /* role chip background. docs/06_DESIGN_HANDOFF.md "Role multi-select" */
+```
+
+`--chip-surface` also needs a light-theme value in each light block; use the light `--btn-disabled-bg` value (the dark values match) and say so in its comment. The highlighted row uses the existing `--hover-surface` (`#17191d` vs the handoff's `#16191d` — record that one-step difference in the Task 1 rationale entry rather than adding a near-duplicate token). Chip text uses `--fs-small` (11.5px). Disabled `@everyone` uses `--faint` (disabled control: allowed by rule 3).
+
+CSS (`RoleMultiSelect.module.css`), reusing `components/ui/Fieldset` for the fieldset/legend — so the component renders `<Fieldset legend={legend}>…</Fieldset>` and drops its own `fieldset`/`legend` classes:
+
+```css
 .field {
   display: flex; flex-wrap: wrap; gap: var(--sp-1);
   padding: var(--sp-control-y) var(--sp-control-x);
@@ -1007,29 +1045,29 @@ CSS (`RoleMultiSelect.module.css`) — tokens only:
 }
 .chip {
   display: inline-flex; gap: var(--sp-1); align-items: center;
-  padding: 5px 7px; /* handoff "Role multi-select" chip padding */
-  background: var(--raised); border: var(--hairline) solid var(--border-strong); border-radius: var(--radius-chip);
-  font: 400 11.5px / 1 var(--font-mono); color: var(--text);
+  padding: var(--sp-role-chip-y) var(--sp-chip-x);
+  background: var(--chip-surface); border: var(--hairline) solid var(--border-strong); border-radius: var(--radius-chip);
+  font: 400 var(--fs-small) / 1 var(--font-mono); color: var(--text);
 }
 .remove { color: var(--muted); }
 .add { background: none; border: 0; padding: 0; font: 400 var(--fs-label) / 1 var(--font-ui); color: var(--muted); cursor: pointer; }
 .chip:focus-visible, .add:focus-visible, .option input:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
 .options { list-style: none; margin: 0; padding: 0; border: var(--hairline) solid var(--border-strong); border-radius: var(--radius); }
 .option + .option { border-top: var(--hairline) solid var(--divider); }
-.optionLabel, .optionDisabled { display: flex; gap: var(--sp-2); align-items: center; padding: 8px 10px; }
+.optionLabel, .optionDisabled { display: flex; gap: var(--sp-2); align-items: center; padding: var(--sp-2) var(--sp-option-x); }
 .optionLabel:hover, .optionLabel:focus-within { background: var(--hover-surface); }
 .optionDisabled { color: var(--faint); cursor: not-allowed; }
 .mono { font-family: var(--font-mono); }
 ```
 
-Before committing, check each literal (`5px 7px`, `11.5px`, `8px 10px`) against `tokens.css`: if a token with that value exists, use it; if not, the literal is a handoff-specified value — leave the comment naming the handoff section. Check `--raised` is the token holding `#1b1e22` and `--hover-surface` holds `#16191d`; if not, use whichever token does.
+Before committing, check how `components/ui/Button.module.css` writes `outline` for focus and match it exactly (the snippet above assumes `--focus-ring` is a full outline shorthand; if it is a colour, use `outline: 2px solid var(--focus-ring)` the way Button does).
 
 - [ ] **Step 4: Run tests** — `pnpm vitest run tests/ui` → PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add components/ui/RoleMultiSelect.tsx components/ui/RoleMultiSelect.module.css tests/ui/role-multi-select.test.tsx
+git add tokens.css components/ui/RoleMultiSelect.tsx components/ui/RoleMultiSelect.module.css tests/ui/role-multi-select.test.tsx
 git commit -m "feat(ui): add the keyboard-operable role multi-select"
 ```
 
@@ -1168,10 +1206,10 @@ ScreenB:
   - `missing-permissions` → `<Callout variant="error">{WEB_COPY_AUTHORED.destinationMissingPermissions}</Callout>` followed by one `<MonoChip>` per permission constant;
   - `live-clips` → `<Callout variant="error">{WEB_COPY_AUTHORED.destinationChangeBlocked}</Callout>`.
 - Replace the component doc comment's "Allowed-role configuration is cut from P0…" sentence with: "A configured guild opens prefilled with its current channel (as `existing`) and roles, so a roles-only edit never creates a second channel."
-- Pass `guildName` / `adminHandle` from SetupFlow so the identity bar renders.
+- Pass `guildName ?? guildId` and `adminHandle` from SetupFlow so the identity bar always renders (the id is the design's display fallback).
 
 SetupFlow:
-- `parseSetupData` validates the Task 6 shape (`roles` array of `{id,name,selectable}`, `config` null or `{archiveChannelId: string, allowedRoleIds: string[]}`, `guildName` string, `adminHandle` string|null).
+- `parseSetupData` validates the Task 6 shape (`roles` array of `{id,name,selectable}`, `config` null or `{archiveChannelId: string, allowedRoleIds: string[]}`, `guildName` string|null, `adminHandle` string|null).
 - `parseSaveResult` also requires `allowedRoles: {id,name}[]`.
 - `handleSubmit` returns `SaveOutcome`: `ok` → parse → `saved`; `422` with `reason === 'MISSING_PERMISSIONS'` and a string-array `missingPermissions` → `missing-permissions`; `409` → `live-clips`; everything else (including unparseable bodies and thrown fetches) → `failed`.
 - After a successful save, carry `config: { archiveChannelId, allowedRoleIds }` into state so `onReviewSettings` returns to a prefilled Screen B.
