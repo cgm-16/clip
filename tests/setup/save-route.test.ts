@@ -552,6 +552,30 @@ describe('POST /setup/save', () => {
       expect(discordRequest.mock.calls.every(([method]) => method === 'GET')).toBe(true);
     });
 
+    test('returns 502 without saving when the channel overwrites cannot be read', async () => {
+      // The real lookup, so the route sees what the parser makes of a
+      // channel payload with no permission_overwrites field. Its REST client
+      // is the mocked one above, so the channel read is routed through it.
+      const actual = await vi.importActual<typeof import('@/lib/discord/guild-lookup')>(
+        '@/lib/discord/guild-lookup',
+      );
+      const otherRequests = discordRequest.getMockImplementation()!;
+      discordRequest.mockImplementation(async (method: string, path: string, ...rest: unknown[]) =>
+        method === 'GET' && path === '/channels/111'
+          ? { id: '111', name: 'general', type: 0 }
+          : otherRequests(method, path, ...rest),
+      );
+      getChannelOverwrites.mockImplementation((channelId: string) =>
+        actual.createDiscordGuildLookup({ botToken: 'bot-token-value', fetchImpl: fetch }).getChannelOverwrites(channelId),
+      );
+
+      const response = await POST(postJson({ destination: 'existing', channelId: '111', allowedRoleIds: [] }));
+
+      expect(response.status).toBe(502);
+      expect(getChannelOverwrites).toHaveBeenCalledWith('111');
+      expect(finalizeGuildArchiveConfig).not.toHaveBeenCalled();
+    });
+
     test('an existing channel not in the eligible list explains itself', async () => {
       const response = await POST(postJson({ destination: 'existing', channelId: '999', allowedRoleIds: [] }));
 

@@ -138,25 +138,31 @@ function parseRoles(body: unknown): GuildRole[] {
   return roles;
 }
 
+/**
+ * Unlike the parsers above, this one throws instead of skipping: the result
+ * feeds a permission check, and an overwrite dropped here could be a deny
+ * the bot is subject to. Unreadable overwrites must fail the check, not pass it.
+ */
 function parseOverwrites(body: unknown): PermissionOverwrite[] {
+  const malformed = () => new GuildLookupFailedError('malformed channel overwrites', { retryable: false });
   const raw =
     typeof body === 'object' && body !== null
       ? (body as { permission_overwrites?: unknown }).permission_overwrites
       : undefined;
   if (!Array.isArray(raw)) {
-    return [];
+    throw malformed();
   }
   const overwrites: PermissionOverwrite[] = [];
   for (const item of raw) {
     if (typeof item !== 'object' || item === null) {
-      continue;
+      throw malformed();
     }
     const { id, type, allow, deny } = item as Record<string, unknown>;
     if (typeof id !== 'string' || (type !== 0 && type !== 1)) {
-      continue;
+      throw malformed();
     }
     if (typeof allow !== 'string' || typeof deny !== 'string' || !DECIMAL.test(allow) || !DECIMAL.test(deny)) {
-      continue;
+      throw malformed();
     }
     overwrites.push({ id, type, allow: BigInt(allow), deny: BigInt(deny) });
   }

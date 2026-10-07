@@ -235,7 +235,6 @@ describe('getChannelOverwrites', () => {
         permission_overwrites: [
           { id: GUILD_ID, type: 0, allow: '0', deny: '1024' },
           { id: BOT_USER_ID, type: 1, allow: '3072', deny: '0' },
-          { id: 'weird', type: 7, allow: '0', deny: '0' },
         ],
       }),
     });
@@ -245,6 +244,35 @@ describe('getChannelOverwrites', () => {
       { id: GUILD_ID, type: 0, allow: 0n, deny: 1024n },
       { id: BOT_USER_ID, type: 1, allow: 3072n, deny: 0n },
     ]);
+  });
+
+  // Reading unreadable overwrites as "none" would let a deny the bot is
+  // subject to go unseen, so the permission check must fail closed.
+  test('throws GuildLookupFailedError when the channel carries no permission_overwrites', async () => {
+    const { permission_overwrites: _omitted, ...channel } = rawChannel(TEXT_CHANNEL_ID, 'general', GUILD_TEXT);
+    const { fetchImpl } = stubPaths({ [`/channels/${TEXT_CHANNEL_ID}`]: json(channel) });
+    const lookup = createDiscordGuildLookup({ botToken: BOT_TOKEN, fetchImpl });
+
+    await expect(lookup.getChannelOverwrites(TEXT_CHANNEL_ID)).rejects.toBeInstanceOf(
+      GuildLookupFailedError,
+    );
+  });
+
+  test.each([
+    ['an unknown type', { id: BOT_USER_ID, type: 7, allow: '0', deny: '1024' }],
+    ['a non-string allow', { id: BOT_USER_ID, type: 1, allow: 0, deny: '1024' }],
+  ])('throws GuildLookupFailedError when one overwrite has %s', async (_name, malformed) => {
+    const { fetchImpl } = stubPaths({
+      [`/channels/${TEXT_CHANNEL_ID}`]: json({
+        ...rawChannel(TEXT_CHANNEL_ID, 'general', GUILD_TEXT),
+        permission_overwrites: [{ id: GUILD_ID, type: 0, allow: '0', deny: '0' }, malformed],
+      }),
+    });
+    const lookup = createDiscordGuildLookup({ botToken: BOT_TOKEN, fetchImpl });
+
+    await expect(lookup.getChannelOverwrites(TEXT_CHANNEL_ID)).rejects.toBeInstanceOf(
+      GuildLookupFailedError,
+    );
   });
 });
 
