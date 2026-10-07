@@ -242,7 +242,7 @@ describe('ScreenB — archive destination configuration', () => {
 
   it('is operable via keyboard: tab reaches the radios, select and buttons as real controls', async () => {
     const user = userEvent.setup();
-    render(<ScreenB channels={CHANNELS} onSubmit={vi.fn()} />);
+    render(<ScreenB channels={CHANNELS} onSubmit={vi.fn().mockResolvedValue({ kind: 'saved' })} />);
 
     await user.click(screen.getByRole('radio', { name: WEB_COPY.setup.destinationExistingLabel }));
 
