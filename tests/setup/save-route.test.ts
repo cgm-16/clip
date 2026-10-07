@@ -196,6 +196,7 @@ describe('POST /setup/save', () => {
       guildId: GUILD_ID,
       archiveChannelId: '222',
       configuredByUserId: USER_ID,
+      allowedRoleIds: [],
     });
   });
 
@@ -229,6 +230,7 @@ describe('POST /setup/save', () => {
       guildId: GUILD_ID,
       archiveChannelId: '222',
       configuredByUserId: USER_ID,
+      allowedRoleIds: [],
     });
     expect(discordRequest).not.toHaveBeenCalled();
   });
@@ -320,6 +322,7 @@ describe('POST /setup/save', () => {
       guildId: GUILD_ID,
       archiveChannelId: '222',
       configuredByUserId: USER_ID,
+      allowedRoleIds: [],
     });
     expect(response.status).toBe(200);
   });
