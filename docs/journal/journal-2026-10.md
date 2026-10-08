@@ -35,9 +35,9 @@ Deployed `ghcr.io/cgm-16/clip:sha-f4dea92` (Wave 4 from PR #55 plus the PR #56 m
 Live checks, test guild `testa`, two human accounts (A admin and message author, B member without admin rights), each confirmed against production rows, not only the screen:
 
 1. Configured guild opens prefilled (existing channel, `#clip-archive` selected, saved role chips); a roles-only edit saved `manage servers` + `clip-test` and Screen C listed them. **Pass.**
-2. B, holding only `clip-test`, clipped a message: row `ACTIVE`, both archive ids, B as clipper; two archive messages posted. **Pass.**
+2. B, holding only `clip-test`, clipped a message: row `ACTIVE`, both archive ids, B as clipper; two archive messages posted. **Pass.** This is `6.3` scenario 4 (allowed-role Clip), recorded as a scope cut on 2026-08-20 because `4.3` had not shipped; `6.3` now stands at 15 passed and 2 cuts, both Wave 5 web-archive scenarios.
 3. With `clip-test` taken from B: Clip refused and no row created; Unclip succeeded, both archive messages deleted, Clip and Clipper rows gone (last clipper, so no tombstone). **Pass.**
-4. Existing `#clip-denied` with the bot role's `READ_MESSAGE_HISTORY` denied: save refused under `오류` with a `READ_MESSAGE_HISTORY` chip; config unchanged. The channel was deleted before its overwrites were re-read, so "overwrites unchanged" rests on the save-route tests (refusal path issues only GETs), not a live reading. The chip-removal announcement was heard with VoiceOver. **Pass.**
+4. Existing `#clip-denied` with the bot role's `READ_MESSAGE_HISTORY` denied: save refused under `오류` with a `READ_MESSAGE_HISTORY` chip; config unchanged. The channel was deleted before its overwrites were re-read, so "overwrites unchanged" rests on the save-route tests (refusal path issues only GETs), not a live reading. The chip-removal announcement was heard with VoiceOver. **Partial live pass.**
 
 Found along the way, none caused by Wave 4 code:
 
