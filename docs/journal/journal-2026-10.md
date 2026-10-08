@@ -32,7 +32,7 @@
 
 Deployed `ghcr.io/cgm-16/clip:sha-f4dea92` (Wave 4 from PR #55 plus the PR #56 manifest realignment) with the documented render/apply/verify procedure, run by Ori because the session's permission mode blocks production deploys. Both containers on the image, migrate `No pending migrations`, one fresh app pod, ingress health `{"ok":true}`. `clip-db` reported `configured`, but the CNPG pod had not restarted (last restart days earlier) and `status.image` stayed 18.6: client-side apply only rewrote `last-applied-configuration`, which still held the old 16 manifest.
 
-Live checks, test guild `testa`, three accounts (A admin, B member, the bot), each confirmed against production rows, not only the screen:
+Live checks, test guild `testa`, two human accounts (A admin and message author, B member without admin rights), each confirmed against production rows, not only the screen:
 
 1. Configured guild opens prefilled (existing channel, `#clip-archive` selected, saved role chips); a roles-only edit saved `manage servers` + `clip-test` and Screen C listed them. **Pass.**
 2. B, holding only `clip-test`, clipped a message: row `ACTIVE`, both archive ids, B as clipper; two archive messages posted. **Pass.**
