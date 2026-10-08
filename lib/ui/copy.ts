@@ -242,4 +242,9 @@ export const WEB_COPY_AUTHORED = {
   deletionCompleted:
     '이 서버의 Clip 데이터를 삭제했습니다. Discord 아카이브 채널과 그 안의 메시지는 그대로 남아 있습니다.',
   deletionFailed: 'Clip 데이터를 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+  /**
+   * The saved archive channel no longer exists in Discord (#58). Supplied by
+   * Ori on 2026-10-09; see docs/DESIGN_RATIONALE_APPEND.md §15.
+   */
+  archiveChannelMissing: '설정된 아카이브 채널이 Discord에 없습니다. 다른 채널을 선택하거나 새로 만들어 주세요.',
 } as const;

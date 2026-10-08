@@ -307,3 +307,7 @@ The role multi-select's highlighted option uses the existing `--hover-surface` (
 ## 14. 2026-10-08 — Role chip removal announcement
 
 The role multi-select removed chips silently for screen-reader users: Backspace on the add control said nothing, and a chip click only moved focus to the add control. Issue #11 requires the selection state to be announced, so the PR #55 review flagged it. Both removal paths now write `{role} 역할이 제거되었습니다.` into a visually hidden polite live region inside the component, with `{role}` filled by the role exactly as its chip shows it. The handoff had no string for this; Ori supplied the copy on 2026-10-08, and it lives in `WEB_COPY_AUTHORED` and the handoff's "Role multi-select" section.
+
+## 15. 2026-10-09 — Deleted archive channel callout (#58)
+
+When the saved archive channel had been deleted in Discord, the settings flow prefilled its dead id: the channel select showed only its placeholder and nothing said why. The handoff has no string for this condition. Ori supplied `설정된 아카이브 채널이 Discord에 없습니다. 다른 채널을 선택하거나 새로 만들어 주세요.` on 2026-10-09; it renders as a `누락`-tagged callout on the prefilled setup form (above the channel select) and on Screen E, and lives in `WEB_COPY_AUTHORED`. Screen E claims the channel is missing only when Discord's channel list actually loaded.

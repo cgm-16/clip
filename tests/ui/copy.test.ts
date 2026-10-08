@@ -178,6 +178,12 @@ describe('web UI copy', () => {
     expect(WEB_COPY_AUTHORED.deletionFailed).toBe('Clip 데이터를 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요.');
   });
 
+  it('pins the #58 deleted-archive-channel string Ori supplied exactly', () => {
+    expect(WEB_COPY_AUTHORED.archiveChannelMissing).toBe(
+      '설정된 아카이브 채널이 Discord에 없습니다. 다른 채널을 선택하거나 새로 만들어 주세요.',
+    );
+  });
+
   it('the clip card action reuses the handoff label', () => {
     expect(WEB_COPY.clipCard.viewOriginal).toBe('원본 보기');
   });
