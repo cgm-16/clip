@@ -123,12 +123,22 @@ export async function POST(request: NextRequest) {
   // already-configured channel is a no-op, not a reconfigure, so it is
   // allowed too even with live Clips. "create" always makes a brand-new
   // channel, so it is a reconfigure whenever a config already exists.
+  //
+  // The one exception: Discord confirms the current archive channel itself
+  // is gone. Its archive messages went with it, so there is nothing left to
+  // strand, and refusing would leave the guild with no way to set a new
+  // archive short of deleting its data (Ori, 2026-10-09, #58).
   const existingConfig = await findGuildArchiveConfig(guildId);
   const isReconfigure =
     existingConfig !== null &&
     (destination === 'create' || existingConfig.archiveChannelId !== channelId);
+  let goneArchiveChannelId: string | undefined;
   if (isReconfigure && (await hasLiveClips(guildId))) {
-    return liveClipsConflict();
+    const lookup = createDiscordGuildLookup({ botToken: env.DISCORD_BOT_TOKEN, fetchImpl: fetch });
+    if (!(await lookup.isChannelGone(existingConfig.archiveChannelId))) {
+      return liveClipsConflict();
+    }
+    goneArchiveChannelId = existingConfig.archiveChannelId;
   }
 
   let archiveChannelId: string;
@@ -265,6 +275,7 @@ export async function POST(request: NextRequest) {
     configuredByUserId: identity.userId,
     allowedRoleIds: requestedRoleIds,
     sessionTokenHash: sessionTokenHash(sessionToken),
+    goneArchiveChannelId,
   });
   if (finalized.kind === 'CONFLICT') {
     if (destination === 'create') {

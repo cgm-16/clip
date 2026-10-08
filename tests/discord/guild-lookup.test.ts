@@ -340,3 +340,28 @@ describe('getGuildChannelNames', () => {
     expect(await lookup.getGuildChannelNames(GUILD_ID)).toEqual({});
   });
 });
+
+describe('isChannelGone', () => {
+  test('is true only when Discord answers Unknown Channel', async () => {
+    const { fetchImpl, calls } = stubFetch({ channels: json({ code: 10003, message: 'Unknown Channel' }, 404) });
+    const lookup = createDiscordGuildLookup({ botToken: BOT_TOKEN, fetchImpl });
+    expect(await lookup.isChannelGone('900')).toBe(true);
+    expect(calls[0].url).toBe('https://discord.com/api/v10/channels/900');
+  });
+
+  test('a readable channel is not gone', async () => {
+    const { fetchImpl } = stubFetch({ channels: json({ id: '900', name: 'clip-archive', type: 0 }) });
+    const lookup = createDiscordGuildLookup({ botToken: BOT_TOKEN, fetchImpl });
+    expect(await lookup.isChannelGone('900')).toBe(false);
+  });
+
+  test.each([
+    ['missing access', json({ code: 50001, message: 'Missing Access' }, 403)],
+    ['a server error', json({ message: 'oops' }, 500)],
+    ['a 404 without a code', json({}, 404)],
+  ])('%s is not confirmation that the channel is gone', async (_label, response) => {
+    const { fetchImpl } = stubFetch({ channels: response });
+    const lookup = createDiscordGuildLookup({ botToken: BOT_TOKEN, fetchImpl, sleep: async () => {} });
+    expect(await lookup.isChannelGone('900')).toBe(false);
+  });
+});

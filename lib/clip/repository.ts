@@ -509,9 +509,19 @@ export function hasLiveClips(guildId: string): Promise<boolean> {
  * deletion removed.
  */
 export async function finalizeGuildArchiveConfig(
-  input: UpsertGuildArchiveConfigInput & { sessionTokenHash: string; now?: Date },
+  input: UpsertGuildArchiveConfigInput & {
+    sessionTokenHash: string;
+    now?: Date;
+    /**
+     * The current archive channel, when the caller has confirmed with Discord
+     * that it no longer exists. Moving off it is then allowed despite live
+     * Clips: their archive messages went with the channel, so there is nothing
+     * left to strand (Ori, 2026-10-09, #58).
+     */
+    goneArchiveChannelId?: string;
+  },
 ): Promise<{ kind: 'SAVED' } | { kind: 'CONFLICT' } | { kind: 'SESSION_REVOKED' }> {
-  const { sessionTokenHash, now = new Date(), ...config } = input;
+  const { sessionTokenHash, now = new Date(), goneArchiveChannelId, ...config } = input;
   return withGuildLock(config.guildId, async (tx) => {
     if (!(await isAdminSessionLive(tx, sessionTokenHash, config.guildId, now))) {
       return { kind: 'SESSION_REVOKED' as const };
@@ -523,6 +533,7 @@ export async function finalizeGuildArchiveConfig(
     if (
       existing !== null &&
       existing.archiveChannelId !== config.archiveChannelId &&
+      existing.archiveChannelId !== goneArchiveChannelId &&
       (await hasLiveClipsWithClient(tx, config.guildId))
     ) {
       return { kind: 'CONFLICT' as const };

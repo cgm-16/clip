@@ -881,6 +881,57 @@ describe('clip repository', () => {
     expect(await prisma.guildConfig.count({ where: { guildId } })).toBe(1);
   });
 
+  test('repointing off a channel confirmed gone is allowed even with live Clips', async () => {
+    const input = newClipInput();
+    const goneChannelId = fakeSnowflake();
+    await upsertGuildArchiveConfig({
+      guildId: input.guildId,
+      archiveChannelId: goneChannelId,
+      configuredByUserId: fakeSnowflake(),
+      allowedRoleIds: [],
+    });
+    await claimClip(input);
+    const before = await findGuildArchiveConfig(input.guildId);
+    const newChannelId = fakeSnowflake();
+
+    const outcome = await finalizeGuildArchiveConfig({
+      guildId: input.guildId,
+      archiveChannelId: newChannelId,
+      configuredByUserId: fakeSnowflake(),
+      allowedRoleIds: [],
+      sessionTokenHash: await liveSession(input.guildId),
+      goneArchiveChannelId: goneChannelId,
+    });
+
+    expect(outcome).toEqual({ kind: 'SAVED' });
+    const after = await findGuildArchiveConfig(input.guildId);
+    expect(after?.archiveChannelId).toBe(newChannelId);
+    // Still the same configuration lifetime: in-flight Clip work is not discarded.
+    expect(after?.configurationId).toBe(before?.configurationId);
+  });
+
+  test('a gone-channel confirmation for some other channel does not lift the live-Clips refusal', async () => {
+    const input = newClipInput();
+    await upsertGuildArchiveConfig({
+      guildId: input.guildId,
+      archiveChannelId: fakeSnowflake(),
+      configuredByUserId: fakeSnowflake(),
+      allowedRoleIds: [],
+    });
+    await claimClip(input);
+
+    const outcome = await finalizeGuildArchiveConfig({
+      guildId: input.guildId,
+      archiveChannelId: fakeSnowflake(),
+      configuredByUserId: fakeSnowflake(),
+      allowedRoleIds: [],
+      sessionTokenHash: await liveSession(input.guildId),
+      goneArchiveChannelId: fakeSnowflake(),
+    });
+
+    expect(outcome).toEqual({ kind: 'CONFLICT' });
+  });
+
   test('first setup leaves no configuration row when the role write fails', async () => {
     const guildId = trackedGuildId();
     // A duplicate id violates the (guild_id, role_id) primary key inside the
