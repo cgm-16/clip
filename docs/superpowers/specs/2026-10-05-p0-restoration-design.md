@@ -168,6 +168,10 @@ Update README/status and the issue briefs after each completed wave, and record 
 - Only the test guild uses the deployment, so the boundary release uses a plain recreate rollout without announcement.
 - Implementation is inline per wave, with one independent review before each PR. Waves: `wave/4-p0-restoration` (this design, 4.3, F.4, destination permission check), `wave/5-web-archive` (5.1–5.4, F.5, deletion lock and `configurationId`), `wave/6-verification` (F.6, 6.1–6.4, 7.1). Reopen #11, #12, #29, #31–34, #38 and #39; #35–37 and #43 remain open.
 
+## Decision confirmed 2026-10-09
+
+- Destination changes keep the live-Clips refusal, with one exception (Ori, PR #61 review, #58): when Discord confirms the current archive channel itself is gone (Unknown Channel), moving to another channel is allowed despite live Clips. Its archive messages went with the channel, so nothing is stranded; without the exception a guild whose archive channel was deleted could only recover by deleting its data. Access denials, timeouts and server errors are not confirmation. Those Clips stay ACTIVE and read as `누락` in the archive; Unclip and removal treat the already-gone messages as deleted.
+
 ## Review and next step
 
 Review this written design and the Korean copy table. On approval, produce the executable implementation plan against the current code, reopen the appropriate task issues, and select its execution method. Until that review, changes are documentation only.
