@@ -1,7 +1,8 @@
 import type { AuthorNotificationStatus, ClipStatus, Prisma } from '@/generated/prisma/client';
 import type { ArchiveMessageIds } from '@/lib/clip/types';
 import { getPrismaClient } from '@/lib/db';
-import { lockGuild } from '@/lib/guild-lock';
+import { isAdminSessionLive } from '@/lib/admin-session/repository';
+import { lockGuild, withGuildLock } from '@/lib/guild-lock';
 
 /** A Prisma client scoped to an open transaction. See `lockClip`. */
 export type TxClient = Prisma.TransactionClient;
@@ -497,30 +498,35 @@ export function hasLiveClips(guildId: string): Promise<boolean> {
 }
 
 /**
- * Persists setup after Discord work, rechecking a reconfiguration against the
- * Clip rows while holding the same guild lock used by canonical Clip claims.
+ * Persists setup after Discord work. Runs under the guild lock, so it is
+ * ordered against Clip claims, deletion and other saves -- first setup
+ * included, when there is no config row to lock. The session is rechecked
+ * inside: a deletion between this request's authentication and its commit
+ * revokes the session, and the save must not recreate the configuration the
+ * deletion removed.
  */
 export async function finalizeGuildArchiveConfig(
-  input: UpsertGuildArchiveConfigInput,
-): Promise<{ kind: 'SAVED' } | { kind: 'CONFLICT' }> {
-  const outcome = await lockGuildConfig(input.guildId, async (tx, config) => {
+  input: UpsertGuildArchiveConfigInput & { sessionTokenHash: string; now?: Date },
+): Promise<{ kind: 'SAVED' } | { kind: 'CONFLICT' } | { kind: 'SESSION_REVOKED' }> {
+  const { sessionTokenHash, now = new Date(), ...config } = input;
+  return withGuildLock(config.guildId, async (tx) => {
+    if (!(await isAdminSessionLive(tx, sessionTokenHash, config.guildId, now))) {
+      return { kind: 'SESSION_REVOKED' as const };
+    }
+    const existing = await tx.guildConfig.findUnique({
+      where: { guildId: config.guildId },
+      select: { archiveChannelId: true },
+    });
     if (
-      config.archiveChannelId !== input.archiveChannelId &&
-      (await hasLiveClipsWithClient(tx, input.guildId))
+      existing !== null &&
+      existing.archiveChannelId !== config.archiveChannelId &&
+      (await hasLiveClipsWithClient(tx, config.guildId))
     ) {
       return { kind: 'CONFLICT' as const };
     }
-    await upsertGuildArchiveConfigWithClient(tx, input);
+    await upsertGuildArchiveConfigWithClient(tx, config);
     return { kind: 'SAVED' as const };
   });
-  if (outcome !== null) {
-    return outcome;
-  }
-
-  // There is no row to lock on first setup. Simultaneous first setup is a
-  // separate problem; preserve the existing database upsert path here.
-  await upsertGuildArchiveConfig(input);
-  return { kind: 'SAVED' };
 }
 
 /**

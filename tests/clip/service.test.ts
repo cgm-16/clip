@@ -45,6 +45,15 @@ describe('clip service', () => {
 
   const cleanupGuildIds: string[] = [];
 
+  // A live admin session row, for the finalize-time session recheck.
+  async function liveSession(guildId: string): Promise<string> {
+    const tokenHash = fakeSnowflake();
+    await prisma.adminSession.create({
+      data: { tokenHash, guildId, userId: fakeSnowflake(), expiresAt: new Date(Date.now() + 60_000) },
+    });
+    return tokenHash;
+  }
+
   beforeEach(() => {
     gateway = createFakeGateway();
     service = createClipService(gateway);
@@ -61,6 +70,8 @@ describe('clip service', () => {
     await prisma.clip.deleteMany({ where: { guildId: { in: cleanupGuildIds } } });
     await prisma.guildAllowedRole.deleteMany({ where: { guildId: { in: cleanupGuildIds } } });
     await prisma.guildConfig.deleteMany({ where: { guildId: { in: cleanupGuildIds } } });
+    await prisma.adminSession.deleteMany({ where: { guildId: { in: cleanupGuildIds } } });
+    await prisma.setupToken.deleteMany({ where: { guildId: { in: cleanupGuildIds } } });
     cleanupGuildIds.length = 0;
   });
 
@@ -495,6 +506,7 @@ describe('clip service', () => {
     expect(
       await finalizeGuildArchiveConfig({
         guildId: fixture.guildId,
+        sessionTokenHash: await liveSession(fixture.guildId),
         archiveChannelId: replacementArchiveChannelId,
         configuredByUserId: replacementConfiguredByUserId,
         allowedRoleIds: [],
@@ -514,6 +526,7 @@ describe('clip service', () => {
     expect(
       await finalizeGuildArchiveConfig({
         guildId: fixture.guildId,
+        sessionTokenHash: await liveSession(fixture.guildId),
         archiveChannelId: replacementArchiveChannelId,
         configuredByUserId: replacementConfiguredByUserId,
         allowedRoleIds: [],
@@ -834,6 +847,7 @@ describe('clip service', () => {
 
     const result = await finalizeGuildArchiveConfig({
       guildId: fixture.guildId,
+      sessionTokenHash: await liveSession(fixture.guildId),
       archiveChannelId: fixture.archiveChannelId,
       configuredByUserId: fakeSnowflake(),
       allowedRoleIds: [],
@@ -849,6 +863,7 @@ describe('clip service', () => {
     await service.clip(clipInput(fixture, clipperUserId));
     await finalizeGuildArchiveConfig({
       guildId: fixture.guildId,
+      sessionTokenHash: await liveSession(fixture.guildId),
       archiveChannelId: fixture.archiveChannelId,
       configuredByUserId: fakeSnowflake(),
       allowedRoleIds: [],

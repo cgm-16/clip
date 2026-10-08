@@ -55,6 +55,15 @@ describe('clip repository', () => {
 
   const cleanupGuildIds: string[] = [];
 
+  // A live admin session row, for the finalize-time session recheck.
+  async function liveSession(guildId: string): Promise<string> {
+    const tokenHash = fakeSnowflake();
+    await prisma.adminSession.create({
+      data: { tokenHash, guildId, userId: fakeSnowflake(), expiresAt: new Date(Date.now() + 60_000) },
+    });
+    return tokenHash;
+  }
+
   function trackedGuildId(): string {
     const guildId = fakeSnowflake();
     cleanupGuildIds.push(guildId);
@@ -67,6 +76,8 @@ describe('clip repository', () => {
     await prisma.clip.deleteMany({ where: { guildId: { in: cleanupGuildIds } } });
     await prisma.guildAllowedRole.deleteMany({ where: { guildId: { in: cleanupGuildIds } } });
     await prisma.guildConfig.deleteMany({ where: { guildId: { in: cleanupGuildIds } } });
+    await prisma.adminSession.deleteMany({ where: { guildId: { in: cleanupGuildIds } } });
+    await prisma.setupToken.deleteMany({ where: { guildId: { in: cleanupGuildIds } } });
     cleanupGuildIds.length = 0;
   });
 
@@ -573,6 +584,7 @@ describe('clip repository', () => {
     await clipHasReadConfig.promise;
     const finalizePromise = finalizeGuildArchiveConfig({
       guildId,
+      sessionTokenHash: await liveSession(guildId),
       archiveChannelId: newChannelId,
       configuredByUserId,
       allowedRoleIds: [],
@@ -767,6 +779,7 @@ describe('clip repository', () => {
     const roles = [fakeSnowflake(), fakeSnowflake()];
     await finalizeGuildArchiveConfig({
       guildId,
+      sessionTokenHash: await liveSession(guildId),
       archiveChannelId: fakeSnowflake(),
       configuredByUserId: fakeSnowflake(),
       allowedRoleIds: roles,
@@ -780,12 +793,14 @@ describe('clip repository', () => {
     const [kept, dropped, added] = [fakeSnowflake(), fakeSnowflake(), fakeSnowflake()];
     await finalizeGuildArchiveConfig({
       guildId,
+      sessionTokenHash: await liveSession(guildId),
       archiveChannelId: channel,
       configuredByUserId: fakeSnowflake(),
       allowedRoleIds: [kept, dropped],
     });
     await finalizeGuildArchiveConfig({
       guildId,
+      sessionTokenHash: await liveSession(guildId),
       archiveChannelId: channel,
       configuredByUserId: fakeSnowflake(),
       allowedRoleIds: [kept, added],
@@ -798,17 +813,53 @@ describe('clip repository', () => {
     const channel = fakeSnowflake();
     await finalizeGuildArchiveConfig({
       guildId,
+      sessionTokenHash: await liveSession(guildId),
       archiveChannelId: channel,
       configuredByUserId: fakeSnowflake(),
       allowedRoleIds: [fakeSnowflake()],
     });
     await finalizeGuildArchiveConfig({
       guildId,
+      sessionTokenHash: await liveSession(guildId),
       archiveChannelId: channel,
       configuredByUserId: fakeSnowflake(),
       allowedRoleIds: [],
     });
     expect((await findGuildArchiveConfig(guildId))?.allowedRoleIds).toEqual([]);
+  });
+
+  test('finalize refuses when the session was revoked before the save committed', async () => {
+    const guildId = trackedGuildId();
+    const sessionTokenHash = await liveSession(guildId);
+    await prisma.adminSession.delete({ where: { tokenHash: sessionTokenHash } });
+    const outcome = await finalizeGuildArchiveConfig({
+      guildId,
+      archiveChannelId: fakeSnowflake(),
+      configuredByUserId: fakeSnowflake(),
+      allowedRoleIds: [],
+      sessionTokenHash,
+    });
+    expect(outcome).toEqual({ kind: 'SESSION_REVOKED' });
+    expect(await prisma.guildConfig.count({ where: { guildId } })).toBe(0);
+  });
+
+  test('simultaneous first setups both settle, and one configuration exists', async () => {
+    const guildId = trackedGuildId();
+    const sessionTokenHash = await liveSession(guildId);
+    await warmConnectionPool(2);
+    const results = await Promise.all(
+      [fakeSnowflake(), fakeSnowflake()].map((archiveChannelId) =>
+        finalizeGuildArchiveConfig({
+          guildId,
+          archiveChannelId,
+          configuredByUserId: fakeSnowflake(),
+          allowedRoleIds: [],
+          sessionTokenHash,
+        }),
+      ),
+    );
+    expect(results).toEqual([{ kind: 'SAVED' }, { kind: 'SAVED' }]);
+    expect(await prisma.guildConfig.count({ where: { guildId } })).toBe(1);
   });
 
   test('first setup leaves no configuration row when the role write fails', async () => {
@@ -819,6 +870,7 @@ describe('clip repository', () => {
     await expect(
       finalizeGuildArchiveConfig({
         guildId,
+        sessionTokenHash: await liveSession(guildId),
         archiveChannelId: fakeSnowflake(),
         configuredByUserId: fakeSnowflake(),
         allowedRoleIds: [duplicate, duplicate],
