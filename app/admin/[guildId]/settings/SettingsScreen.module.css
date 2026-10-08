@@ -1,0 +1,144 @@
+/* Values: docs/06_DESIGN_HANDOFF.md "Screen E". Every value is a tokens.css token. */
+.page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-12) var(--sp-6);
+}
+
+.toast:empty {
+  display: none;
+}
+
+.toast,
+.done {
+  width: min(var(--w-archive), 100%);
+}
+
+.done {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.columns {
+  display: grid;
+  grid-template-columns: var(--w-settings-main) var(--w-settings-confirm);
+  gap: var(--sp-6);
+  align-items: start;
+  max-width: 100%;
+}
+
+.main,
+.confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  min-width: 0;
+}
+
+.confirm {
+  padding: var(--sp-5);
+  background: var(--surface);
+  border: var(--hairline) solid var(--error-border);
+  border-radius: var(--radius);
+}
+
+.label,
+.dangerLegend {
+  font: var(--fs-micro) var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.dangerLegend {
+  color: var(--error-text);
+  padding: 0 var(--sp-1);
+}
+
+.title,
+.confirmTitle {
+  margin: 0;
+  font: 600 var(--fs-title) / var(--lh-title) var(--font-ui);
+  color: var(--text);
+}
+
+.confirmTitle {
+  font-size: var(--fs-subtitle);
+}
+
+.danger {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  margin: 0;
+  padding: var(--sp-4);
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius);
+}
+
+.dangerText {
+  margin: 0;
+  font: var(--fs-small) / var(--lh-small) var(--font-ui);
+  color: var(--text-2);
+}
+
+.consequences {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.consequence {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-inline-gap);
+  font: var(--fs-small) / var(--lh-small) var(--font-ui);
+  color: var(--text-2);
+}
+
+.acknowledge {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  font: var(--fs-label) / var(--lh-label) var(--font-ui);
+  color: var(--text);
+}
+
+.actions {
+  display: flex;
+  gap: var(--sp-2);
+}
+
+.secondaryLink {
+  display: inline-block;
+  padding: var(--sp-2) var(--sp-btn-x);
+  border: var(--hairline) solid var(--border-strong);
+  border-radius: var(--radius);
+  font: 500 var(--fs-small) var(--font-ui);
+  color: var(--text-2);
+  text-decoration: none;
+  transition: background-color 120ms;
+}
+
+.secondaryLink:hover {
+  background: var(--hover-surface);
+}
+
+@media (max-width: 960px) {
+  .columns {
+    grid-template-columns: minmax(0, 1fr);
+    width: min(var(--w-settings-main), 100%);
+  }
+}
+
+@media (max-width: 640px) {
+  .page {
+    padding: var(--sp-6) var(--sp-4);
+  }
+}
