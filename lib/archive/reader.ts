@@ -48,7 +48,12 @@ function decodeCursor(value: string): Cursor | null {
     return null;
   }
   const date = new Date(Number(match[1]));
-  return Number.isNaN(date.getTime()) ? null : { clippedAt: date.toISOString(), sourceMessageId: match[2] };
+  // Past year 9999, toISOString() writes an expanded year (`+033658-…`) that
+  // Postgres cannot cast to a timestamp; no Clip is that old or that new.
+  if (Number.isNaN(date.getTime()) || date.getUTCFullYear() > 9999) {
+    return null;
+  }
+  return { clippedAt: date.toISOString(), sourceMessageId: match[2] };
 }
 
 type Row = {

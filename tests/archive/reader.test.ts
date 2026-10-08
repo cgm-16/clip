@@ -185,6 +185,8 @@ describe('getClipPage', () => {
     [{ before: `${T0}.abc`, after: `${T0}.abc` }],
     [{ sourceChannelId: "1' OR 1=1" }],
     [{ before: `${T0}.${'x'.repeat(40)}` }],
+    [{ before: '999999999999999.abc' }],
+    [{ after: '253402300800000.abc' }],
   ])('rejects malformed query %o', async (query) => {
     expect(await getClipPage({ guildId: 'g', ...query })).toEqual({ kind: 'INVALID' });
   });
