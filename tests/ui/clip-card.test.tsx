@@ -92,3 +92,17 @@ test('an unknown author shows the user id', () => {
   render(<ClipCard {...base} content={{ ...meta, authorName: null, state: 'missing' }} />);
   expect(screen.getByText('111')).toBeInTheDocument();
 });
+
+test('two attachments with the same URL both render without a key clash', () => {
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const same = { filename: 'dup.txt', url: 'https://cdn.discordapp.com/dup.txt', isImage: false };
+  render(
+    <ClipCard
+      {...base}
+      content={{ ...meta, state: 'ready', body: [], attachments: [same, same], embeds: [], replyToAuthorName: null }}
+    />,
+  );
+  expect(screen.getAllByRole('link', { name: 'dup.txt' })).toHaveLength(2);
+  expect(error).not.toHaveBeenCalled();
+  error.mockRestore();
+});

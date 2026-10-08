@@ -127,15 +127,15 @@ export function ClipCard({ authorUserId, sourceChannelLabel, clippedAt, original
           {embed.description && <p className={styles.body}>{embed.description}</p>}
         </div>
       ))}
-      {content.attachments.map((attachment) =>
+      {content.attachments.map((attachment, index) =>
         attachment.isImage ? (
-          <div key={attachment.url} className={styles.attachment}>
+          <div key={`${index}-${attachment.url}`} className={styles.attachment}>
             {/* Plain <img>: the fresh Discord URL, no optimizer and no cache (ruling D6). */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={attachment.url} alt={attachment.filename} loading="lazy" referrerPolicy="no-referrer" />
           </div>
         ) : (
-          <a key={attachment.url} className={styles.file} href={attachment.url} target="_blank" rel="noopener noreferrer">
+          <a key={`${index}-${attachment.url}`} className={styles.file} href={attachment.url} target="_blank" rel="noopener noreferrer">
             {attachment.filename}
           </a>
         ),
