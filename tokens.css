@@ -74,6 +74,24 @@
   --sp-chip-x: 7px;       /* bordered mono chip horizontal padding (vertical reuses --sp-1). design/Clip P0 Screens.dc.html:151 */
   --sp-role-chip-y: 5px;  /* role chip vertical padding (horizontal reuses --sp-chip-x). docs/06_DESIGN_HANDOFF.md "Role multi-select" */
   --sp-option-x: 10px;    /* role option row horizontal padding (vertical reuses --sp-2). docs/06_DESIGN_HANDOFF.md "Role multi-select" */
+  /* Wave 5 — Screens D/E and the clip card. docs/06_DESIGN_HANDOFF.md "Clip card", "Screen D", "Screen E". */
+  --card-pad-x: 18px;           /* clip card horizontal padding (vertical reuses --sp-4) */
+  --card-pad-x-narrow: 12px;    /* <=640px card padding, both axes */
+  --avatar-size: 22px;          /* source-line avatar square */
+  --avatar-surface: #2a2e34;
+  --channel-text: #8b9096;      /* source-line channel name, 11px mono */
+  --code-surface: #08090b;
+  --code-border: #23262b;
+  --code-text: #a8b4c0;
+  --attachment-size: 104px;     /* attachment preview box height */
+  --skeleton-strong: #23262b;
+  --skeleton-weak: #1c1f23;
+  --skeleton-height: 9px;
+  --missing-surface: #0d0e10;   /* missing-copy row background */
+  --pager-disabled-fg: #4a4e54; /* disabled 이전/다음 — disabled control only */
+  --pager-disabled-border: #23262b;
+  --w-settings-main: 460px;
+  --w-settings-confirm: 400px;
 
   --radius: 2px;
   --radius-chip: 1px;

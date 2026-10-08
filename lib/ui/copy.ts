@@ -123,6 +123,8 @@ export const WEB_COPY = {
   clipCard: {
     /** Prefix on the reply-provenance line, trailing space intended. */
     replyPrefix: '답장 → ',
+    /** The card's single secondary action. Handoff: author DM actions. */
+    viewOriginal: '원본 보기',
   },
 
   /** Screen E — current configuration and the destructive action. */
@@ -224,4 +226,20 @@ export const WEB_COPY_AUTHORED = {
    * `docs/DESIGN_RATIONALE_APPEND.md` §14.
    */
   roleRemoved: '{role} 역할이 제거되었습니다.',
+  /**
+   * Wave 5 archive, session and deletion copy — drafted in
+   * docs/superpowers/specs/2026-10-05-p0-restoration-design.md and approved
+   * by Ori on 2026-10-09.
+   */
+  archiveFetchFailed: '보관된 내용을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.',
+  archiveAccessDenied: '아카이브 채널에 접근할 수 없습니다. Discord에서 Clip의 채널 권한을 확인해 주세요.',
+  archiveEmpty: '아직 보관된 메시지가 없습니다.',
+  archiveFilterEmpty: '이 채널에서 보관된 메시지가 없습니다.',
+  originalUnavailable: '원본 메시지를 찾을 수 없습니다.',
+  adminSessionExpiredTitle: '관리자 세션이 만료되었습니다',
+  deletionLosesControlState:
+    '보관 기록과 삭제 차단 기록이 사라집니다. 남아 있는 Discord 사본은 Clip에서 관리할 수 없으며, 같은 원본 메시지가 다시 보관될 수 있습니다.',
+  deletionCompleted:
+    '이 서버의 Clip 데이터를 삭제했습니다. Discord 아카이브 채널과 그 안의 메시지는 그대로 남아 있습니다.',
+  deletionFailed: 'Clip 데이터를 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요.',
 } as const;

@@ -50,3 +50,10 @@
   background: var(--error-surface);
   color: var(--error-text);
 }
+
+/* 누락: something the configuration points at no longer exists. Same palette as 확인. */
+.missing {
+  border-color: var(--warning-border);
+  background: var(--warning-surface);
+  color: var(--warning-text);
+}
