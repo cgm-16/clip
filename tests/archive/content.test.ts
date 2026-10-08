@@ -270,20 +270,37 @@ describe('loadArchiveContent', () => {
     expect(stub.maxInFlight()).toBeGreaterThan(1);
   });
 
-  test('ids outside this guild\'s ACTIVE rows, or a bad batch, are refused before any Discord call', async () => {
+  test('ids outside this guild\'s ACTIVE rows get no Discord call and no item; the rest still load', async () => {
     const guildId = await configuredGuild();
     const otherGuild = await configuredGuild();
     const mine = await seedRow(guildId);
     const foreign = await seedRow(otherGuild);
     const pending = await seedRow(guildId, { status: 'PENDING' });
     const removed = await seedRow(guildId, { status: 'REMOVED_BY_AUTHOR' });
+    const stub = stubClient(() => unknownMessage());
+
+    const result = await loadArchiveContent({
+      guildId,
+      sourceMessageIds: [mine.sourceMessageId, foreign.sourceMessageId, pending.sourceMessageId, removed.sourceMessageId],
+      client: stub.client,
+      lookupUserName: async () => null,
+    });
+
+    expect(result.kind).toBe('OK');
+    if (result.kind !== 'OK') throw new Error('expected OK');
+    expect(result.items.map((item) => item.sourceMessageId)).toEqual([mine.sourceMessageId]);
+    // Two reads for the one ACTIVE row of this guild, none for the others.
+    expect(stub.request).toHaveBeenCalledTimes(2);
+    expect(stub.request.mock.calls.every(([, path]) => !path.includes(foreign.forwardId))).toBe(true);
+  });
+
+  test('a structurally bad batch is refused before any Discord call', async () => {
+    const guildId = await configuredGuild();
+    const mine = await seedRow(guildId);
     const stub = stubClient(() => ({}));
     const attempt = (ids: string[]) =>
       loadArchiveContent({ guildId, sourceMessageIds: ids, client: stub.client, lookupUserName: async () => null });
 
-    expect(await attempt([mine.sourceMessageId, foreign.sourceMessageId])).toEqual({ kind: 'INVALID' });
-    expect(await attempt([pending.sourceMessageId])).toEqual({ kind: 'INVALID' });
-    expect(await attempt([removed.sourceMessageId])).toEqual({ kind: 'INVALID' });
     expect(await attempt([])).toEqual({ kind: 'INVALID' });
     expect(await attempt([mine.sourceMessageId, mine.sourceMessageId])).toEqual({ kind: 'INVALID' });
     expect(await attempt(Array.from({ length: 21 }, (_, i) => `id${i}`))).toEqual({ kind: 'INVALID' });

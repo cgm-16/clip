@@ -156,6 +156,8 @@ async function mapWithConcurrency<T, R>(
  * Every id is resolved against this guild's ACTIVE rows before any Discord
  * call, and the Discord channel/message ids come from Postgres -- never from
  * the caller -- so this cannot be used as a general bot-authenticated proxy.
+ * INVALID means a structurally bad batch (empty, over 20, duplicated) or an
+ * unconfigured guild; an id that simply is not ACTIVE here is left out.
  * Nothing read here is stored or logged.
  *
  * Each row costs two reads, run in sequence inside one of at most four
@@ -179,10 +181,14 @@ export async function loadArchiveContent(input: {
       select: { sourceMessageId: true, sourceChannelId: true, authorUserId: true, archiveForwardMessageId: true },
     }),
   ]);
-  if (config === null || rows.length !== ids.length) {
+  if (config === null) {
     return { kind: 'INVALID' };
   }
+  // An id that is not one of this guild's ACTIVE rows -- another guild's, or
+  // one unclipped or removed since the page rendered -- gets no Discord call
+  // and no item; the client shows it as unreadable while the rest still load.
   const byId = new Map(rows.map((row) => [row.sourceMessageId, row]));
+  const activeIds = ids.filter((id) => byId.has(id));
 
   // Deduplicated only within this request; there is no cache (spec).
   const names = new Map<string, Promise<string | null>>();
@@ -195,7 +201,7 @@ export async function loadArchiveContent(input: {
     return name;
   }
 
-  const items = await mapWithConcurrency(ids, CONTENT_FETCH_CONCURRENCY, async (sourceMessageId): Promise<ArchiveRowContent> => {
+  const items = await mapWithConcurrency(activeIds, CONTENT_FETCH_CONCURRENCY, async (sourceMessageId): Promise<ArchiveRowContent> => {
     const row = byId.get(sourceMessageId)!;
     let forward: unknown = null;
     let forwardError: unknown = null;
