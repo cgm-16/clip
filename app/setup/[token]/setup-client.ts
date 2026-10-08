@@ -24,6 +24,8 @@ export type SetupData = {
   channels: SetupChannel[];
   roles: SetupRole[];
   config: InitialSetup | null;
+  /** #58: the saved archive channel no longer exists in Discord. */
+  archiveChannelMissing: boolean;
 };
 
 export type SetupDataResult =
@@ -73,7 +75,10 @@ export function parseSetupData(value: unknown): SetupData | null {
   if (typeof value !== 'object' || value === null) {
     return null;
   }
-  const { guildId, guildName, adminHandle, channels, roles, config } = value as Record<string, unknown>;
+  const { guildId, guildName, adminHandle, channels, roles, config, archiveChannelMissing } = value as Record<
+    string,
+    unknown
+  >;
   const parsedConfig = parseConfig(config);
   if (
     typeof guildId !== 'string' ||
@@ -87,7 +92,15 @@ export function parseSetupData(value: unknown): SetupData | null {
   ) {
     return null;
   }
-  return { guildId, guildName, adminHandle, channels, roles, config: parsedConfig };
+  return {
+    guildId,
+    guildName,
+    adminHandle,
+    channels,
+    roles,
+    config: parsedConfig,
+    archiveChannelMissing: archiveChannelMissing === true,
+  };
 }
 
 function isNamedRole(value: unknown): value is { id: string; name: string } {

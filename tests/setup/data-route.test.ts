@@ -76,6 +76,7 @@ describe('GET /setup/data', () => {
         { id: ROLE_ID, name: 'moderator', selectable: true },
       ],
       config: null,
+      archiveChannelMissing: false,
     });
     expect(getUserHandle).toHaveBeenCalledWith(USER_ID);
   });
@@ -87,6 +88,22 @@ describe('GET /setup/data', () => {
 
     expect(body.config).toEqual({ archiveChannelId: '111', allowedRoleIds: [ROLE_ID] });
     expect(findGuildArchiveConfig).toHaveBeenCalledWith(GUILD_ID);
+  });
+
+  test('flags a configured archive channel that Discord no longer lists (#58)', async () => {
+    findGuildArchiveConfig.mockResolvedValue({ archiveChannelId: 'gone', allowedRoleIds: [], configurationId: 'c' });
+    expect((await (await GET(get())).json()).archiveChannelMissing).toBe(true);
+  });
+
+  test('a listed archive channel is not missing', async () => {
+    findGuildArchiveConfig.mockResolvedValue({ archiveChannelId: '111', allowedRoleIds: [], configurationId: 'c' });
+    expect((await (await GET(get())).json()).archiveChannelMissing).toBe(false);
+  });
+
+  test('never sends the internal configurationId to the browser', async () => {
+    findGuildArchiveConfig.mockResolvedValue({ archiveChannelId: '111', allowedRoleIds: [ROLE_ID], configurationId: 'secret-id' });
+    const body = await (await GET(get())).json();
+    expect(body.config).toEqual({ archiveChannelId: '111', allowedRoleIds: [ROLE_ID] });
   });
 
   test('display names fall back to null without failing the request', async () => {

@@ -94,6 +94,9 @@ export function SettingsScreen(props: SettingsScreenProps) {
           <section className={styles.main}>
             <span className={styles.label}>{copy.currentSettingsLabel}</span>
             <h1 className={styles.title}>{props.guildLabel}</h1>
+            {props.archiveChannelMissing && (
+              <Callout variant="missing">{WEB_COPY_AUTHORED.archiveChannelMissing}</Callout>
+            )}
             <ConfigTable
               archiveChannelLabel={props.archiveChannelLabel}
               allowedRoles={props.allowedRoles}

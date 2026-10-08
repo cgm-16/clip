@@ -1,5 +1,6 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { ScreenA } from './ScreenA';
 import { ScreenB, type SaveOutcome, type SetupSubmission } from './ScreenB';
@@ -23,6 +24,7 @@ type FlowState =
  * is one-shot).
  */
 export function SetupFlow({ token }: { token: string }) {
+  const router = useRouter();
   const [state, setState] = useState<FlowState>({ status: 'loading' });
   const [loadAttempt, setLoadAttempt] = useState(0);
   const currentAttempt = useRef(0);
@@ -50,7 +52,7 @@ export function SetupFlow({ token }: { token: string }) {
       }
       if (existing.status === 'ready') {
         retryPending.current = false;
-        setState({ status: 'ready', ...existing.data });
+        showSetup(existing.data);
         return;
       }
 
@@ -97,7 +99,7 @@ export function SetupFlow({ token }: { token: string }) {
       }
       retryPending.current = false;
       if (data.status === 'ready') {
-        setState({ status: 'ready', ...data.data });
+        showSetup(data.data);
       } else if (data.status === 'failed') {
         setState({ status: 'load-error', canExchangeToken: capability.canExchangeToken });
       } else {
@@ -105,11 +107,21 @@ export function SetupFlow({ token }: { token: string }) {
       }
     }
 
+    // A configured guild's fresh link opens Screen E (decision D1); the
+    // setup form is reached from there. Only a first setup stays here.
+    function showSetup(data: SetupData) {
+      if (data.config !== null) {
+        router.replace(`/admin/${data.guildId}/settings`);
+        return;
+      }
+      setState({ status: 'ready', ...data });
+    }
+
     loadSetupData();
     return () => {
       cancelled = true;
     };
-  }, [loadAttempt, token]);
+  }, [loadAttempt, token, router]);
 
   if (state.status === 'loading') {
     return null;
@@ -143,25 +155,6 @@ export function SetupFlow({ token }: { token: string }) {
         autoCreated={state.autoCreated}
         clipCount={state.clipCount}
         allowedRoles={state.allowedRoles}
-        onReviewSettings={() =>
-          setState({
-            status: 'ready',
-            ...state.setup,
-            // The channel list was read before an auto-created channel
-            // existed; without it the select would show its placeholder and
-            // invite the admin to repoint the archive.
-            channels: state.setup.channels.some((channel) => channel.id === state.archiveChannelId)
-              ? state.setup.channels
-              : [
-                  ...state.setup.channels,
-                  { id: state.archiveChannelId, name: state.archiveChannelName, type: 0 },
-                ],
-            config: {
-              archiveChannelId: state.archiveChannelId,
-              allowedRoleIds: state.allowedRoles.map((role) => role.id),
-            },
-          })
-        }
       />
     );
   }
@@ -204,12 +197,11 @@ export function SetupFlow({ token }: { token: string }) {
 
   return (
     <ScreenB
-      // A new configuration (after "설정 다시 보기") remounts the form so its
-      // prefill is read again rather than kept from the first mount.
-      key={setup.config?.archiveChannelId ?? 'first-setup'}
       channels={setup.channels}
       roles={setup.roles}
       initial={setup.config}
+      archiveChannelMissing={setup.archiveChannelMissing}
+      archiveHref={`/admin/${setup.guildId}/archive`}
       guildName={setup.guildName ?? setup.guildId}
       adminHandle={setup.adminHandle ?? undefined}
       onSubmit={handleSubmit}

@@ -1,4 +1,4 @@
-import { Button } from '@/components/ui/Button';
+import Link from 'next/link';
 import { Callout } from '@/components/ui/Callout';
 import { MonoChip } from '@/components/ui/MonoChip';
 import { TextTag } from '@/components/ui/TextTag';
@@ -27,7 +27,6 @@ export interface ScreenCProps {
   autoCreated: boolean;
   clipCount: number;
   allowedRoles: { id: string; name: string }[];
-  onReviewSettings?: () => void;
 }
 
 /**
@@ -36,21 +35,17 @@ export interface ScreenCProps {
  * roles and is omitted when none are configured -- the 관리자 row already says
  * who can clip then, and the handoff has no empty-roles string.
  *
- * `아카이브 열기` points directly at the Discord archive channel -- Wave 5's
- * web archive view is cut, so there is no web page for it to open, and the
- * archive genuinely lives in Discord.
+ * Its two actions open the web archive (Screen D) and the current settings
+ * (Screen E).
  */
 export function ScreenC({
   guildId,
-  archiveChannelId,
   archiveChannelName,
   autoCreated,
   clipCount,
   allowedRoles,
-  onReviewSettings,
 }: ScreenCProps) {
   const copy = WEB_COPY.setupComplete;
-  const archiveUrl = `https://discord.com/channels/${guildId}/${archiveChannelId}`;
   const [rightClickStep, appStep, clipStep] = copy.usageSteps.split(USAGE_STEP_SEPARATOR);
   const [beforeManage, afterManage] = copy.manageChannelNoLongerNeeded.split(MANAGE_CHANNELS_LABEL);
 
@@ -93,23 +88,17 @@ export function ScreenC({
 
         <div className={styles.actions}>
           {/*
-           * A real `<a>`, not the `Button` primitive: this is navigation to
-           * the Discord archive channel, not an in-page action, and `Button`
-           * only renders a `<button>`. Styled to match `Button`'s primary
-           * variant (components/ui/Button.module.css) since the mockup draws
-           * it identically to a primary button.
+           * Links, not the `Button` primitive: both are navigation, and
+           * `Button` only renders a `<button>`. Styled to match `Button`'s
+           * primary and secondary variants (components/ui/Button.module.css),
+           * since the mockup draws them as buttons.
            */}
-          <a
-            className={styles.primaryLink}
-            href={archiveUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
+          <Link className={styles.primaryLink} href={`/admin/${guildId}/archive`}>
             {copy.openArchive}
-          </a>
-          <Button variant="secondary" onClick={onReviewSettings}>
+          </Link>
+          <Link className={styles.secondaryLink} href={`/admin/${guildId}/settings`}>
             {copy.reviewSettings}
-          </Button>
+          </Link>
         </div>
       </div>
     </div>

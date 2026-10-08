@@ -122,3 +122,11 @@ test('a saved edit shows the toast in a live region', () => {
   const toast = screen.getByText('설정을 저장했습니다.');
   expect(toast.closest('[aria-live="polite"]')).not.toBeNull();
 });
+
+test('a deleted archive channel is called out with 누락 (#58)', () => {
+  render(<SettingsScreen {...props} archiveChannelMissing />);
+  expect(screen.getByText('누락')).toBeInTheDocument();
+  expect(
+    screen.getByText('설정된 아카이브 채널이 Discord에 없습니다. 다른 채널을 선택하거나 새로 만들어 주세요.'),
+  ).toBeInTheDocument();
+});
