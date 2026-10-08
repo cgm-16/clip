@@ -137,14 +137,15 @@ export function claimClipInTransaction(
  * honoured.
  *
  * With `options.configurationId`, resolves to null without calling `fn`
- * unless the guild's current configuration still has that id: the guild lock
- * makes the check and the write atomic with respect to deletion and re-setup.
+ * unless the guild's current configuration still has that id -- or, for a
+ * captured null, still has none. The guild lock makes the check and the write
+ * atomic with respect to deletion and re-setup.
  */
 export function lockClip<T>(
   guildId: string,
   sourceMessageId: string,
   fn: (tx: TxClient, clip: ClipRecord) => Promise<T>,
-  options: { configurationId?: string } = {},
+  options: { configurationId?: string | null } = {},
 ): Promise<T | null> {
   return getPrismaClient().$transaction(async (tx) => {
     // Guild lock first, always: see lib/guild-lock.ts for the lock order.
@@ -158,7 +159,9 @@ export function lockClip<T>(
         where: { guildId },
         select: { configurationId: true },
       });
-      if (current?.configurationId !== options.configurationId) {
+      // A captured null ("this guild had no configuration") must still find
+      // none: a re-setup in between is a different lifetime too.
+      if ((current?.configurationId ?? null) !== options.configurationId) {
         return null;
       }
     }

@@ -79,12 +79,12 @@ function errorCodeOf(error: unknown): string {
 }
 
 /**
- * `lockClip`'s configuration check, or none. A guild with no configuration
- * (§17 case 12) still lets Unclip and removal converge on the control plane,
- * so a null id means "do not check", never "refuse".
+ * `lockClip`'s configuration check for the lifetime a request started under.
+ * A guild with no configuration (§17 case 12) passes null, which still lets
+ * Unclip and removal converge -- and refuses if a setup appeared meanwhile.
  */
-function configurationOptions(configurationId: string | null): { configurationId?: string } {
-  return configurationId === null ? {} : { configurationId };
+function configurationOptions(configurationId: string | null): { configurationId: string | null } {
+  return { configurationId };
 }
 
 export function createClipService(gateway: DiscordArchiveGateway) {

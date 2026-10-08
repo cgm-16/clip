@@ -683,6 +683,25 @@ describe('clip repository', () => {
     ).toBeNull();
   });
 
+  test('lockClip with a captured "no configuration" refuses once a configuration exists', async () => {
+    const input = newClipInput();
+    await claimClip(input);
+    // Case 12: no configuration then, none now -- the write proceeds.
+    expect(
+      await lockClip(input.guildId, input.sourceMessageId, async () => 'ran', { configurationId: null }),
+    ).toBe('ran');
+
+    await upsertGuildArchiveConfig({
+      guildId: input.guildId,
+      archiveChannelId: fakeSnowflake(),
+      configuredByUserId: fakeSnowflake(),
+      allowedRoleIds: [],
+    });
+    expect(
+      await lockClip(input.guildId, input.sourceMessageId, async () => 'ran', { configurationId: null }),
+    ).toBeNull();
+  });
+
   test('a Clip row lock waits behind the guild lock', async () => {
     const input = newClipInput();
     await claimClip(input);
