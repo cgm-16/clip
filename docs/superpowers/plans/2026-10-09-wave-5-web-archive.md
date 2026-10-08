@@ -793,36 +793,31 @@ git commit -m "feat(setup): issue, exchange and finalize setup under the guild l
   - `clip`, `unclip` and `removeByAuthorOrAdmin` keep their result types.
   - A completion whose configuration was replaced reports `{ kind: 'FAILED', retryable: true }` and deletes its own Discord pair.
 
-- [ ] **Step 1: Write the failing race test.** Add to `tests/clip/service.test.ts`. Reuse that file's `clipInput`/config helpers; read the first `service.clip` test to see how it builds a `ClipInput` and configures the guild, and use the same builders.
+- [ ] **Step 1: Write the failing race test.** Add to `tests/clip/service.test.ts`. It uses that file's own `seedConfiguredGuild()` and `clipInput(fixture, clipperUserId)` builders (around `tests/clip/service.test.ts:76–112`). Add `await prisma.adminSession.deleteMany({ where: { guildId: { in: cleanupGuildIds } } });` to its `afterEach`, before the `guildConfig` delete; Task 4 already added the `liveSession` helper there.
 
 ```ts
 test('a completion that straddles deletion and re-setup is discarded, not applied to the new Clip', async () => {
-  const guildId = trackedGuildId();
-  const oldChannelId = fakeSnowflake();
+  const fixture = await seedConfiguredGuild();
   const newChannelId = fakeSnowflake();
-  await finalizeGuildArchiveConfig({
-    guildId,
-    archiveChannelId: oldChannelId,
-    configuredByUserId: fakeSnowflake(),
-    allowedRoleIds: [],
-    sessionTokenHash: await liveSession(guildId),
-  });
-  const first = clipInputFor(guildId); // admin clipper, same helper the file uses
-  const second = { ...first, clipperUserId: fakeSnowflake() };
+  const first = clipInput(fixture, fakeSnowflake());
+  const second = clipInput(fixture, fakeSnowflake());
 
   gateway.onNextCreate(async () => {
     // Inside the first request's Discord round-trip: the guild's data is
-    // deleted, the guild is set up again, and someone clips the same message.
+    // deleted, the guild is set up again (a new configurationId), and
+    // someone clips the same message under the new configuration.
+    const { guildId } = fixture;
     await prisma.clipper.deleteMany({ where: { guildId } });
     await prisma.clip.deleteMany({ where: { guildId } });
     await prisma.guildAllowedRole.deleteMany({ where: { guildId } });
     await prisma.guildConfig.deleteMany({ where: { guildId } });
-    await finalizeGuildArchiveConfig({
-      guildId,
-      archiveChannelId: newChannelId,
-      configuredByUserId: fakeSnowflake(),
-      allowedRoleIds: [],
-      sessionTokenHash: await liveSession(guildId),
+    await prisma.guildConfig.create({
+      data: {
+        guildId,
+        archiveChannelId: newChannelId,
+        configuredByUserId: fakeSnowflake(),
+        allowedRoles: { create: [{ roleId: fixture.allowedRoleId }] },
+      },
     });
     expect((await service.clip(second)).kind).toBe('CREATED');
   });
@@ -830,20 +825,20 @@ test('a completion that straddles deletion and re-setup is discarded, not applie
   const result = await service.clip(first);
 
   expect(result).toEqual({ kind: 'FAILED', retryable: true });
-  const row = await prisma.clip.findUniqueOrThrow({
-    where: { guildId_sourceMessageId: { guildId, sourceMessageId: first.sourceMessageId } },
-  });
-  expect(row.status).toBe('ACTIVE');
-  expect(row.archiveProvenanceMessageId).toBe('provenance-2'); // the new setup's pair
-  // The stale pair (posted to the old channel) is taken back down.
+  const row = await readClip(fixture);
+  expect(row?.status).toBe('ACTIVE');
+  // The fake gateway numbers a pair only after its hook returns, so the
+  // nested (new-configuration) clip posted pair 1 and the stale outer one
+  // posted pair 2.
+  expect(row?.archiveProvenanceMessageId).toBe('provenance-1');
   expect(gateway.deleteCalls).toContainEqual({
-    archiveChannelId: oldChannelId,
-    ids: { provenanceMessageId: 'provenance-1', forwardMessageId: 'forward-1' },
+    archiveChannelId: fixture.archiveChannelId,
+    ids: { provenanceMessageId: 'provenance-2', forwardMessageId: 'forward-2' },
   });
 });
 ```
 
-Check the `forwardMessageId` naming the fake gateway produces (`tests/clip/fake-gateway.ts`, the return of `createArchiveMessage`) and match it exactly.
+Check the forward-id naming in `tests/clip/fake-gateway.ts`'s `createArchiveMessage` return value, and match it exactly.
 
 - [ ] **Step 2: Run it and confirm RED.**
 
@@ -1242,7 +1237,13 @@ describe('POST delete-data', () => {
   const fetchSpy = vi.fn();
   beforeEach(() => {
     vi.resetAllMocks();
+    // rejectUnsafeMutation parses the whole Env, so every variable needs a value.
     vi.stubEnv('PUBLIC_BASE_URL', 'https://clipendpoint.cc');
+    vi.stubEnv('DATABASE_URL', 'postgresql://x');
+    vi.stubEnv('DISCORD_APPLICATION_ID', '1');
+    vi.stubEnv('DISCORD_PUBLIC_KEY', 'a'.repeat(64));
+    vi.stubEnv('DISCORD_BOT_TOKEN', 't');
+    vi.stubEnv('ADMIN_SESSION_SECRET', 'x'.repeat(32));
     vi.stubGlobal('fetch', fetchSpy);
     authenticateAdminRequest.mockResolvedValue({ identity: { guildId: 'g1', userId: 'u' }, sessionTokenHash: 'h' });
   });
@@ -1252,7 +1253,11 @@ describe('POST delete-data', () => {
     const response = await POST(post({ acknowledged: true }), context);
     expect(response.status).toBe(200);
     expect(deleteGuildData).toHaveBeenCalledWith('g1', 'h');
-    expect(response.headers.get('Set-Cookie')).toMatch(/clip_admin_session=;.*Max-Age=0.*Path=\//i);
+    const cookie = response.headers.get('Set-Cookie') ?? '';
+    expect(cookie).toMatch(/clip_admin_session=;/);
+    expect(cookie).toMatch(/Max-Age=0/i);
+    expect(cookie).toMatch(/Path=\//i);
+    expect(cookie).toMatch(/HttpOnly/i);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -2064,7 +2069,7 @@ Expected: PASS.
   - Add the signature to the `DiscordGuildLookup` type, with the doc comment `/** Display only: every channel type, {} on any failure. Threads are absent; callers fall back to the id. */`.
   - Run GREEN.
 
-- [ ] **Step 6: Write the failing route test.** Create `tests/archive/content-route.test.ts`. Mock `@/lib/admin/auth`'s `authenticateAdminRequest` (keeping the real `rejectUnsafeMutation` via `importOriginal`), and mock `@/lib/archive/content`'s `loadArchiveContent`. Tests:
+- [ ] **Step 6: Write the failing route test.** Create `tests/archive/content-route.test.ts`, with the same full env-stub block as `tests/admin/delete-data-route.test.ts`. `rejectUnsafeMutation` parses the whole Env. Mock `@/lib/admin/auth`'s `authenticateAdminRequest` (keeping the real `rejectUnsafeMutation` via `importOriginal`), and mock `@/lib/archive/content`'s `loadArchiveContent`. Tests:
   - 401 without a session for this guild.
   - 400 for a body that isn't `{ sourceMessageIds: string[] }`, and for `loadArchiveContent` returning `INVALID`.
   - 415 for a `text/plain` POST.
@@ -2428,7 +2433,7 @@ export function ClipCard({ authorUserId, sourceChannelLabel, clippedAt, original
 | `.reply` | `margin:0`; `font-size: var(--fs-meta)`; `color: var(--muted)`; `border-left: 2px solid var(--border-strong)`; `padding-left: var(--sp-2)`. |
 | `.body` | `margin:0`; `font: var(--fs-body)/var(--lh-body) var(--font-ui)`; `color: var(--text-2)`; `white-space: pre-wrap`; `text-wrap: pretty`; `overflow-wrap: anywhere`. |
 | `.code` | `margin:0`; `background: var(--code-surface)`; `border: var(--hairline) solid var(--code-border)`; `border-radius: var(--radius)`; `padding: var(--sp-2) var(--sp-3)`; `font: var(--fs-small)/1.6 var(--font-mono)`; `color: var(--code-text)`; `overflow-x: auto`; `max-width: 100%`. |
-| `.attachment` | `height: var(--attachment-size)`; `max-width: 100%`; `border: var(--hairline) solid var(--code-border)`; `border-radius: var(--radius)`; `overflow: hidden`; `background: repeating-linear-gradient(...)` for the 6px diagonal stripe placeholder. |
+| `.attachment` | `height: var(--attachment-size)`; `max-width: 100%`; `border: var(--hairline) solid var(--code-border)`; `border-radius: var(--radius)`; `overflow: hidden`; `background: var(--code-surface)`. No stripe: the handoff's Assets section says striped placeholders are mockup stand-ins, and real attachments render in their place. That keeps design rule 4 (no gradients) intact. |
 | `.attachment img` | `height: 100%`; `max-width: 100%`; `object-fit: contain`; `display: block`. |
 | `.file`, `.embed a` | `color: var(--accent-text)`; `overflow-wrap: anywhere`. |
 | `.embed` | `border-left: 2px solid var(--border-strong)`; `padding-left: var(--sp-2)`. |
@@ -2443,8 +2448,6 @@ export function ClipCard({ authorUserId, sourceChannelLabel, clippedAt, original
 | `.barStrong`, `.barWeak` | `display:block`; `height: var(--skeleton-height)`; `border-radius: var(--radius-chip)`; backgrounds `var(--skeleton-strong)` and `var(--skeleton-weak)`; widths 60% and 85%. |
 | `.loading` | `margin:0`; `font: var(--fs-micro) var(--font-mono)`; `color: var(--muted)`. |
 | `.mono` | `font-family: var(--font-mono)`. |
-
-The stripe pattern is the handoff's own "diagonal 6px stripe pattern" placeholder, so a gradient is allowed only for it. Write the stripes with the tokens `--code-border` and `--code-surface`. Ledger this as a ruling, because CLAUDE.md design rule 4 says "no gradients". The handoff specifies this one pattern, and the cost if that's wrong is a solid placeholder.
 
 - [ ] **Step 7: Run GREEN.**
 
@@ -2528,7 +2531,7 @@ Expected: FAIL, modules missing.
 - [ ] **Step 4: Implement `AdminHeader` and `SessionExpired`.**
   - **`AdminHeader`:** a `<header>` laid out like Screen B's identity bar, with a 720px container on `--surface`. Read `app/setup/[token]/ScreenB.tsx`'s identity bar and `Wordmark.tsx`, and reuse `Wordmark`.
     - Left side: `<Wordmark />`, the divider, and `guildLabel`.
-    - Right side: a `<nav aria-label={WEB_COPY.archive.archiveTab + ' / ' + WEB_COPY.archive.settingsTab}>`. Don't invent an aria-label: reuse the two tab labels. It holds two `next/link` `Link`s, `/admin/{g}/archive` and `/admin/{g}/settings`, and the active one carries `aria-current="page"`.
+    - Right side: an unlabeled `<nav>`, since its two links already carry names and any label would be new Korean. It holds two `next/link` `Link`s, `/admin/{g}/archive` and `/admin/{g}/settings`, and the active one carries `aria-current="page"`.
   - **`SessionExpired`:** copy `ScreenA.tsx`'s structure, swapping only the title for `WEB_COPY_AUTHORED.adminSessionExpiredTitle` and omitting the token-specific explanation.
   - Move `Wordmark.tsx` to `components/admin/Wordmark.tsx` only if importing it across `app/` folders fails lint. Otherwise import it from `@/app/setup/[token]/Wordmark`.
 
@@ -2678,7 +2681,7 @@ export function ArchiveScreen(props: ArchiveScreenProps) {
         </div>
 
         {props.range && (
-          <nav className={styles.pager} aria-label={`${WEB_COPY.archive.previousPage} / ${WEB_COPY.archive.nextPage}`}>
+          <div className={styles.pager}>
             <span className={styles.range}>
               {WEB_COPY_TEMPLATES.pageRange
                 .replace('{start}', String(props.range.start))
@@ -2687,7 +2690,7 @@ export function ArchiveScreen(props: ArchiveScreenProps) {
             </span>
             <PagerLink href={props.newerHref} label={WEB_COPY.archive.previousPage} />
             <PagerLink href={props.olderHref} label={WEB_COPY.archive.nextPage} />
-          </nav>
+          </div>
         )}
       </section>
     </div>
@@ -3424,7 +3427,7 @@ Expected:
   - `Test Files N passed (N)` and `Tests M passed (M)`, with **no** `Errors` line
   - build OK, listing `/admin/[guildId]/archive`, `/admin/[guildId]/settings`, `/admin/[guildId]/setup`, and both new `/api/admin/...` routes as dynamic
 
-- [ ] **Step 2: Responsive pass.** Run `pnpm dev` against local Postgres. Use the Playwright MCP browser with a seeded session cookie: insert an `admin_sessions` row with the HMAC of a known token, or exchange a token issued from a test script. Check Screens D and E at widths 1280, 960, 640 and 390.
+- [ ] **Step 2: Responsive pass.** Run `PUBLIC_BASE_URL=http://localhost:3000 pnpm dev` against local Postgres. With the production URL from `.env`, every content POST from localhost fails the Origin check with 403, and every row shows `오류`. Use the Playwright MCP browser with a seeded session cookie: insert an `admin_sessions` row with the HMAC of a known token, or exchange a token issued from a test script. Check Screens D and E at widths 1280, 960, 640 and 390.
   - There is no horizontal page scroll at any width.
   - Long URLs and code stay inside the card.
   - The Screen E columns stack below 960px.
@@ -3459,7 +3462,7 @@ Expected:
 
 - [ ] **Step 7: Live checks, with Ori in the test guild `testa`.** Confirm each against production rows.
   1. **Screen C links.** After `/setup` on a configured guild, the link lands on Screen E. On a fresh first setup in a new guild, Screen C's two links open Screen D and Screen E.
-  2. **Screen D content.** It lists the ACTIVE clips with live content. Filtering by channel changes the count. With 21 or more clips, both pagination directions work. Seed them by clipping 21 messages, or skip this part and say so.
+  2. **Screen D content.** It lists the ACTIVE clips with live content. If snapshot bodies come back empty, check the bot's Message Content intent before suspecting the parser. Filtering by channel changes the count. With 21 or more clips, both pagination directions work. Seed them by clipping 21 messages, or skip this part and say so.
   3. **Missing copy.** Delete one archive forward message in Discord; its row shows `누락` with the metadata kept.
   4. **Access denied.** Deny the bot `READ_MESSAGE_HISTORY` on `#clip-archive`; rows show the access `오류`. Restore the permission afterwards.
   5. **Settings edit.** `설정 변경`, change roles, save. You land on Screen E with `설정을 저장했습니다.`
