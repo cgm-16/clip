@@ -22,16 +22,17 @@ export default async function ArchivePage({ params, searchParams }: PageProps<'/
   const before = single(query.before);
   const after = single(query.after);
 
+  const result = await getClipPage({ guildId, sourceChannelId: channel, before, after });
+  if (result.kind === 'INVALID') {
+    // A malformed or hand-edited URL: recover to the first page, never an
+    // unbounded query -- and before spending any Discord lookups on it.
+    redirect(archiveHref(guildId, {}));
+  }
   const lookup = createDiscordGuildLookup({ botToken: parseEnv(process.env).DISCORD_BOT_TOKEN, fetchImpl: fetch });
-  const [result, guildName, channelNames] = await Promise.all([
-    getClipPage({ guildId, sourceChannelId: channel, before, after }),
+  const [guildName, channelNames] = await Promise.all([
     lookup.getGuildName(guildId),
     lookup.getGuildChannelNames(guildId),
   ]);
-  if (result.kind === 'INVALID') {
-    // A malformed or hand-edited URL: recover to the first page, never an unbounded query.
-    redirect(archiveHref(guildId, {}));
-  }
   const { page } = result;
   return (
     <ArchiveScreen
