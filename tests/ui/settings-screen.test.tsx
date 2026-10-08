@@ -130,3 +130,20 @@ test('a deleted archive channel is called out with 누락 (#58)', () => {
     screen.getByText('설정된 아카이브 채널이 Discord에 없습니다. 다른 채널을 선택하거나 새로 만들어 주세요.'),
   ).toBeInTheDocument();
 });
+
+test('취소 is disabled while the deletion is in flight', async () => {
+  fetchMock.mockReturnValue(new Promise(() => {}));
+  render(<SettingsScreen {...props} />);
+  await openAndAcknowledge();
+  await userEvent.click(screen.getByRole('button', { name: '삭제 실행' }));
+  expect(within(confirmPanel()).getByRole('button', { name: '취소' })).toBeDisabled();
+});
+
+test('a completed deletion is announced in a live region', async () => {
+  fetchMock.mockResolvedValue(new Response(JSON.stringify({ deleted: true }), { status: 200 }));
+  render(<SettingsScreen {...props} />);
+  await openAndAcknowledge();
+  await userEvent.click(screen.getByRole('button', { name: '삭제 실행' }));
+  const done = await screen.findByText(/이 서버의 Clip 데이터를 삭제했습니다/);
+  expect(done.closest('[aria-live="polite"]')).not.toBeNull();
+});

@@ -77,19 +77,21 @@ export function SettingsScreen(props: SettingsScreenProps) {
   return (
     <div className={styles.page}>
       <AdminHeader guildId={props.guildId} guildLabel={props.guildLabel} active="settings" />
+      {/* Always mounted, so both the saved toast and the deletion result are announced. */}
       <div aria-live="polite" className={styles.toast}>
         {props.saved && flow === 'idle' && <Callout variant="ok">{WEB_COPY.setup.saved}</Callout>}
+        {flow === 'deleted' && (
+          <div className={styles.done}>
+            <Callout variant="ok">{WEB_COPY_AUTHORED.deletionCompleted}</Callout>
+            <Callout variant="note">
+              {RECOVERY_BEFORE}
+              <MonoChip>{RETRY_COMMAND}</MonoChip>
+              {RECOVERY_AFTER}
+            </Callout>
+          </div>
+        )}
       </div>
-      {flow === 'deleted' ? (
-        <section className={styles.done}>
-          <Callout variant="ok">{WEB_COPY_AUTHORED.deletionCompleted}</Callout>
-          <Callout variant="note">
-            {RECOVERY_BEFORE}
-            <MonoChip>{RETRY_COMMAND}</MonoChip>
-            {RECOVERY_AFTER}
-          </Callout>
-        </section>
-      ) : (
+      {flow !== 'deleted' && (
         <div className={styles.columns}>
           <section className={styles.main}>
             <span className={styles.label}>{copy.currentSettingsLabel}</span>
@@ -149,7 +151,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
                 <Button variant="danger" onClick={confirmDeletion} disabled={!acknowledged || flow === 'deleting'}>
                   {copy.confirmDeletion}
                 </Button>
-                <Button variant="secondary" onClick={cancel}>
+                <Button variant="secondary" onClick={cancel} disabled={flow === 'deleting'}>
                   {copy.cancel}
                 </Button>
               </div>
