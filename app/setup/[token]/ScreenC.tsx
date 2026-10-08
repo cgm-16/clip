@@ -2,7 +2,8 @@ import { Button } from '@/components/ui/Button';
 import { Callout } from '@/components/ui/Callout';
 import { MonoChip } from '@/components/ui/MonoChip';
 import { TextTag } from '@/components/ui/TextTag';
-import { WEB_COPY, WEB_COPY_TEMPLATES } from '@/lib/ui/copy';
+import { ConfigTable } from '@/components/admin/ConfigTable';
+import { WEB_COPY } from '@/lib/ui/copy';
 import styles from './ScreenC.module.css';
 
 // The `채널 관리` permission constant inside `manageChannelNoLongerNeeded`
@@ -61,30 +62,11 @@ export function ScreenC({
           <h1 className={styles.title}>{copy.title}</h1>
         </div>
 
-        <div className={styles.summary}>
-          <div className={styles.row}>
-            <span className={styles.key}>{copy.archiveChannelKey}</span>
-            <span className={`${styles.value} ${styles.mono}`}>{`#${archiveChannelName}`}</span>
-          </div>
-          {allowedRoles.length > 0 && (
-            <div className={styles.row}>
-              <span className={styles.key}>{copy.allowedRolesKey}</span>
-              <span className={`${styles.value} ${styles.mono}`}>
-                {allowedRoles.map((role) => `@${role.name}`).join(' · ')}
-              </span>
-            </div>
-          )}
-          <div className={styles.row}>
-            <span className={styles.key}>{copy.adminsKey}</span>
-            <span className={styles.value}>{copy.adminsValue}</span>
-          </div>
-          <div className={styles.row}>
-            <span className={styles.key}>{copy.clipCountKey}</span>
-            <span className={`${styles.value} ${styles.mono}`}>
-              {WEB_COPY_TEMPLATES.clipCount.replace('{count}', String(clipCount))}
-            </span>
-          </div>
-        </div>
+        <ConfigTable
+          archiveChannelLabel={archiveChannelName}
+          allowedRoles={allowedRoles}
+          clipCount={clipCount}
+        />
 
         <div className={styles.usage}>
           <span className={styles.usageHeading}>{copy.usageHeading}</span>

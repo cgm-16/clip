@@ -1,0 +1,43 @@
+/*
+ * The setup summary table shared by Screen C and Screen E. Values:
+ * design/Clip P0 Screens.dc.html:124-152 (Screen C), moved unchanged from
+ * ScreenC.module.css.
+ */
+.summary {
+  display: flex;
+  flex-direction: column;
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius);
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-3) 14px;
+  border-bottom: var(--hairline) solid var(--divider);
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.key {
+  font: 400 11px / 1.4 var(--font-mono);
+  color: var(--muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  flex: none;
+}
+
+.value {
+  font: 400 12.5px / 1.4 var(--font-ui);
+  color: var(--text);
+  text-align: right;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
