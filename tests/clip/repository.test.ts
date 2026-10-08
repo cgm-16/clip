@@ -616,6 +616,29 @@ describe('clip repository', () => {
     expect(await prisma.clip.count({ where: { guildId } })).toBe(1);
   });
 
+  test('a configuration keeps its configurationId across edits', async () => {
+    const guildId = trackedGuildId();
+    const base = { guildId, configuredByUserId: fakeSnowflake(), allowedRoleIds: [] };
+    await upsertGuildArchiveConfig({ ...base, archiveChannelId: fakeSnowflake() });
+    const first = await prisma.guildConfig.findUniqueOrThrow({ where: { guildId } });
+    expect(first.configurationId).toMatch(/^[0-9a-f-]{36}$/);
+
+    await upsertGuildArchiveConfig({ ...base, archiveChannelId: fakeSnowflake(), allowedRoleIds: [fakeSnowflake()] });
+    const second = await prisma.guildConfig.findUniqueOrThrow({ where: { guildId } });
+    expect(second.configurationId).toBe(first.configurationId);
+  });
+
+  test('a configuration recreated after deletion gets a new configurationId', async () => {
+    const guildId = trackedGuildId();
+    const input = { guildId, archiveChannelId: fakeSnowflake(), configuredByUserId: fakeSnowflake(), allowedRoleIds: [] };
+    await upsertGuildArchiveConfig(input);
+    const first = await prisma.guildConfig.findUniqueOrThrow({ where: { guildId } });
+    await prisma.guildConfig.delete({ where: { guildId } });
+    await upsertGuildArchiveConfig(input);
+    const second = await prisma.guildConfig.findUniqueOrThrow({ where: { guildId } });
+    expect(second.configurationId).not.toBe(first.configurationId);
+  });
+
   test('countArchivedClips counts only ACTIVE clips for the guild', async () => {
     const guildId = trackedGuildId();
 
