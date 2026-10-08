@@ -62,6 +62,12 @@ export function AdminSetupEdit({ guildId }: { guildId: string }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(submission),
       });
+      if (response.status === 401) {
+        // The session expired or was revoked (e.g. by a data deletion): the
+        // recovery screen, not a save failure that invites a pointless retry.
+        setState({ status: 'expired' });
+        return { kind: 'failed' };
+      }
       if (!response.ok) {
         return saveOutcomeOf(response);
       }

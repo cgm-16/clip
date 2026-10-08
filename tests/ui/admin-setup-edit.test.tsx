@@ -129,3 +129,11 @@ test('a deleted archive channel is flagged on the form (#58)', async () => {
   render(<AdminSetupEdit guildId="g1" />);
   expect(await screen.findByText(WEB_COPY_AUTHORED.archiveChannelMissing)).toBeInTheDocument();
 });
+
+test('a save refused for an expired session shows the session-expired screen, not a save failure', async () => {
+  const user = userEvent.setup();
+  stubFetch(() => new Response(null, { status: 401 }));
+  render(<AdminSetupEdit guildId="g1" />);
+  await user.click(await screen.findByRole('button', { name: WEB_COPY.setup.save }));
+  expect(await screen.findByText(WEB_COPY_AUTHORED.adminSessionExpiredTitle)).toBeInTheDocument();
+});
