@@ -78,6 +78,15 @@ function errorCodeOf(error: unknown): string {
   return 'ARCHIVE_UNEXPECTED_ERROR';
 }
 
+/**
+ * `lockClip`'s configuration check, or none. A guild with no configuration
+ * (§17 case 12) still lets Unclip and removal converge on the control plane,
+ * so a null id means "do not check", never "refuse".
+ */
+function configurationOptions(configurationId: string | null): { configurationId?: string } {
+  return configurationId === null ? {} : { configurationId };
+}
+
 export function createClipService(gateway: DiscordArchiveGateway) {
   /**
    * Deletes an archive we can no longer reference, never failing the caller.
@@ -115,7 +124,7 @@ export function createClipService(gateway: DiscordArchiveGateway) {
    * `ACTIVE -> FAILED` (a concurrent retry that won) would blank the §9.3
    * signal while leaving both ids in place.
    */
-  async function recordArchiveFailure(key: ClipKey): Promise<void> {
+  async function recordArchiveFailure(key: ClipKey, configurationId: string): Promise<void> {
     await lockClip(key.guildId, key.sourceMessageId, async (tx, locked) => {
       if (!canTransition(locked.status, 'FAILED')) {
         return;
@@ -125,7 +134,7 @@ export function createClipService(gateway: DiscordArchiveGateway) {
       if (applied) {
         logTransition(key, locked.status, 'FAILED');
       }
-    });
+    }, { configurationId });
   }
 
   /**
@@ -140,6 +149,7 @@ export function createClipService(gateway: DiscordArchiveGateway) {
   async function publishArchive(
     key: ClipKey,
     archive: ArchiveMessageIds,
+    configurationId: string | null,
   ): Promise<{ published: true } | { published: false; clip: ClipRecord | null }> {
     const outcome = await lockClip(key.guildId, key.sourceMessageId, async (tx, locked) => {
       if (!canTransition(locked.status, 'ACTIVE')) {
@@ -161,7 +171,7 @@ export function createClipService(gateway: DiscordArchiveGateway) {
       }
       logTransition(key, locked.status, 'ACTIVE');
       return { published: true as const };
-    });
+    }, configurationOptions(configurationId));
     return outcome ?? { published: false, clip: null };
   }
 
@@ -211,6 +221,10 @@ export function createClipService(gateway: DiscordArchiveGateway) {
     }
 
     const { config, created, clip: claimed } = claim;
+    // Every later write rechecks the configuration this claim ran under: a
+    // deletion followed by re-setup inside the Discord round-trip must not let
+    // this request write onto the new configuration's Clip.
+    const { configurationId } = config;
     if (isTerminalStatus(claimed.status)) {
       // §7.4: the tombstone blocks recreation, and no preservation signal is
       // recorded against it -- recording one would resurrect the harassment
@@ -233,7 +247,7 @@ export function createClipService(gateway: DiscordArchiveGateway) {
         status: locked.status,
         archive: archiveOf(locked),
       };
-    });
+    }, { configurationId });
     if (joined === null) {
       // The Clip was deleted between the claim and the lock, so this request's
       // signal never landed. Retrying re-claims it from scratch.
@@ -283,7 +297,7 @@ export function createClipService(gateway: DiscordArchiveGateway) {
           forwardMessageId: error.orphanedProvenanceMessageId,
         });
       }
-      await recordArchiveFailure(key);
+      await recordArchiveFailure(key, configurationId);
       if (error instanceof ArchiveTargetUnavailableError) {
         return { kind: 'SOURCE_UNAVAILABLE' };
       }
@@ -296,7 +310,7 @@ export function createClipService(gateway: DiscordArchiveGateway) {
       return { kind: 'FAILED', retryable: false };
     }
 
-    const published = await publishArchive(key, archive);
+    const published = await publishArchive(key, archive, configurationId);
     if (published.published) {
       return { kind: 'CREATED', archive };
     }
@@ -331,8 +345,9 @@ export function createClipService(gateway: DiscordArchiveGateway) {
     key: ClipKey;
     archiveChannelId: string | null;
     archive: ArchiveMessageIds | null;
+    configurationId: string | null;
   }): Promise<void> {
-    const { key, archiveChannelId } = context;
+    const { key, archiveChannelId, configurationId } = context;
     let archive = context.archive;
 
     for (;;) {
@@ -380,7 +395,7 @@ export function createClipService(gateway: DiscordArchiveGateway) {
           return { revived: false as const };
         }
         return { revived: true as const, clip: locked };
-      });
+      }, configurationOptions(configurationId));
       if (outcome === null || !outcome.revived) {
         return;
       }
@@ -411,7 +426,7 @@ export function createClipService(gateway: DiscordArchiveGateway) {
         return;
       }
 
-      const published = await publishArchive(key, recreated);
+      const published = await publishArchive(key, recreated, configurationId);
       if (published.published) {
         return;
       }
@@ -466,7 +481,7 @@ export function createClipService(gateway: DiscordArchiveGateway) {
       }
       logTransition(key, locked.status, 'DELETING');
       return { kind: 'DELETING' as const, archive: archiveOf(locked) };
-    });
+    }, configurationOptions(config?.configurationId ?? null));
 
     if (outcome === null) {
       return { kind: 'NOT_FOUND' };
@@ -482,6 +497,7 @@ export function createClipService(gateway: DiscordArchiveGateway) {
         key,
         archiveChannelId: config?.archiveChannelId ?? null,
         archive: outcome.archive,
+        configurationId: config?.configurationId ?? null,
       });
     }
     return { kind: 'UNCLIPPED', remaining: 0 };
@@ -524,7 +540,7 @@ export function createClipService(gateway: DiscordArchiveGateway) {
       await deleteClippers(tx, input.guildId, input.sourceMessageId);
       logTransition(key, locked.status, next);
       return { kind: 'REMOVED' as const, archive: archiveOf(locked) };
-    });
+    }, configurationOptions(config?.configurationId ?? null));
 
     if (outcome === null) {
       return { kind: 'NOT_FOUND' };
@@ -540,8 +556,11 @@ export function createClipService(gateway: DiscordArchiveGateway) {
       // clippable while its archive is gone.
       const deleted = await deleteArchiveQuietly(key, config.archiveChannelId, outcome.archive);
       if (deleted) {
-        await lockClip(key.guildId, key.sourceMessageId, (tx) =>
-          clearArchiveMessageIds(tx, key.guildId, key.sourceMessageId),
+        await lockClip(
+          key.guildId,
+          key.sourceMessageId,
+          (tx) => clearArchiveMessageIds(tx, key.guildId, key.sourceMessageId),
+          configurationOptions(config.configurationId),
         );
       }
     }

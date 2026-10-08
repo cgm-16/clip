@@ -165,6 +165,47 @@ describe('clip service', () => {
     expect(await countClipperRows(fixture)).toBe(1);
   });
 
+  test('a completion that straddles deletion and re-setup is discarded, not applied to the new Clip', async () => {
+    const fixture = await seedConfiguredGuild();
+    const newChannelId = fakeSnowflake();
+    const first = clipInput(fixture, fakeSnowflake());
+    const second = clipInput(fixture, fakeSnowflake());
+
+    gateway.onNextCreate(async () => {
+      // Inside the first request's Discord round-trip: the guild's data is
+      // deleted, the guild is set up again (a new configurationId), and
+      // someone clips the same message under the new configuration.
+      const { guildId } = fixture;
+      await prisma.clipper.deleteMany({ where: { guildId } });
+      await prisma.clip.deleteMany({ where: { guildId } });
+      await prisma.guildAllowedRole.deleteMany({ where: { guildId } });
+      await prisma.guildConfig.deleteMany({ where: { guildId } });
+      await prisma.guildConfig.create({
+        data: {
+          guildId,
+          archiveChannelId: newChannelId,
+          configuredByUserId: fakeSnowflake(),
+          allowedRoles: { create: [{ roleId: fixture.allowedRoleId }] },
+        },
+      });
+      expect((await service.clip(second)).kind).toBe('CREATED');
+    });
+
+    const result = await service.clip(first);
+
+    expect(result).toEqual({ kind: 'FAILED', retryable: true });
+    const row = await readClip(fixture);
+    expect(row?.status).toBe('ACTIVE');
+    // The fake gateway numbers a pair only after its hook returns, so the
+    // nested (new-configuration) clip posted pair 1 and the stale outer one
+    // posted pair 2.
+    expect(row?.archiveProvenanceMessageId).toBe('provenance-1');
+    expect(gateway.deleteCalls).toContainEqual({
+      archiveChannelId: fixture.archiveChannelId,
+      ids: { provenanceMessageId: 'provenance-2', forwardMessageId: 'forward-2' },
+    });
+  });
+
   test('logs the state transition rather than anything that could carry content', async () => {
     const fixture = await seedConfiguredGuild();
     const logged = vi.mocked(console.log);
