@@ -24,6 +24,11 @@ import { getPrismaClient } from '@/lib/db';
  * one message -- fine at a guild's interaction rate. If it ever measures
  * slow, keep the guild lock for lifecycle writers and have Clip writers take
  * it in shared mode (`pg_advisory_xact_lock_shared`).
+ *
+ * Time spent waiting for this lock counts against Prisma's interactive
+ * transaction timeout (5s by default). A writer queued behind a large
+ * guild's deletion can therefore fail with a transaction timeout rather
+ * than wait.
  */
 export async function lockGuild(tx: TxClient, guildId: string): Promise<void> {
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`clip.guild:${guildId}`}, 0))`;
