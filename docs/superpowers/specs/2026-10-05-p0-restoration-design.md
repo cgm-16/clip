@@ -142,7 +142,7 @@ Restore the design/copy CI guard as focused checks of changed UI files: approved
 
 ## Acceptance and evidence
 
-Use the project's existing Vitest/Testing Library suites and real PostgreSQL 17. Demonstrate failing behavior checks before each feature/fix. Functional acceptance includes:
+Use the project's existing Vitest/Testing Library suites and real PostgreSQL 18. Demonstrate failing behavior checks before each feature/fix. Functional acceptance includes:
 
 - Empty/add/remove role selection, guild ownership validation, `@everyone` refusal, role-only updates with live clips, admin exemption, configured member authorization and withdrawal after losing a role.
 - Effective destination permission refusals and successful setup without changing existing-channel overwrites; private auto-create with bot read/write access and bootstrap permission revocation.
