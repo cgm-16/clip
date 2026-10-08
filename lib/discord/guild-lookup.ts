@@ -195,6 +195,8 @@ export type DiscordGuildLookup = {
   getGuildName(guildId: string): Promise<string | null>;
   /** Display only: null on any failure. */
   getUserHandle(userId: string): Promise<string | null>;
+  /** Display only: every channel type, {} on any failure. Threads are absent; callers fall back to the id. */
+  getGuildChannelNames(guildId: string): Promise<Record<string, string>>;
 };
 
 export function createDiscordGuildLookup(options: DiscordGuildLookupOptions): DiscordGuildLookup {
@@ -241,6 +243,17 @@ export function createDiscordGuildLookup(options: DiscordGuildLookupOptions): Di
     },
     async getUserHandle(userId: string): Promise<string | null> {
       return stringField(await fetchOrNull(`/users/${userId}`), 'username');
+    },
+    async getGuildChannelNames(guildId: string): Promise<Record<string, string>> {
+      const body = await fetchOrNull(`/guilds/${guildId}/channels`);
+      const names: Record<string, string> = {};
+      for (const item of Array.isArray(body) ? body : []) {
+        const channel = item as { id?: unknown; name?: unknown } | null;
+        if (typeof channel?.id === 'string' && typeof channel.name === 'string') {
+          names[channel.id] = channel.name;
+        }
+      }
+      return names;
     },
   };
 }

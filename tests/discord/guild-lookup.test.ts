@@ -320,3 +320,23 @@ describe('display lookups', () => {
     expect(await lookup.getUserHandle(BOT_USER_ID)).toBeNull();
   });
 });
+
+describe('getGuildChannelNames', () => {
+  test('names every channel type, for display', async () => {
+    const { fetchImpl } = stubFetch({
+      channels: json([
+        rawChannel('100', 'general', 0),
+        rawChannel('200', 'voice', 2),
+        rawChannel('300', 'news', 5),
+      ]),
+    });
+    const lookup = createDiscordGuildLookup({ botToken: BOT_TOKEN, fetchImpl });
+    expect(await lookup.getGuildChannelNames(GUILD_ID)).toEqual({ '100': 'general', '200': 'voice', '300': 'news' });
+  });
+
+  test('is empty when the lookup fails', async () => {
+    const { fetchImpl } = stubFetch({ channels: json({ message: 'nope' }, 500) });
+    const lookup = createDiscordGuildLookup({ botToken: BOT_TOKEN, fetchImpl, sleep: async () => {} });
+    expect(await lookup.getGuildChannelNames(GUILD_ID)).toEqual({});
+  });
+});
