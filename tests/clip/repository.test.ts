@@ -24,6 +24,7 @@ import {
   removeClipper,
   upsertGuildArchiveConfig,
 } from '@/lib/clip/repository';
+import { withGuildLock } from '@/lib/guild-lock';
 
 const CONCURRENT_CLAIMERS = 10;
 const CONCURRENT_CLIPPERS = 8;
@@ -590,8 +591,10 @@ describe('clip repository', () => {
                 AND pid <> pg_backend_pid()
                 AND state = 'active'
                 AND wait_event_type = 'Lock'
-                AND query LIKE '%guild_configs%'
-                AND query LIKE '%FOR UPDATE%'
+                AND (
+                  query LIKE '%pg_advisory_xact_lock%'
+                  OR (query LIKE '%guild_configs%' AND query LIKE '%FOR UPDATE%')
+                )
             ) AS blocked
           `;
           expect(activity?.blocked).toBe(true);
@@ -637,6 +640,58 @@ describe('clip repository', () => {
     await upsertGuildArchiveConfig(input);
     const second = await prisma.guildConfig.findUniqueOrThrow({ where: { guildId } });
     expect(second.configurationId).not.toBe(first.configurationId);
+  });
+
+  test('lockClip refuses a configurationId that is no longer current', async () => {
+    const input = newClipInput();
+    await upsertGuildArchiveConfig({
+      guildId: input.guildId,
+      archiveChannelId: fakeSnowflake(),
+      configuredByUserId: fakeSnowflake(),
+      allowedRoleIds: [],
+    });
+    await claimClip(input);
+    const config = await findGuildArchiveConfig(input.guildId);
+
+    const called = vi.fn(async () => 'ran');
+    expect(
+      await lockClip(input.guildId, input.sourceMessageId, called, { configurationId: config!.configurationId }),
+    ).toBe('ran');
+    expect(
+      await lockClip(input.guildId, input.sourceMessageId, called, { configurationId: randomUUID() }),
+    ).toBeNull();
+    expect(called).toHaveBeenCalledTimes(1);
+  });
+
+  test('lockClip with a configurationId refuses when the guild has no config', async () => {
+    const input = newClipInput();
+    await claimClip(input);
+    expect(
+      await lockClip(input.guildId, input.sourceMessageId, async () => 'ran', { configurationId: randomUUID() }),
+    ).toBeNull();
+  });
+
+  test('a Clip row lock waits behind the guild lock', async () => {
+    const input = newClipInput();
+    await claimClip(input);
+    await warmConnectionPool(2);
+    const holding = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const order: string[] = [];
+    const guildWriter = withGuildLock(input.guildId, async () => {
+      holding.resolve();
+      await release.promise;
+      order.push('guild');
+    });
+    await holding.promise;
+    const clipWriter = lockClip(input.guildId, input.sourceMessageId, async () => {
+      order.push('clip');
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(order).toEqual([]);
+    release.resolve();
+    await Promise.all([guildWriter, clipWriter]);
+    expect(order).toEqual(['guild', 'clip']);
   });
 
   test('countArchivedClips counts only ACTIVE clips for the guild', async () => {

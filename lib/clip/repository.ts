@@ -1,6 +1,7 @@
 import type { AuthorNotificationStatus, ClipStatus, Prisma } from '@/generated/prisma/client';
 import type { ArchiveMessageIds } from '@/lib/clip/types';
 import { getPrismaClient } from '@/lib/db';
+import { lockGuild } from '@/lib/guild-lock';
 
 /** A Prisma client scoped to an open transaction. See `lockClip`. */
 export type TxClient = Prisma.TransactionClient;
@@ -19,6 +20,8 @@ export type ClipRecord = {
 export type GuildArchiveConfig = {
   archiveChannelId: string;
   allowedRoleIds: string[];
+  /** This configuration's lifetime id; see `GuildConfig.configurationId`. */
+  configurationId: string;
 };
 
 const clipRecordSelect = {
@@ -33,16 +36,19 @@ const clipRecordSelect = {
 
 const guildArchiveConfigSelect = {
   archiveChannelId: true,
+  configurationId: true,
   allowedRoles: { select: { roleId: true } },
 } as const;
 
 function guildArchiveConfigOf(config: {
   archiveChannelId: string;
+  configurationId: string;
   allowedRoles: { roleId: string }[];
 }): GuildArchiveConfig {
   return {
     archiveChannelId: config.archiveChannelId,
     allowedRoleIds: config.allowedRoles.map((role) => role.roleId),
+    configurationId: config.configurationId,
   };
 }
 
@@ -128,13 +134,33 @@ export function claimClipInTransaction(
  * obligation, and the count-dependent ones -- `removeClipper` and
  * `countClippers` -- return answers that are simply wrong if it is not
  * honoured.
+ *
+ * With `options.configurationId`, resolves to null without calling `fn`
+ * unless the guild's current configuration still has that id: the guild lock
+ * makes the check and the write atomic with respect to deletion and re-setup.
  */
 export function lockClip<T>(
   guildId: string,
   sourceMessageId: string,
   fn: (tx: TxClient, clip: ClipRecord) => Promise<T>,
+  options: { configurationId?: string } = {},
 ): Promise<T | null> {
   return getPrismaClient().$transaction(async (tx) => {
+    // Guild lock first, always: see lib/guild-lock.ts for the lock order.
+    await lockGuild(tx, guildId);
+    if (options.configurationId !== undefined) {
+      // The caller started under a configuration that a deletion (and
+      // perhaps a re-setup) has since replaced. Its write belongs to a
+      // lifetime that no longer exists, so it is discarded rather than
+      // applied to whatever Clip now holds the same key.
+      const current = await tx.guildConfig.findUnique({
+        where: { guildId },
+        select: { configurationId: true },
+      });
+      if (current?.configurationId !== options.configurationId) {
+        return null;
+      }
+    }
     const locked = await tx.$executeRaw`
       SELECT 1 FROM clips
       WHERE guild_id = ${guildId} AND source_message_id = ${sourceMessageId}
@@ -166,6 +192,8 @@ export function lockGuildConfig<T>(
   fn: (tx: TxClient, config: GuildArchiveConfig) => Promise<T>,
 ): Promise<T | null> {
   return getPrismaClient().$transaction(async (tx) => {
+    // Guild lock first, always: see lib/guild-lock.ts.
+    await lockGuild(tx, guildId);
     const locked = await tx.$executeRaw`
       SELECT 1 FROM guild_configs
       WHERE guild_id = ${guildId}
