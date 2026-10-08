@@ -5,7 +5,7 @@ map: what blocks what, what can run in parallel, and where the critical path is.
 implementer brief; this file carries the ordering. Keeping detail in one place stops the two from
 drifting.
 
-**Deadline: 2026-08-20 23:59 KST.**
+**Deadline: 2026-08-20 23:59 KST** (passed; the cut order below was applied at submission). The P0 restoration's target and cut order live in `CLAUDE.md` and `docs/superpowers/specs/2026-10-05-p0-restoration-design.md`.
 
 ---
 

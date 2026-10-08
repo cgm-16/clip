@@ -1,0 +1,83 @@
+/*
+ * The role multi-select (docs/06_DESIGN_HANDOFF.md "Role multi-select").
+ * Focus rings come from the global `:focus-visible` rule in app/globals.css.
+ */
+.field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-control-y) var(--sp-control-x);
+  background: var(--sunken);
+  border: var(--hairline) solid var(--border-strong);
+  border-radius: var(--radius);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-role-chip-y) var(--sp-chip-x);
+  background: var(--chip-surface);
+  border: var(--hairline) solid var(--border-strong);
+  border-radius: var(--radius-chip);
+  font: 400 var(--fs-small) / 1 var(--font-mono);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.remove {
+  color: var(--muted);
+}
+
+.add {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: 400 var(--fs-label) / 1 var(--font-ui);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.options {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: var(--hairline) solid var(--border-strong);
+  border-radius: var(--radius);
+}
+
+.option + .option {
+  border-top: var(--hairline) solid var(--divider);
+}
+
+.optionLabel {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-option-x);
+  font: 400 var(--fs-small) / 1 var(--font-mono);
+  color: var(--text);
+  transition: background-color 120ms;
+}
+
+.optionLabel:hover,
+.optionLabel:focus-within {
+  background: var(--hover-surface);
+}
+
+/* `@everyone`: present but unselectable (handoff). */
+.optionLabel:has(input:disabled) {
+  color: var(--faint);
+  cursor: not-allowed;
+}
+
+/* The removal announcement: read by screen readers, never drawn. */
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

@@ -283,3 +283,27 @@ Ori 는 2026-08-20 **불일치를 P0 한정으로 승인하고 기록만 남기�
 **정정 방향:** 역할 설정이 P1 에서 구현되면, 문구가 아니라 동작이 문구를 따라잡아야 한다 —
 채널 생성 로직이 실제로 설정된 역할에 `VIEW_CHANNEL` 을 부여하도록 확장하는 쪽이 맞고, 문구를
 되돌려 낮추는 쪽이 아니다.
+
+## 12. 2026-10-05 — P0 restoration and clipping-only role authority
+
+Ori approved revisiting the deadline cuts to complete the original P0, with no current deadline. The restored scope is clipping-role configuration, the admin web archive, current configuration/guild-data deletion, destination permission validation, and the deferred verification work. P1 candidates retain their deferred status.
+
+Ori explicitly chose clipping authority only for configured roles. Admins manage Discord archive readership separately. No configured-role edit automatically grants or removes `VIEW_CHANNEL`; existing-channel overwrites remain untouched and `MANAGE_CHANNELS` remains bootstrap-only. This decision supersedes §11.6's future role-readable direction. That entry records the earlier decision and is not rewritten.
+
+The existing setup sentence in the handoff/string table still promises role-readable automatic creation. Ori authorized drafting its replacement and the missing recovery copy for review. Proposed text lives in [the restoration design](superpowers/specs/2026-10-05-p0-restoration-design.md#korean-copy-drafts-for-review); it is not yet approved production copy. Implementation will update the handoff and quoted string table together after review.
+
+The design also distinguishes a confirmed missing Discord copy from permission/transient read failures. The latter must not use the missing-copy explanation that suggests a message was deleted. Metadata remains visible in either case.
+
+This entry records design decisions and a draft, not implemented functionality or new test results.
+
+## 13. 2026-10-07 — Auto-create description and setup refusal copy
+
+The handoff's auto-create description promised that only configured roles could view the archive. §12 separated clipping authority from readership, so the sentence was replaced with Ori's approved text in the handoff and the string table together. Ori's first wording ended "채널 관리 역할을 회수해 주세요"; Ori confirmed the intended word is 권한 (the `MANAGE_CHANNELS` permission, not the bot's role), and that "(선택적)" renders on screen.
+
+Two refusal strings with no handoff source — missing destination permissions and a destination change blocked by live Clips — were added to `WEB_COPY_AUTHORED` from the restoration design's draft table after Ori's approval. A role deleted in Discord after it was saved is refused with the existing generic save-failure copy for now; Ori accepted that until a specific string is approved.
+
+The role multi-select's highlighted option uses the existing `--hover-surface` (`#17191d`) rather than the handoff's `#16191d`; one step of difference does not justify a near-duplicate token.
+
+## 14. 2026-10-08 — Role chip removal announcement
+
+The role multi-select removed chips silently for screen-reader users: Backspace on the add control said nothing, and a chip click only moved focus to the add control. Issue #11 requires the selection state to be announced, so the PR #55 review flagged it. Both removal paths now write `{role} 역할이 제거되었습니다.` into a visually hidden polite live region inside the component, with `{role}` filled by the role exactly as its chip shows it. The handoff had no string for this; Ori supplied the copy on 2026-10-08, and it lives in `WEB_COPY_AUTHORED` and the handoff's "Role multi-select" section.

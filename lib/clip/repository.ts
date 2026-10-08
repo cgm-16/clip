@@ -391,22 +391,32 @@ type UpsertGuildArchiveConfigInput = {
   guildId: string;
   archiveChannelId: string;
   configuredByUserId: string;
+  /** Replaces the configured set. Callers dedupe and validate guild ownership first. */
+  allowedRoleIds: readonly string[];
 };
 
 async function upsertGuildArchiveConfigWithClient(
-  client: Pick<TxClient, 'guildConfig'>,
+  client: Pick<TxClient, 'guildConfig' | 'guildAllowedRole'>,
   input: UpsertGuildArchiveConfigInput,
 ): Promise<void> {
-  const { guildId, archiveChannelId, configuredByUserId } = input;
+  const { guildId, archiveChannelId, configuredByUserId, allowedRoleIds } = input;
   await client.guildConfig.upsert({
     where: { guildId },
     create: { guildId, archiveChannelId, configuredByUserId },
     update: { archiveChannelId, configuredByUserId },
   });
+  await client.guildAllowedRole.deleteMany({ where: { guildId } });
+  if (allowedRoleIds.length > 0) {
+    // No `skipDuplicates`: a duplicate is a caller bug, and failing here rolls
+    // the whole configuration write back instead of saving a partial set.
+    await client.guildAllowedRole.createMany({
+      data: allowedRoleIds.map((roleId) => ({ guildId, roleId })),
+    });
+  }
 }
 
 export function upsertGuildArchiveConfig(input: UpsertGuildArchiveConfigInput): Promise<void> {
-  return upsertGuildArchiveConfigWithClient(getPrismaClient(), input);
+  return getPrismaClient().$transaction((tx) => upsertGuildArchiveConfigWithClient(tx, input));
 }
 
 /**

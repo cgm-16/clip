@@ -155,4 +155,8 @@ describe('web UI copy', () => {
     );
     expect(WEB_COPY_AUTHORED.retry).toBe('다시 시도');
   });
+
+  it('keeps the approved role-removal announcement exact', () => {
+    expect(WEB_COPY_AUTHORED.roleRemoved).toBe('{role} 역할이 제거되었습니다.');
+  });
 });

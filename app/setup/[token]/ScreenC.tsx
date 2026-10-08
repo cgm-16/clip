@@ -25,14 +25,15 @@ export interface ScreenCProps {
   /** Whether Clip created the archive channel itself, vs. an existing one was chosen. */
   autoCreated: boolean;
   clipCount: number;
+  allowedRoles: { id: string; name: string }[];
   onReviewSettings?: () => void;
 }
 
 /**
  * Screen C — setup complete (`docs/06_DESIGN_HANDOFF.md` "Screen C").
- * Reached once `/setup/save` succeeds. The 허용 역할 row from the mockup is
- * omitted: allowed-role configuration is cut from P0 per the task brief, and
- * admin-only clipping (the 관리자 row) is what ships.
+ * Reached once `/setup/save` succeeds. The 허용 역할 row lists the configured
+ * roles and is omitted when none are configured -- the 관리자 row already says
+ * who can clip then, and the handoff has no empty-roles string.
  *
  * `아카이브 열기` points directly at the Discord archive channel -- Wave 5's
  * web archive view is cut, so there is no web page for it to open, and the
@@ -44,6 +45,7 @@ export function ScreenC({
   archiveChannelName,
   autoCreated,
   clipCount,
+  allowedRoles,
   onReviewSettings,
 }: ScreenCProps) {
   const copy = WEB_COPY.setupComplete;
@@ -64,6 +66,14 @@ export function ScreenC({
             <span className={styles.key}>{copy.archiveChannelKey}</span>
             <span className={`${styles.value} ${styles.mono}`}>{`#${archiveChannelName}`}</span>
           </div>
+          {allowedRoles.length > 0 && (
+            <div className={styles.row}>
+              <span className={styles.key}>{copy.allowedRolesKey}</span>
+              <span className={`${styles.value} ${styles.mono}`}>
+                {allowedRoles.map((role) => `@${role.name}`).join(' · ')}
+              </span>
+            </div>
+          )}
           <div className={styles.row}>
             <span className={styles.key}>{copy.adminsKey}</span>
             <span className={styles.value}>{copy.adminsValue}</span>

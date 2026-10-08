@@ -44,7 +44,7 @@ export const WEB_COPY = {
     /** The recommended option: Clip creates the channel itself. */
     destinationCreateLabel: '비공개 아카이브 채널 새로 만들기 — 권장',
     destinationCreateDescription:
-      'Clip이 #clip-archive 를 만들고, 설정된 역할만 볼 수 있도록 권한을 지정합니다. 생성이 끝나면 채널 관리 권한은 회수해도 됩니다.',
+      'Clip이 #clip-archive를 비공개 채널로 만듭니다. 클립 가능 역할은 채널 열람 권한이 없습니다. 해당 권한은 서버 관리자가 설정합니다. (선택적) 생성이 끝나면 채널 관리 권한을 회수해 주세요.',
     destinationExistingLabel: '기존 채널 사용',
     /** Shown once the existing-channel option is chosen. */
     destinationExistingWarning:
@@ -203,4 +203,25 @@ export const WEB_COPY_AUTHORED = {
    * treatment `WEB_COPY.expiredSetupLink.recovery` gives it.
    */
   saveFailed: '정보를 저장할 수 없습니다. 다시 시도하거나, /setup 으로 새로운 링크를 발급해 주세요.',
+  /**
+   * Screen B refusal — the chosen existing channel denies Clip a permission
+   * it needs; the missing constants render below as mono chips. Drafted in
+   * docs/superpowers/specs/2026-10-05-p0-restoration-design.md, approved by
+   * Ori on 2026-10-07.
+   */
+  destinationMissingPermissions:
+    '이 채널에서 Clip에 필요한 권한이 없습니다. Discord에서 아래 권한을 확인한 뒤 다시 시도해 주세요.',
+  /**
+   * Screen B refusal — `/setup/save` answered 409 because live Clips depend
+   * on the current archive channel. Same provenance as above.
+   */
+  destinationChangeBlocked:
+    '보관 중인 메시지가 있어 아카이브 채널을 변경할 수 없습니다. 기존 메시지를 보관에서 제거한 뒤 다시 시도해 주세요.',
+  /**
+   * Role multi-select — the polite live-region announcement when a chip is
+   * removed (chip click or Backspace). `{role}` is the role exactly as its
+   * chip shows it. Supplied by Ori on 2026-10-08 in the PR #55 review; see
+   * `docs/DESIGN_RATIONALE_APPEND.md` §14.
+   */
+  roleRemoved: '{role} 역할이 제거되었습니다.',
 } as const;

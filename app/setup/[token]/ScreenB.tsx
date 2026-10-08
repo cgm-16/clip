@@ -5,9 +5,10 @@ import { Button } from '@/components/ui/Button';
 import { Callout } from '@/components/ui/Callout';
 import { MonoChip } from '@/components/ui/MonoChip';
 import { RadioGroup } from '@/components/ui/RadioGroup';
+import { RoleMultiSelect } from '@/components/ui/RoleMultiSelect';
 import { Select } from '@/components/ui/Select';
 import { WEB_COPY, WEB_COPY_AUTHORED, WEB_COPY_TEMPLATES } from '@/lib/ui/copy';
-import type { SetupChannel } from '@/lib/discord/guild-lookup';
+import type { SetupChannel, SetupRole } from '@/lib/discord/guild-lookup';
 import { Wordmark } from './Wordmark';
 import styles from './ScreenB.module.css';
 
@@ -24,18 +25,33 @@ export type SetupSubmission = {
   destination: Destination;
   /** Only set for `existing`; `create` never carries a caller-chosen id. */
   channelId: string | null;
+  /** Roles allowed to clip. Empty means admins only. */
+  allowedRoleIds: string[];
 };
+
+/** How a save attempt settled — see `app/setup/save/route.ts` for the statuses behind each. */
+export type SaveOutcome =
+  | { kind: 'saved' }
+  | { kind: 'missing-permissions'; missingPermissions: string[] }
+  | { kind: 'live-clips' }
+  | { kind: 'failed' };
+
+/** The guild's saved configuration, used to prefill an edit. */
+export type InitialSetup = { archiveChannelId: string; allowedRoleIds: string[] };
 
 export interface ScreenBProps {
   channels: SetupChannel[];
+  roles?: SetupRole[];
+  /** The saved configuration; null (the default) for a first setup. */
+  initial?: InitialSetup | null;
   /**
-   * Persists the chosen destination. Resolves once the attempt is settled.
-   * `false` renders the save-failed error callout and keeps the admin on
-   * this screen so they can retry; `true` clears any prior failure and
-   * leaves post-save navigation (Screen C) to whichever screen owns that
+   * Persists the chosen destination and roles. Resolves once the attempt is
+   * settled. Anything but `saved` renders its error callout and keeps the
+   * admin on this screen so they can retry; `saved` clears any prior failure
+   * and leaves post-save navigation (Screen C) to whichever screen owns that
    * transition.
    */
-  onSubmit: (submission: SetupSubmission) => Promise<boolean>;
+  onSubmit: (submission: SetupSubmission) => Promise<SaveOutcome>;
   onCancel?: () => void;
   /**
    * Guild identity bar content (`docs/06_DESIGN_HANDOFF.md` Screen B). Both
@@ -60,17 +76,26 @@ const DESTINATION_OPTIONS = [
 ];
 
 /**
- * Screen B — first-run archive destination configuration
- * (`docs/06_DESIGN_HANDOFF.md` "Screen B"). Allowed-role configuration is
- * cut from P0 per the task brief; the form persists admin-only clipping,
- * which `docs/01_CLIP_PRODUCT_SPEC.md` already permits.
+ * Screen B — archive destination and clipping-role configuration
+ * (`docs/06_DESIGN_HANDOFF.md` "Screen B"). A configured guild opens
+ * prefilled with its current channel (as `existing`) and roles, so a
+ * roles-only edit never creates a second channel.
  */
-export function ScreenB({ channels, onSubmit, onCancel, guildName, adminHandle }: ScreenBProps) {
-  const [destination, setDestination] = useState<Destination>('create');
-  const [channelId, setChannelId] = useState('');
+export function ScreenB({
+  channels,
+  roles = [],
+  initial = null,
+  onSubmit,
+  onCancel,
+  guildName,
+  adminHandle,
+}: ScreenBProps) {
+  const [destination, setDestination] = useState<Destination>(initial ? 'existing' : 'create');
+  const [channelId, setChannelId] = useState(initial?.archiveChannelId ?? '');
+  const [allowedRoleIds, setAllowedRoleIds] = useState<string[]>(initial?.allowedRoleIds ?? []);
   const [channelError, setChannelError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const [saveError, setSaveError] = useState(false);
+  const [saveOutcome, setSaveOutcome] = useState<SaveOutcome | null>(null);
 
   function handleDestinationChange(value: string) {
     const next = value as Destination;
@@ -110,15 +135,16 @@ export function ScreenB({ channels, onSubmit, onCancel, guildName, adminHandle }
 
     // Clear a stale failure from an earlier attempt up front, so it never
     // sits under this attempt's outcome — including while it is pending.
-    setSaveError(false);
+    setSaveOutcome(null);
     setPending(true);
     try {
-      const succeeded = await onSubmit({
+      const outcome = await onSubmit({
         destination,
         channelId: destination === 'existing' ? channelId : null,
+        allowedRoleIds,
       });
-      if (!succeeded) {
-        setSaveError(true);
+      if (outcome.kind !== 'saved') {
+        setSaveOutcome(outcome);
       }
     } finally {
       setPending(false);
@@ -174,6 +200,17 @@ export function ScreenB({ channels, onSubmit, onCancel, guildName, adminHandle }
           </div>
         )}
 
+        <div className={styles.roles}>
+          <RoleMultiSelect
+            legend={WEB_COPY.setup.rolesLegend}
+            placeholder={WEB_COPY.setup.rolesPlaceholder}
+            roles={roles}
+            value={allowedRoleIds}
+            onChange={setAllowedRoleIds}
+          />
+          <Callout variant="note">{WEB_COPY.setup.rolesNote}</Callout>
+        </div>
+
         <div className={styles.consequences}>
           <p className={styles.consequencesHeading}>{WEB_COPY.setup.consequencesHeading}</p>
           {[
@@ -195,12 +232,25 @@ export function ScreenB({ channels, onSubmit, onCancel, guildName, adminHandle }
             (line 121) applies to `aria-live="polite"`. `Callout` itself
             supplies no `aria-live`, so it is added here at the call site. */}
         <div className={styles.saveError} aria-live="polite">
-          {saveError && (
+          {saveOutcome?.kind === 'failed' && (
             <Callout variant="error">
               {SAVE_FAILED_BEFORE}
               <MonoChip>{RETRY_COMMAND}</MonoChip>
               {SAVE_FAILED_AFTER}
             </Callout>
+          )}
+          {saveOutcome?.kind === 'missing-permissions' && (
+            <>
+              <Callout variant="error">{WEB_COPY_AUTHORED.destinationMissingPermissions}</Callout>
+              <div className={styles.missingPermissions}>
+                {saveOutcome.missingPermissions.map((permission) => (
+                  <MonoChip key={permission}>{permission}</MonoChip>
+                ))}
+              </div>
+            </>
+          )}
+          {saveOutcome?.kind === 'live-clips' && (
+            <Callout variant="error">{WEB_COPY_AUTHORED.destinationChangeBlocked}</Callout>
           )}
         </div>
 

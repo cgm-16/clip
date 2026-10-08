@@ -72,6 +72,19 @@
   padding-left: 34px;
 }
 
+.roles {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.missingPermissions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  margin-top: var(--sp-2);
+}
+
 .warning {
   margin: 0;
   font: 400 var(--fs-meta) / 1.5 var(--font-ui);

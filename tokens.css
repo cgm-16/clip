@@ -40,6 +40,7 @@
   --btn-disabled-bg: #1b1e22;
   --btn-disabled-fg: #5f646a;
   --hover-surface: #17191d;
+  --chip-surface: #1b1e22; /* role chip background. docs/06_DESIGN_HANDOFF.md "Role multi-select" */
 
   --font-ui: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -71,6 +72,8 @@
   --sp-inline-gap: 10px;  /* gap between a leading marker (tag/radio dot) and its text. design/Clip Design System.dc.html:243 (radio), 484 (callout) */
   --sp-callout-y: 11px;   /* callout vertical padding (horizontal reuses --sp-3). docs/06_DESIGN_HANDOFF.md "Status callouts"; design/Clip P0 Screens.dc.html:100 */
   --sp-chip-x: 7px;       /* bordered mono chip horizontal padding (vertical reuses --sp-1). design/Clip P0 Screens.dc.html:151 */
+  --sp-role-chip-y: 5px;  /* role chip vertical padding (horizontal reuses --sp-chip-x). docs/06_DESIGN_HANDOFF.md "Role multi-select" */
+  --sp-option-x: 10px;    /* role option row horizontal padding (vertical reuses --sp-2). docs/06_DESIGN_HANDOFF.md "Role multi-select" */
 
   --radius: 2px;
   --radius-chip: 1px;
