@@ -28,6 +28,15 @@ describe('render-k8s-deployment', () => {
     expect(manifest).not.toContain('__CLIP_RELEASE_IMAGE__');
   });
 
+  it('replaces pods with Recreate, so old and new writers never overlap', () => {
+    temporaryDirectory = mkdtempSync(join(tmpdir(), 'clip-render-k8s-deployment-'));
+    const output = join(temporaryDirectory, 'deployment.yaml');
+
+    execFileSync('scripts/render-k8s-deployment.sh', ['ghcr.io/cgm-16/clip:sha-7139b60', output]);
+
+    expect(readFileSync(output, 'utf8')).toMatch(/^ {2}strategy:\n {4}type: Recreate$/m);
+  });
+
   it.each([
     'ghcr.io/cgm-16/clip:latest',
     'ghcr.io/cgm-16/clip:sha-ABCDEF1',
