@@ -104,11 +104,11 @@ Clip은 메시지 본문, 첨부 바이너리, 임베드 페이로드, 아바타
 
 ### 테스트가 무엇을 덮고, 무엇을 덮지 않는가
 
-`pnpm test`는 실제 PostgreSQL 17에 대해 **30개 파일 345개 테스트 전부 통과**합니다(동시성 불변식은 여기서 절대 목으로 대체하지 않습니다). 깨끗한 체크아웃에서 컨테이너를 띄우고 실행하는 명령:
+`pnpm test`는 실제 PostgreSQL 18에 대해 **30개 파일 345개 테스트 전부 통과**합니다(동시성 불변식은 여기서 절대 목으로 대체하지 않습니다). 깨끗한 체크아웃에서 컨테이너를 띄우고 실행하는 명령:
 
 ```bash
 docker run -d --name clip-pg -p 5433:5432 \
-  -e POSTGRES_USER=clip -e POSTGRES_PASSWORD=clip -e POSTGRES_DB=clip_dev postgres:17-alpine
+  -e POSTGRES_USER=clip -e POSTGRES_PASSWORD=clip -e POSTGRES_DB=clip_dev postgres:18-alpine
 DATABASE_URL='postgresql://clip:clip@localhost:5433/clip_dev' pnpm prisma migrate deploy
 pnpm prisma generate
 pnpm test
@@ -212,7 +212,7 @@ cp .env.example .env          # 디스코드 자격 증명과 DATABASE_URL 채�
 # :5433의 로컬 PostgreSQL — tests/setup/database-url.ts가 기본값으로 쓰는 포트
 docker run -d --name clip-pg -p 5433:5432 \
   -e POSTGRES_USER=clip -e POSTGRES_PASSWORD=clip -e POSTGRES_DB=clip_dev \
-  postgres:17-alpine
+  postgres:18-alpine
 
 export DATABASE_URL='postgresql://clip:clip@localhost:5433/clip_dev'
 pnpm prisma generate
