@@ -79,6 +79,7 @@
   --card-pad-x-narrow: 12px;    /* <=640px card padding, both axes */
   --avatar-size: 22px;          /* source-line avatar square */
   --avatar-surface: #2a2e34;
+  --fs-author: 13px;            /* source-line author name, 600 */
   --channel-text: #8b9096;      /* source-line channel name, 11px mono */
   --code-surface: #08090b;
   --code-border: #23262b;
