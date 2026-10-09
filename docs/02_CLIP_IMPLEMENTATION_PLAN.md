@@ -215,7 +215,7 @@ resources:
 ```
 
 - [ ] Reuse existing Traefik/TLS conventions; do not introduce a second ingress stack.
-- [ ] Render then apply manifests. After the merge, select the successful `release` Actions run triggered by the post-merge push to `refs/heads/main`, then use the GHCR `sha-<7>` tag for that run's `main` commit. Do not use a tag run, the PR head, or derive an image from moving `origin/main`. `scripts/release-image.sh` makes that selection: it prints the newest push-to-`main` `release` run's tag and refuses if that run is still running or did not succeed. `k8s/deployment.yaml` is an intentionally non-deployable template; renderer success must precede apply.
+- [ ] Render then apply manifests. After the merge, select the successful `release` Actions run triggered by the post-merge push to `refs/heads/main`, then use the GHCR `sha-<7>` tag for that run's `main` commit. Do not use a tag run, the PR head, or derive an image from moving `origin/main`. `scripts/release-image.sh` makes that selection: it prints the newest push-to-`main` `release` run's tag, and refuses if that run is still running or did not succeed, or if the current checkout is not at that run's commit. The deploy applies `k8s/` from the current checkout, so run it from a checkout of the release commit (`git checkout --detach <sha>`, as the refusal prints), never from a feature branch. `k8s/deployment.yaml` is an intentionally non-deployable template; renderer success must precede apply.
 
 ```bash
 # Set CLIP_IMAGE before pasting the runnable commands. An explicit
