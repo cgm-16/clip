@@ -12,6 +12,7 @@ import {
 import {
   authenticateAdminSession,
   exchangeSetupToken,
+  findReopenableSetupTokenGuild,
   issueSetupToken,
 } from '@/lib/admin-session/service';
 import { exchangeSetupTokenForSession } from '@/lib/admin-session/repository';
@@ -108,7 +109,8 @@ describe('admin session service', () => {
         body: JSON.stringify({ token: issued.token }),
       }),
     );
-    expect(response.status).toBe(204);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ guildId });
     const cookie = response.headers.get('Set-Cookie')!;
     const browserRequest = new NextRequest('https://clipendpoint.cc/setup/data', {
       headers: { Cookie: cookie.split(';')[0] },
@@ -247,7 +249,7 @@ describe('admin session service', () => {
     async function openLink(guildId: string, userId: string) {
       const issued = await issueSetupToken(guildId, userId);
       const response = await POST(exchangeRequest(issued.token));
-      expect(response.status).toBe(204);
+      expect(response.status).toBe(200);
       return { token: issued.token, cookie: response.headers.get('Set-Cookie')!.split(';')[0] };
     }
 
@@ -257,9 +259,22 @@ describe('admin session service', () => {
 
       const response = await POST(exchangeRequest(link.token, link.cookie));
 
-      expect(response.status).toBe(204);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ guildId });
       expect(response.headers.get('Set-Cookie')).toBeNull();
       expect(await prisma.adminSession.count({ where: { guildId } })).toBe(1);
+    });
+
+    test('names the token\'s own guild, so the tab can tell its session from a replaced one', async () => {
+      const guildId = trackedGuildId();
+      const userId = fakeSnowflake();
+      const issued = await issueSetupToken(guildId, userId);
+      const grant = await exchangeSetupToken(issued.token);
+
+      expect(await findReopenableSetupTokenGuild(issued.token, grant!.token)).toBe(guildId);
+
+      const other = await exchangeSetupToken((await issueSetupToken(trackedGuildId(), userId)).token);
+      expect(await findReopenableSetupTokenGuild(issued.token, other!.token)).toBeNull();
     });
 
     test('is refused with another guild\'s session', async () => {

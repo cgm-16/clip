@@ -2,8 +2,8 @@ import { parseEnv } from '@/lib/env';
 import {
   exchangeSetupTokenForSession,
   findLiveAdminSession,
+  findReopenableSetupTokenGuildByHash,
   insertSetupToken,
-  isSetupTokenReopenable,
   type AdminIdentity,
 } from '@/lib/admin-session/repository';
 import {
@@ -86,17 +86,22 @@ export async function exchangeSetupToken(
 }
 
 /**
- * True if the caller already holds the session this used setup token paid
- * for -- a re-click, reload or retry of a link already exchanged (#72). Like
- * `exchangeSetupToken`, a false answer does not say why.
+ * The used setup token's guild if the caller already holds a live session
+ * for that token's admin and guild -- a re-click, reload or retry of a link
+ * already exchanged (#72).
+ * Like `exchangeSetupToken`, a null answer does not say why.
  */
-export async function canReopenSetupToken(
+export async function findReopenableSetupTokenGuild(
   setupToken: string,
   sessionToken: string,
   now: Date = new Date(),
-): Promise<boolean> {
+): Promise<string | null> {
   const secret = sessionSecret();
-  return isSetupTokenReopenable(hashBearerToken(setupToken, secret), hashBearerToken(sessionToken, secret), now);
+  return findReopenableSetupTokenGuildByHash(
+    hashBearerToken(setupToken, secret),
+    hashBearerToken(sessionToken, secret),
+    now,
+  );
 }
 
 /**
