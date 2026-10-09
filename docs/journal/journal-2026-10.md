@@ -96,3 +96,13 @@ Live checks for PR #61 ran on `sha-1c78a43`, test guild `testa`. Checks 1–9 pa
 - **Screen B overflowed below about 608px (#65).** Its page is a flex column, so the form's fixed 560px width is a cross-axis size that never shrinks. Screens A and C are flex rows, where the card shrinks, so the widths that looked suspicious in the code were not a problem there.
   - Probe (local dev, Discord responses stubbed in the browser): every element is checked against both viewport edges, because content that spills past the left edge never counts toward `scrollWidth`. The probe reports an injected 900px element.
 - **Korean callout tags wrapped one syllable per line (#66).** The tag was a shrinkable flex item, and Hangul may break between any two syllables. It reproduced only once Screen B was narrow: the `누락` tag measured 29px before the fix and 15px after.
+
+## 2026-10-09 — deploy image selection scripted; full CD deferred
+
+- **The problem:** every deploy so far meant manually finding the merge commit's `release` run and copying its `sha-<7>` tag into `CLIP_IMAGE`. `scripts/release-image.sh` now does that selection. It refuses if the newest push-to-`main` release run is still running or failed, rather than falling back to an older image.
+- **Full CD was considered and deferred (Ori, 2026-10-09).** With Wave 6 and Wave 7 left, maybe 3–5 deploys remain, and the setup would cost too much for that:
+  - a Tailscale OAuth client and ACL so GitHub's runners can reach the cluster;
+  - a ServiceAccount token limited to the `clip` namespace, stored as a GitHub secret;
+  - a new path into the cluster for anything that reaches `main`.
+- **If deploys become frequent:** Ori's preferred shape is tag-based, with `main` deploying only when a prod tag is pushed. That keeps an explicit release step separate from merging.
+- **Command registration is not part of a deploy.** It only reruns when `lib/discord/commands.ts` changes (#67).
