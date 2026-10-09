@@ -1,6 +1,6 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { exchangeSetupToken } from '@/lib/admin-session/service';
+import { canReopenSetupToken, exchangeSetupToken } from '@/lib/admin-session/service';
 import { parseEnv } from '@/lib/env';
 import { ADMIN_SESSION_COOKIE_NAME, ADMIN_SESSION_TTL_MS } from '@/lib/admin-session/tokens';
 
@@ -27,6 +27,12 @@ export async function POST(request: Request) {
 
   const grant = await exchangeSetupToken(parsed.data.token);
   if (!grant) {
+    // A used link re-opened by the admin it was spent for (#72) is confirmed
+    // without minting anything; the existing session cookie stays as it is.
+    const sessionToken = new NextRequest(request.url, { headers: request.headers }).cookies.get(ADMIN_SESSION_COOKIE_NAME)?.value;
+    if (sessionToken !== undefined && (await canReopenSetupToken(parsed.data.token, sessionToken))) {
+      return new Response(null, { status: 204 });
+    }
     // Unknown, expired and already-used tokens are one indistinguishable
     // failure; Screen A's copy covers all three (product spec §17 case 2).
     return new Response(null, { status: 401 });

@@ -3,6 +3,7 @@ import {
   exchangeSetupTokenForSession,
   findLiveAdminSession,
   insertSetupToken,
+  isSetupTokenReopenable,
   type AdminIdentity,
 } from '@/lib/admin-session/repository';
 import {
@@ -82,6 +83,20 @@ export async function exchangeSetupToken(
   }
 
   return { token, expiresAt, ...identity };
+}
+
+/**
+ * True if the caller already holds the session this used setup token paid
+ * for -- a re-click, reload or retry of a link already exchanged (#72). Like
+ * `exchangeSetupToken`, a false answer does not say why.
+ */
+export async function canReopenSetupToken(
+  setupToken: string,
+  sessionToken: string,
+  now: Date = new Date(),
+): Promise<boolean> {
+  const secret = sessionSecret();
+  return isSetupTokenReopenable(hashBearerToken(setupToken, secret), hashBearerToken(sessionToken, secret), now);
 }
 
 /**

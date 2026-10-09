@@ -90,6 +90,32 @@ export async function exchangeSetupTokenForSession(
   });
 }
 
+/**
+ * True if a used setup token is being re-opened by the admin it was spent for:
+ * the token is used but still inside its own lifetime, and the session is live
+ * for exactly the token's guild and user (#72). Read-only: re-opening confirms
+ * a session the browser already holds and never mints one, so it grants
+ * nothing the caller does not already have.
+ */
+export async function isSetupTokenReopenable(
+  setupTokenHash: string,
+  sessionTokenHash: string,
+  now: Date,
+): Promise<boolean> {
+  const used = await getPrismaClient().setupToken.findFirst({
+    where: { tokenHash: setupTokenHash, usedAt: { not: null }, expiresAt: { gt: now } },
+    select: { guildId: true, userId: true },
+  });
+  if (used === null) {
+    return false;
+  }
+  const session = await getPrismaClient().adminSession.findFirst({
+    where: { tokenHash: sessionTokenHash, ...used, revokedAt: null, expiresAt: { gt: now } },
+    select: { tokenHash: true },
+  });
+  return session !== null;
+}
+
 export async function findLiveAdminSession(
   tokenHash: string,
   now: Date,
