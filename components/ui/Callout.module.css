@@ -18,6 +18,9 @@
    don't want it. */
 .tag {
   padding-top: 1px;
+  /* Hangul may break between any two syllables, so a shrinkable tag beside
+     long copy collapses to one syllable per line (오 / 류). */
+  flex-shrink: 0;
 }
 
 .copy {
