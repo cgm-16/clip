@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { JetBrains_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 
 // Mono carries machine values only — channels, roles, timestamps, permission
@@ -9,10 +9,16 @@ import "./globals.css";
 // The UI face is Pretendard, which Google Fonts does not serve and which this
 // repository does not vendor, so no second webfont is loaded: `--font-ui`
 // resolves through the stack the token already declares.
-const jetBrainsMono = JetBrains_Mono({
+//
+// JetBrains Mono is vendored (app/fonts, OFL-licensed) rather than loaded through
+// next/font/google, which downloads Google's stylesheet at build time and
+// fails the build when that response does not parse (#70). The file is the
+// Latin subset Google serves: one variable font covering weights 400 and 500.
+const jetBrainsMono = localFont({
+  src: "./fonts/JetBrainsMono-latin.woff2",
   variable: "--font-jetbrains-mono",
-  subsets: ["latin"],
-  weight: ["400", "500"],
+  weight: "400 500",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
