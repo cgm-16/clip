@@ -99,7 +99,11 @@ describe('register-discord-commands', () => {
     expect(globalUrl).toBe('https://discord.com/api/v10/applications/app-1/commands');
     expect(globalInit.method).toBe('PUT');
     expect(globalInit.headers).toMatchObject({ Authorization: 'Bot bot-token-value' });
-    expect(JSON.parse(globalInit.body as string)).toEqual(DISCORD_COMMANDS);
+    // contexts [0] (GUILD): Clip's handlers need a guild and a member, so a
+    // global command must not also be offered in bot DMs.
+    expect(JSON.parse(globalInit.body as string)).toEqual(
+      DISCORD_COMMANDS.map((command) => ({ ...command, contexts: [0] })),
+    );
     const [guildUrl, guildInit] = fetchImpl.mock.calls[1] as [string, RequestInit];
     expect(guildUrl).toBe('https://discord.com/api/v10/applications/app-1/guilds/guild-1/commands');
     expect(guildInit.method).toBe('PUT');

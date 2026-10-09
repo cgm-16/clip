@@ -74,7 +74,11 @@ export async function main(argv: readonly string[], deps: RegisterCommandsDeps):
     // would show beside the global one, so the guild's copies are cleared --
     // only after the global PUT succeeds, so a failure never leaves the test
     // guild with no commands at all.
-    await putCommands(env, deps.fetchImpl, '/commands', DISCORD_COMMANDS);
+    // A new global command defaults to every interaction context, including
+    // bot DMs, where there is no guild or member for Clip's handlers to act
+    // on. contexts [0] (GUILD) offers it in servers only.
+    const guildOnly = DISCORD_COMMANDS.map((command) => ({ ...command, contexts: [0] }));
+    await putCommands(env, deps.fetchImpl, '/commands', guildOnly);
     await putCommands(env, deps.fetchImpl, guildPath, []);
     console.log(`\nRegistered ${DISCORD_COMMANDS.length} global command(s) and cleared guild ${env.DISCORD_TEST_GUILD_ID}'s own copies.`);
     return;
