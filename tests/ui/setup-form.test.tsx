@@ -587,9 +587,10 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
     ).toHaveLength(2);
   });
 
-  it('recovers a lost exchange response by probing the established session before retrying exchange', async () => {
+  it('recovers a lost exchange response: the retry exchanges again and the server re-opens the token (#72)', async () => {
     const user = userEvent.setup();
     let rejectExchange: (reason?: unknown) => void = () => {};
+    let exchangeCalls = 0;
     let dataCalls = 0;
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -600,20 +601,22 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
           : Response.json(setupDataBody());
       }
       if (url.endsWith('/api/setup/exchange')) {
-        return new Promise<Response>((_, reject) => {
-          rejectExchange = reject;
-        });
+        exchangeCalls += 1;
+        if (exchangeCalls === 1) {
+          return new Promise<Response>((_, reject) => {
+            rejectExchange = reject;
+          });
+        }
+        // The first exchange did reach the server; the token is spent, and
+        // the server re-opens it for the session that exchange created.
+        return new Response(null, { status: 204 });
       }
       throw new Error(`unexpected fetch: ${url}`);
     });
     vi.stubGlobal('fetch', fetchMock);
 
     render(<SetupFlow token="fresh-token" />);
-    await waitFor(() =>
-      expect(
-        fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/api/setup/exchange')),
-      ).toHaveLength(1),
-    );
+    await waitFor(() => expect(exchangeCalls).toBe(1));
 
     rejectExchange(new Error('response lost after the server established the session'));
 
@@ -621,10 +624,7 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
     await user.click(screen.getByRole('button', { name: WEB_COPY_AUTHORED.retry }));
 
     await waitFor(() => expect(screen.getByText(WEB_COPY.setup.destinationLegend)).toBeInTheDocument());
-    expect(dataCalls).toBe(2);
-    expect(
-      fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/api/setup/exchange')),
-    ).toHaveLength(1);
+    expect(exchangeCalls).toBe(2);
   });
 
   it('keeps a stale exchange rejection from replacing the current flow', async () => {
@@ -886,17 +886,59 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
     expect(navigation.replace).not.toHaveBeenCalled();
   });
 
-  it('reuses an already-live admin session on reload, without re-exchanging the (now spent) token', async () => {
+  it('a reload after another guild\'s link took over the session shows Screen A, never that guild (#72)', async () => {
+    // First load: this tab exchanges guild A's link.
+    let sessionGuild: 'none' | 'gA' | 'gB' = 'none';
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/setup/data')) {
+        if (sessionGuild === 'none') {
+          return new Response(null, { status: 401 });
+        }
+        return Response.json(
+          sessionGuild === 'gA'
+            ? setupDataBody({ guildId: 'gA', guildName: 'Guild A' })
+            : setupDataBody({ guildId: 'gB', guildName: 'Guild B' }),
+        );
+      }
+      if (url.endsWith('/api/setup/exchange')) {
+        // The server's answer for A's token: spent on the first load, so only
+        // A's own session may re-open it.
+        if (sessionGuild === 'none') {
+          sessionGuild = 'gA';
+          return new Response(null, { status: 204 });
+        }
+        return new Response(null, { status: sessionGuild === 'gA' ? 204 : 401 });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const first = render(<SetupFlow token="a-token" />);
+    expect(await screen.findByText('Guild A')).toBeInTheDocument();
+    first.unmount();
+
+    // Another tab opened guild B's link, replacing the browser's one session.
+    sessionGuild = 'gB';
+    render(<SetupFlow token="a-token" />);
+
+    expect(await screen.findByText(WEB_COPY.expiredSetupLink.title)).toBeInTheDocument();
+    expect(screen.queryByText('Guild B')).not.toBeInTheDocument();
+  });
+
+  it('re-opening a used link with its own live session asks the exchange, and the server\'s re-open shows setup (#72)', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith('/setup/data')) {
         return Response.json(setupDataBody());
       }
+      if (url.endsWith('/api/setup/exchange')) {
+        // Spent token, but the request carries the session it paid for.
+        return new Response(null, { status: 204 });
+      }
       throw new Error(`unexpected fetch: ${url}`);
     });
     vi.stubGlobal('fetch', fetchMock);
-    // A reload: this tab exchanged the token on its first load.
-    window.sessionStorage.setItem('clip:setup-exchanged:already-used-token', '1');
 
     render(<SetupFlow token="already-used-token" />);
 
@@ -905,7 +947,7 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
     );
     expect(
       fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/api/setup/exchange')),
-    ).toHaveLength(0);
+    ).toHaveLength(1);
   });
 
   it('posts the submission to /setup/save and renders Screen C with the response on success', async () => {

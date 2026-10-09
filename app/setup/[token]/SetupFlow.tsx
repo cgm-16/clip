@@ -17,47 +17,25 @@ type FlowState =
 
 /**
  * `/setup/:token` — exchanges the one-time setup token for the short admin
- * session (`lib/admin-session`) at most once, then branches between Screen A
- * (dead link) and Screen B (destination form). A page reload with a still-live
- * session skips the exchange entirely, since the token behind it is already
- * spent (`lib/admin-session/repository.ts`'s `exchangeSetupTokenForSession`
- * is one-shot).
+ * session (`lib/admin-session`), then branches between Screen A (dead link)
+ * and Screen B (destination form). The link's token always decides which
+ * guild the page is for, never a session the browser happens to hold: a
+ * reload, re-click or retry of a link already spent is sent to the exchange
+ * again, which re-opens it only for the session that token paid for (#72).
  */
-// Marks a token this tab has exchanged, so a reload reuses the session it
-// created instead of re-spending (and being refused) the one-time token.
-// sessionStorage can be unavailable; a missing marker only costs a refused
-// exchange and Screen A, never another guild's session.
-const EXCHANGED_PREFIX = 'clip:setup-exchanged:';
-
-function wasExchangedHere(token: string): boolean {
-  try {
-    return window.sessionStorage.getItem(EXCHANGED_PREFIX + token) === '1';
-  } catch {
-    return false;
-  }
-}
-
-function markExchangedHere(token: string): void {
-  try {
-    window.sessionStorage.setItem(EXCHANGED_PREFIX + token, '1');
-  } catch {
-    // See above: the marker is an optimisation, not a guarantee.
-  }
-}
-
 export function SetupFlow({ token }: { token: string }) {
   const router = useRouter();
   const [state, setState] = useState<FlowState>({ status: 'loading' });
   const [loadAttempt, setLoadAttempt] = useState(0);
   const currentAttempt = useRef(0);
-  const tokenCapability = useRef({ token, canExchangeToken: true, exchangeOutcomeUnknown: false });
+  const tokenCapability = useRef({ token, canExchangeToken: true });
   const retryPending = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
     const attempt = ++currentAttempt.current;
     if (tokenCapability.current.token !== token) {
-      tokenCapability.current = { token, canExchangeToken: true, exchangeOutcomeUnknown: false };
+      tokenCapability.current = { token, canExchangeToken: true };
     }
     const capability = tokenCapability.current;
 
@@ -73,12 +51,11 @@ export function SetupFlow({ token }: { token: string }) {
         return;
       }
       if (existing.status === 'ready') {
-        // A live session is only trusted when it is this link's own: a reload
-        // of a link this tab exchanged, a token already spent here, or a retry
-        // after an exchange whose response was lost (it may have succeeded).
-        // Otherwise it may belong to another guild's earlier link, so the
-        // fresh token is exchanged and decides (#62).
-        if (!capability.canExchangeToken || wasExchangedHere(token) || capability.exchangeOutcomeUnknown) {
+        // A live session is trusted without asking only for a token this
+        // mount already spent. Otherwise it may belong to another guild's link
+        // (#62), or have replaced this link's own since (#72), so the token is
+        // sent to the exchange, which knows its guild and decides.
+        if (!capability.canExchangeToken) {
           retryPending.current = false;
           showSetup(existing.data);
           return;
@@ -105,8 +82,8 @@ export function SetupFlow({ token }: { token: string }) {
           return;
         }
         // The exchange may have reached the server before the connection
-        // dropped; on retry, a live session is then trusted.
-        capability.exchangeOutcomeUnknown = true;
+        // dropped; a retry exchanges again, and the server re-opens the token
+        // for the session it created (#72).
         retryPending.current = false;
         setState({ status: 'load-error', canExchangeToken: capability.canExchangeToken });
         return;
@@ -121,7 +98,6 @@ export function SetupFlow({ token }: { token: string }) {
       }
 
       capability.canExchangeToken = false;
-      markExchangedHere(token);
       const data = await fetchSetupData();
       if (!ownsAttempt()) {
         return;
