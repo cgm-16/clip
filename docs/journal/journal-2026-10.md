@@ -78,3 +78,21 @@ Known limitation, accepted by Ori 2026-10-09: after moving off a deleted archive
 ### 2026-10-09 — #62 fixed in PR #61
 
 A fresh `/setup` link now exchanges its own token even when a live admin session already exists, so a guild-A session can no longer hijack (or, with the 15-min token vs 30-min session, block) a guild-B link. The session alone is trusted only on a reload of a link this tab already exchanged (a `sessionStorage` marker) or on a retry after an exchange whose response was lost. Exchange-first was tried first and reverted: it reordered every call in SetupFlow's 14 race tests. The landed version changes only the "session found" branch; three tests that encoded the old "live session ⇒ don't exchange" behaviour were updated to the new guarantee (exchange exactly once), and seven save-path tests gained an exchange stub. Cost: a used link opened in a new tab (no marker) shows Screen A instead of reusing the session. Mutation-checked: disabling the marker fails the reload test.
+
+## 2026-10-09 — Wave 5 live checks, and the launch fixes they surfaced
+
+Live checks for PR #61 ran on `sha-1c78a43`, test guild `testa`. Checks 1–9 pass. Checks 10 (#62 across two servers) and 11 (guild-data deletion) are pending. Findings:
+
+- **Burst clipping fails some clips.** Clipping about 20 messages within two minutes logged 10 `clip.archive_failed` lines, all `ARCHIVE_CREATE_RETRYABLE`, covering 8 messages; production shows 21 ACTIVE and 7 FAILED rows.
+  - Every failure ended in a clean FAILED row, no orphan provenance message was left in the archive (checked by Ori), and a retry recovered.
+  - The cause is unconfirmed, because the log keeps only the code: a 429 still rate-limited after 3 attempts, a 5xx, or a 10 s timeout. Filed #64 to log the status and Discord code. One Screen D card showed a transient `오류` in the same session; `다시 시도` loaded it.
+- **The access-error check needs the bot's member override.** Denying `READ_MESSAGE_HISTORY` on every role changed nothing, because Clip creates its archive channel with a member override for the bot that allows `VIEW_CHANNEL`, `SEND_MESSAGES` and `READ_MESSAGE_HISTORY` (`app/setup/save/route.ts`). Discord applies member overrides after role overrides.
+  - The corrected Wave 6 step: deny `READ_MESSAGE_HISTORY` on the Clip bot member's entry, or remove that entry, then restore it.
+  - Ori removed the entry, Discord answered Missing Access, and Screen D showed the access `오류`.
+- **The commands existed only in the test server (#67).** Plan Task 1.3 registered to the test guild "first", and no later task registered the commands for every server, so any other server that installs Clip had no `/setup`.
+  - Fixed with `--register --global`, which registers the commands application-wide and then clears the test guild's own copies.
+  - Discord's current docs give no propagation time for global commands. The script's "up to an hour" comment is unverified.
+  - #67 stays open until the command has run against production and a second server shows `/setup`.
+- **Screen B overflowed below about 608px (#65).** Its page is a flex column, so the form's fixed 560px width is a cross-axis size that never shrinks. Screens A and C are flex rows, where the card shrinks, so the widths that looked suspicious in the code were not a problem there.
+  - Probe (local dev, Discord responses stubbed in the browser): every element is checked against both viewport edges, because content that spills past the left edge never counts toward `scrollWidth`. The probe reports an injected 900px element.
+- **Korean callout tags wrapped one syllable per line (#66).** The tag was a shrinkable flex item, and Hangul may break between any two syllables. It reproduced only once Screen B was narrow: the `누락` tag measured 29px before the fix and 15px after.
