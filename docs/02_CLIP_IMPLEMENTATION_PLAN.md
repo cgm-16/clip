@@ -419,6 +419,13 @@ type SafeClipLog = {
 
 - [ ] Define command payloads with stable names.
 - [ ] Register to a dedicated test guild first for rapid propagation.
+- [ ] For production, register application-wide so every server that installs Clip gets the commands (#67). Run once, and again whenever `lib/discord/commands.ts` changes:
+
+```sh
+set -a && . ./.env && set +a && pnpm tsx scripts/register-discord-commands.ts --register --global
+```
+
+  This also clears the server-scoped copies in `DISCORD_TEST_GUILD_ID`, which would otherwise appear beside the global ones. To clear another server that was given server-scoped commands, run it again with `DISCORD_TEST_GUILD_ID=<that server id>`.
 - [ ] Verify commands appear.
 - [ ] Append command-registration evidence to cumulative snapshot.
 - [ ] Commit.
