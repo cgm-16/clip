@@ -95,3 +95,8 @@ export async function authenticateAdminSession(
 ): Promise<AdminIdentity | null> {
   return findLiveAdminSession(hashBearerToken(sessionToken, sessionSecret()), now);
 }
+
+/** The stored form of a session cookie value, for rechecks under the guild lock. */
+export function sessionTokenHash(sessionToken: string): string {
+  return hashBearerToken(sessionToken, sessionSecret());
+}

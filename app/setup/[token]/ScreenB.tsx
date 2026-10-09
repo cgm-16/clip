@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Callout } from '@/components/ui/Callout';
@@ -61,6 +62,10 @@ export interface ScreenBProps {
    */
   guildName?: string;
   adminHandle?: string;
+  /** Where the live-Clips refusal points the admin to find those Clips (#59). */
+  archiveHref?: string;
+  /** The saved archive channel no longer exists in Discord (#58). */
+  archiveChannelMissing?: boolean;
 }
 
 const DESTINATION_OPTIONS = [
@@ -89,9 +94,13 @@ export function ScreenB({
   onCancel,
   guildName,
   adminHandle,
+  archiveHref,
+  archiveChannelMissing = false,
 }: ScreenBProps) {
   const [destination, setDestination] = useState<Destination>(initial ? 'existing' : 'create');
-  const [channelId, setChannelId] = useState(initial?.archiveChannelId ?? '');
+  // A deleted channel is not prefilled: the select starts at its placeholder,
+  // so a save cannot resubmit an id Discord no longer has (#58).
+  const [channelId, setChannelId] = useState(archiveChannelMissing ? '' : (initial?.archiveChannelId ?? ''));
   const [allowedRoleIds, setAllowedRoleIds] = useState<string[]>(initial?.allowedRoleIds ?? []);
   const [channelError, setChannelError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -179,6 +188,9 @@ export function ScreenB({
 
         {destination === 'existing' && (
           <div className={styles.existingChannel}>
+            {archiveChannelMissing && (
+              <Callout variant="missing">{WEB_COPY_AUTHORED.archiveChannelMissing}</Callout>
+            )}
             <Select
               id="archive-channel"
               label={WEB_COPY.archive.channelFilterLabel}
@@ -250,7 +262,14 @@ export function ScreenB({
             </>
           )}
           {saveOutcome?.kind === 'live-clips' && (
-            <Callout variant="error">{WEB_COPY_AUTHORED.destinationChangeBlocked}</Callout>
+            <>
+              <Callout variant="error">{WEB_COPY_AUTHORED.destinationChangeBlocked}</Callout>
+              {archiveHref && (
+                <Link className={styles.inlineLink} href={archiveHref}>
+                  {WEB_COPY.setupComplete.openArchive}
+                </Link>
+              )}
+            </>
           )}
         </div>
 

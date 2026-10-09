@@ -120,15 +120,15 @@ Ori authorized drafting, not approval of text that did not yet exist. These prop
 | Replace auto-create description — **approved by Ori 2026-10-07** (first wording ended `채널 관리 역할`; Ori confirmed `권한`; `(선택적)` renders) | Clip이 #clip-archive를 비공개 채널로 만듭니다. 클립 가능 역할은 채널 열람 권한이 없습니다. 해당 권한은 서버 관리자가 설정합니다. (선택적) 생성이 끝나면 채널 관리 권한을 회수해 주세요. |
 | Destination missing runtime permissions | 이 채널에서 Clip에 필요한 권한이 없습니다. Discord에서 아래 권한을 확인한 뒤 다시 시도해 주세요. |
 | Destination change blocked by live clips | 보관 중인 메시지가 있어 아카이브 채널을 변경할 수 없습니다. 기존 메시지를 보관에서 제거한 뒤 다시 시도해 주세요. |
-| Archive fetch failed transiently | 보관된 내용을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요. |
-| Archive access denied | 아카이브 채널에 접근할 수 없습니다. Discord에서 Clip의 채널 권한을 확인해 주세요. |
-| Archive empty | 아직 보관된 메시지가 없습니다. |
-| No results for selected channel | 이 채널에서 보관된 메시지가 없습니다. |
-| Original verified unavailable | 원본 메시지를 찾을 수 없습니다. |
-| Session recovery title | 관리자 세션이 만료되었습니다 |
-| Deletion consequence: lost control/removal state | 보관 기록과 삭제 차단 기록이 사라집니다. 남아 있는 Discord 사본은 Clip에서 관리할 수 없으며, 같은 원본 메시지가 다시 보관될 수 있습니다. |
-| Deletion completed | 이 서버의 Clip 데이터를 삭제했습니다. Discord 아카이브 채널과 그 안의 메시지는 그대로 남아 있습니다. |
-| Deletion failed | Clip 데이터를 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요. |
+| Archive fetch failed transiently — **approved by Ori 2026-10-09** | 보관된 내용을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요. |
+| Archive access denied — **approved by Ori 2026-10-09** | 아카이브 채널에 접근할 수 없습니다. Discord에서 Clip의 채널 권한을 확인해 주세요. |
+| Archive empty — **approved by Ori 2026-10-09** | 아직 보관된 메시지가 없습니다. |
+| No results for selected channel — **approved by Ori 2026-10-09** | 이 채널에서 보관된 메시지가 없습니다. |
+| Original verified unavailable — **approved by Ori 2026-10-09** | 원본 메시지를 찾을 수 없습니다. |
+| Session recovery title — **approved by Ori 2026-10-09** | 관리자 세션이 만료되었습니다 |
+| Deletion consequence: lost control/removal state — **approved by Ori 2026-10-09** | 보관 기록과 삭제 차단 기록이 사라집니다. 남아 있는 Discord 사본은 Clip에서 관리할 수 없으며, 같은 원본 메시지가 다시 보관될 수 있습니다. |
+| Deletion completed — **approved by Ori 2026-10-09** | 이 서버의 Clip 데이터를 삭제했습니다. Discord 아카이브 채널과 그 안의 메시지는 그대로 남아 있습니다. |
+| Deletion failed — **approved by Ori 2026-10-09** | Clip 데이터를 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요. |
 
 Use existing `다시 시도`, text tags, acknowledgement, delete/keep labels, save/cancel labels and `/setup` recovery copy. Render missing permission constants and IDs as machine values. Expired sessions reuse the approved recovery instruction rather than pretending the one-time setup token is the resource that expired.
 
@@ -167,6 +167,10 @@ Update README/status and the issue briefs after each completed wave, and record 
 - Ori runs the manual scenarios and permission matrix from a prepared checklist with three accounts; creating a fresh 6.1 guild is a checklist prep step.
 - Only the test guild uses the deployment, so the boundary release uses a plain recreate rollout without announcement.
 - Implementation is inline per wave, with one independent review before each PR. Waves: `wave/4-p0-restoration` (this design, 4.3, F.4, destination permission check), `wave/5-web-archive` (5.1–5.4, F.5, deletion lock and `configurationId`), `wave/6-verification` (F.6, 6.1–6.4, 7.1). Reopen #11, #12, #29, #31–34, #38 and #39; #35–37 and #43 remain open.
+
+## Decision confirmed 2026-10-09
+
+- Destination changes keep the live-Clips refusal, with one exception (Ori, PR #61 review, #58): when Discord confirms the current archive channel itself is gone (Unknown Channel), moving to another channel is allowed despite live Clips. Its archive messages went with the channel, so nothing is stranded; without the exception a guild whose archive channel was deleted could only recover by deleting its data. Access denials, timeouts and server errors are not confirmation. Those Clips stay ACTIVE and read as `누락` in the archive; Unclip and removal treat the already-gone messages as deleted.
 
 ## Review and next step
 

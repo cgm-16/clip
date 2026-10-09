@@ -1,30 +1,12 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
-import type { SetupChannel, SetupRole } from '@/lib/discord/guild-lookup';
 import { ScreenA } from './ScreenA';
-import { ScreenB, type InitialSetup, type SaveOutcome, type SetupSubmission } from './ScreenB';
+import { ScreenB, type SaveOutcome, type SetupSubmission } from './ScreenB';
 import { ScreenC } from './ScreenC';
 import { ScreenLoadError } from './ScreenLoadError';
-
-/** `/setup/save`'s success body — see `app/setup/save/route.ts`. */
-type SaveResult = {
-  archiveChannelId: string;
-  archiveChannelName: string;
-  autoCreated: boolean;
-  clipCount: number;
-  allowedRoles: { id: string; name: string }[];
-};
-
-/** `/setup/data`'s body — see `app/setup/data/route.ts`. */
-type SetupData = {
-  guildId: string;
-  guildName: string | null;
-  adminHandle: string | null;
-  channels: SetupChannel[];
-  roles: SetupRole[];
-  config: InitialSetup | null;
-};
+import { fetchSetupData, parseSaveResult, saveOutcomeOf, type SaveResult, type SetupData } from './setup-client';
 
 type FlowState =
   | { status: 'loading' }
@@ -32,132 +14,6 @@ type FlowState =
   | { status: 'load-error'; canExchangeToken: boolean }
   | ({ status: 'ready' } & SetupData)
   | ({ status: 'complete'; setup: SetupData } & SaveResult);
-
-type SetupDataResult =
-  | { status: 'ready'; data: SetupData }
-  | { status: 'unauthenticated' }
-  | { status: 'failed' };
-
-function isSetupChannel(value: unknown): value is SetupChannel {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-  const { id, name, type } = value as Record<string, unknown>;
-  return typeof id === 'string' && typeof name === 'string' && typeof type === 'number';
-}
-
-function isSetupRole(value: unknown): value is SetupRole {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-  const { id, name, selectable } = value as Record<string, unknown>;
-  return typeof id === 'string' && typeof name === 'string' && typeof selectable === 'boolean';
-}
-
-function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === 'string');
-}
-
-function parseConfig(value: unknown): InitialSetup | null | undefined {
-  if (value === null) {
-    return null;
-  }
-  if (typeof value !== 'object') {
-    return undefined;
-  }
-  const { archiveChannelId, allowedRoleIds } = value as Record<string, unknown>;
-  if (typeof archiveChannelId !== 'string' || !isStringArray(allowedRoleIds)) {
-    return undefined;
-  }
-  return { archiveChannelId, allowedRoleIds };
-}
-
-function isNullableString(value: unknown): value is string | null {
-  return value === null || typeof value === 'string';
-}
-
-function parseSetupData(value: unknown): SetupData | null {
-  if (typeof value !== 'object' || value === null) {
-    return null;
-  }
-  const { guildId, guildName, adminHandle, channels, roles, config } = value as Record<string, unknown>;
-  const parsedConfig = parseConfig(config);
-  if (
-    typeof guildId !== 'string' ||
-    !isNullableString(guildName) ||
-    !isNullableString(adminHandle) ||
-    !Array.isArray(channels) ||
-    !channels.every(isSetupChannel) ||
-    !Array.isArray(roles) ||
-    !roles.every(isSetupRole) ||
-    parsedConfig === undefined
-  ) {
-    return null;
-  }
-  return { guildId, guildName, adminHandle, channels, roles, config: parsedConfig };
-}
-
-function isNamedRole(value: unknown): value is { id: string; name: string } {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-  const { id, name } = value as Record<string, unknown>;
-  return typeof id === 'string' && typeof name === 'string';
-}
-
-function parseSaveResult(value: unknown): SaveResult | null {
-  if (typeof value !== 'object' || value === null) {
-    return null;
-  }
-  const { archiveChannelId, archiveChannelName, autoCreated, clipCount, allowedRoles } = value as Record<
-    string,
-    unknown
-  >;
-  if (
-    !Array.isArray(allowedRoles) ||
-    !allowedRoles.every(isNamedRole) ||
-    typeof archiveChannelId !== 'string' ||
-    archiveChannelId.length === 0 ||
-    typeof archiveChannelName !== 'string' ||
-    typeof autoCreated !== 'boolean' ||
-    typeof clipCount !== 'number' ||
-    !Number.isInteger(clipCount) ||
-    clipCount < 0
-  ) {
-    return null;
-  }
-  return { archiveChannelId, archiveChannelName, autoCreated, clipCount, allowedRoles };
-}
-
-/** Maps `/setup/save`'s refusal statuses (see its route) to what Screen B shows. */
-async function saveOutcomeOf(response: Response): Promise<SaveOutcome> {
-  if (response.status === 409) {
-    return { kind: 'live-clips' };
-  }
-  if (response.status === 422) {
-    const body = (await response.json().catch(() => null)) as Record<string, unknown> | null;
-    if (body?.reason === 'MISSING_PERMISSIONS' && isStringArray(body.missingPermissions)) {
-      return { kind: 'missing-permissions', missingPermissions: body.missingPermissions };
-    }
-  }
-  return { kind: 'failed' };
-}
-
-async function fetchSetupData(): Promise<SetupDataResult> {
-  try {
-    const response = await fetch('/setup/data');
-    if (response.status === 401) {
-      return { status: 'unauthenticated' };
-    }
-    if (!response.ok) {
-      return { status: 'failed' };
-    }
-    const data = parseSetupData(await response.json());
-    return data ? { status: 'ready', data } : { status: 'failed' };
-  } catch {
-    return { status: 'failed' };
-  }
-}
 
 /**
  * `/setup/:token` — exchanges the one-time setup token for the short admin
@@ -167,18 +23,41 @@ async function fetchSetupData(): Promise<SetupDataResult> {
  * spent (`lib/admin-session/repository.ts`'s `exchangeSetupTokenForSession`
  * is one-shot).
  */
+// Marks a token this tab has exchanged, so a reload reuses the session it
+// created instead of re-spending (and being refused) the one-time token.
+// sessionStorage can be unavailable; a missing marker only costs a refused
+// exchange and Screen A, never another guild's session.
+const EXCHANGED_PREFIX = 'clip:setup-exchanged:';
+
+function wasExchangedHere(token: string): boolean {
+  try {
+    return window.sessionStorage.getItem(EXCHANGED_PREFIX + token) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function markExchangedHere(token: string): void {
+  try {
+    window.sessionStorage.setItem(EXCHANGED_PREFIX + token, '1');
+  } catch {
+    // See above: the marker is an optimisation, not a guarantee.
+  }
+}
+
 export function SetupFlow({ token }: { token: string }) {
+  const router = useRouter();
   const [state, setState] = useState<FlowState>({ status: 'loading' });
   const [loadAttempt, setLoadAttempt] = useState(0);
   const currentAttempt = useRef(0);
-  const tokenCapability = useRef({ token, canExchangeToken: true });
+  const tokenCapability = useRef({ token, canExchangeToken: true, exchangeOutcomeUnknown: false });
   const retryPending = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
     const attempt = ++currentAttempt.current;
     if (tokenCapability.current.token !== token) {
-      tokenCapability.current = { token, canExchangeToken: true };
+      tokenCapability.current = { token, canExchangeToken: true, exchangeOutcomeUnknown: false };
     }
     const capability = tokenCapability.current;
 
@@ -194,18 +73,21 @@ export function SetupFlow({ token }: { token: string }) {
         return;
       }
       if (existing.status === 'ready') {
-        retryPending.current = false;
-        setState({ status: 'ready', ...existing.data });
-        return;
-      }
-
-      if (existing.status === 'failed') {
+        // A live session is only trusted when it is this link's own: a reload
+        // of a link this tab exchanged, a token already spent here, or a retry
+        // after an exchange whose response was lost (it may have succeeded).
+        // Otherwise it may belong to another guild's earlier link, so the
+        // fresh token is exchanged and decides (#62).
+        if (!capability.canExchangeToken || wasExchangedHere(token) || capability.exchangeOutcomeUnknown) {
+          retryPending.current = false;
+          showSetup(existing.data);
+          return;
+        }
+      } else if (existing.status === 'failed') {
         retryPending.current = false;
         setState({ status: 'load-error', canExchangeToken: capability.canExchangeToken });
         return;
-      }
-
-      if (!capability.canExchangeToken) {
+      } else if (!capability.canExchangeToken) {
         retryPending.current = false;
         setState({ status: 'expired' });
         return;
@@ -222,6 +104,9 @@ export function SetupFlow({ token }: { token: string }) {
         if (!ownsAttempt()) {
           return;
         }
+        // The exchange may have reached the server before the connection
+        // dropped; on retry, a live session is then trusted.
+        capability.exchangeOutcomeUnknown = true;
         retryPending.current = false;
         setState({ status: 'load-error', canExchangeToken: capability.canExchangeToken });
         return;
@@ -236,13 +121,14 @@ export function SetupFlow({ token }: { token: string }) {
       }
 
       capability.canExchangeToken = false;
+      markExchangedHere(token);
       const data = await fetchSetupData();
       if (!ownsAttempt()) {
         return;
       }
       retryPending.current = false;
       if (data.status === 'ready') {
-        setState({ status: 'ready', ...data.data });
+        showSetup(data.data);
       } else if (data.status === 'failed') {
         setState({ status: 'load-error', canExchangeToken: capability.canExchangeToken });
       } else {
@@ -250,11 +136,21 @@ export function SetupFlow({ token }: { token: string }) {
       }
     }
 
+    // A configured guild's fresh link opens Screen E (decision D1); the
+    // setup form is reached from there. Only a first setup stays here.
+    function showSetup(data: SetupData) {
+      if (data.config !== null) {
+        router.replace(`/admin/${data.guildId}/settings`);
+        return;
+      }
+      setState({ status: 'ready', ...data });
+    }
+
     loadSetupData();
     return () => {
       cancelled = true;
     };
-  }, [loadAttempt, token]);
+  }, [loadAttempt, token, router]);
 
   if (state.status === 'loading') {
     return null;
@@ -288,25 +184,6 @@ export function SetupFlow({ token }: { token: string }) {
         autoCreated={state.autoCreated}
         clipCount={state.clipCount}
         allowedRoles={state.allowedRoles}
-        onReviewSettings={() =>
-          setState({
-            status: 'ready',
-            ...state.setup,
-            // The channel list was read before an auto-created channel
-            // existed; without it the select would show its placeholder and
-            // invite the admin to repoint the archive.
-            channels: state.setup.channels.some((channel) => channel.id === state.archiveChannelId)
-              ? state.setup.channels
-              : [
-                  ...state.setup.channels,
-                  { id: state.archiveChannelId, name: state.archiveChannelName, type: 0 },
-                ],
-            config: {
-              archiveChannelId: state.archiveChannelId,
-              allowedRoleIds: state.allowedRoles.map((role) => role.id),
-            },
-          })
-        }
       />
     );
   }
@@ -349,12 +226,11 @@ export function SetupFlow({ token }: { token: string }) {
 
   return (
     <ScreenB
-      // A new configuration (after "설정 다시 보기") remounts the form so its
-      // prefill is read again rather than kept from the first mount.
-      key={setup.config?.archiveChannelId ?? 'first-setup'}
       channels={setup.channels}
       roles={setup.roles}
       initial={setup.config}
+      archiveChannelMissing={setup.archiveChannelMissing}
+      archiveHref={`/admin/${setup.guildId}/archive`}
       guildName={setup.guildName ?? setup.guildId}
       adminHandle={setup.adminHandle ?? undefined}
       onSubmit={handleSubmit}

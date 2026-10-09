@@ -1,0 +1,56 @@
+/* Values: docs/06_DESIGN_HANDOFF.md Screen D header, matching Screen B's identity bar. */
+.bar {
+  width: min(var(--w-archive), 100%);
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--surface);
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius);
+}
+
+.identity {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.divider {
+  width: var(--hairline);
+  height: var(--sp-3);
+  background: var(--border);
+}
+
+.guild {
+  font: var(--fs-meta) var(--font-mono);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.tabs {
+  display: flex;
+  gap: var(--sp-1);
+}
+
+.tab {
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--radius);
+  font: 500 var(--fs-label) var(--font-ui);
+  color: var(--muted);
+  text-decoration: none;
+  transition: color 120ms;
+}
+
+.tab:hover {
+  color: var(--text);
+}
+
+.tab[aria-current='page'] {
+  color: var(--text);
+  background: var(--raised);
+}

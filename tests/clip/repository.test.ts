@@ -24,6 +24,7 @@ import {
   removeClipper,
   upsertGuildArchiveConfig,
 } from '@/lib/clip/repository';
+import { withGuildLock } from '@/lib/guild-lock';
 
 const CONCURRENT_CLAIMERS = 10;
 const CONCURRENT_CLIPPERS = 8;
@@ -54,6 +55,15 @@ describe('clip repository', () => {
 
   const cleanupGuildIds: string[] = [];
 
+  // A live admin session row, for the finalize-time session recheck.
+  async function liveSession(guildId: string): Promise<string> {
+    const tokenHash = fakeSnowflake();
+    await prisma.adminSession.create({
+      data: { tokenHash, guildId, userId: fakeSnowflake(), expiresAt: new Date(Date.now() + 60_000) },
+    });
+    return tokenHash;
+  }
+
   function trackedGuildId(): string {
     const guildId = fakeSnowflake();
     cleanupGuildIds.push(guildId);
@@ -66,6 +76,8 @@ describe('clip repository', () => {
     await prisma.clip.deleteMany({ where: { guildId: { in: cleanupGuildIds } } });
     await prisma.guildAllowedRole.deleteMany({ where: { guildId: { in: cleanupGuildIds } } });
     await prisma.guildConfig.deleteMany({ where: { guildId: { in: cleanupGuildIds } } });
+    await prisma.adminSession.deleteMany({ where: { guildId: { in: cleanupGuildIds } } });
+    await prisma.setupToken.deleteMany({ where: { guildId: { in: cleanupGuildIds } } });
     cleanupGuildIds.length = 0;
   });
 
@@ -572,6 +584,7 @@ describe('clip repository', () => {
     await clipHasReadConfig.promise;
     const finalizePromise = finalizeGuildArchiveConfig({
       guildId,
+      sessionTokenHash: await liveSession(guildId),
       archiveChannelId: newChannelId,
       configuredByUserId,
       allowedRoleIds: [],
@@ -590,8 +603,10 @@ describe('clip repository', () => {
                 AND pid <> pg_backend_pid()
                 AND state = 'active'
                 AND wait_event_type = 'Lock'
-                AND query LIKE '%guild_configs%'
-                AND query LIKE '%FOR UPDATE%'
+                AND (
+                  query LIKE '%pg_advisory_xact_lock%'
+                  OR (query LIKE '%guild_configs%' AND query LIKE '%FOR UPDATE%')
+                )
             ) AS blocked
           `;
           expect(activity?.blocked).toBe(true);
@@ -614,6 +629,100 @@ describe('clip repository', () => {
     expect(finalize).toEqual({ kind: 'CONFLICT' });
     expect(persistedConfig.archiveChannelId).toBe(oldChannelId);
     expect(await prisma.clip.count({ where: { guildId } })).toBe(1);
+  });
+
+  test('a configuration keeps its configurationId across edits', async () => {
+    const guildId = trackedGuildId();
+    const base = { guildId, configuredByUserId: fakeSnowflake(), allowedRoleIds: [] };
+    await upsertGuildArchiveConfig({ ...base, archiveChannelId: fakeSnowflake() });
+    const first = await prisma.guildConfig.findUniqueOrThrow({ where: { guildId } });
+    expect(first.configurationId).toMatch(/^[0-9a-f-]{36}$/);
+
+    await upsertGuildArchiveConfig({ ...base, archiveChannelId: fakeSnowflake(), allowedRoleIds: [fakeSnowflake()] });
+    const second = await prisma.guildConfig.findUniqueOrThrow({ where: { guildId } });
+    expect(second.configurationId).toBe(first.configurationId);
+  });
+
+  test('a configuration recreated after deletion gets a new configurationId', async () => {
+    const guildId = trackedGuildId();
+    const input = { guildId, archiveChannelId: fakeSnowflake(), configuredByUserId: fakeSnowflake(), allowedRoleIds: [] };
+    await upsertGuildArchiveConfig(input);
+    const first = await prisma.guildConfig.findUniqueOrThrow({ where: { guildId } });
+    await prisma.guildConfig.delete({ where: { guildId } });
+    await upsertGuildArchiveConfig(input);
+    const second = await prisma.guildConfig.findUniqueOrThrow({ where: { guildId } });
+    expect(second.configurationId).not.toBe(first.configurationId);
+  });
+
+  test('lockClip refuses a configurationId that is no longer current', async () => {
+    const input = newClipInput();
+    await upsertGuildArchiveConfig({
+      guildId: input.guildId,
+      archiveChannelId: fakeSnowflake(),
+      configuredByUserId: fakeSnowflake(),
+      allowedRoleIds: [],
+    });
+    await claimClip(input);
+    const config = await findGuildArchiveConfig(input.guildId);
+
+    const called = vi.fn(async () => 'ran');
+    expect(
+      await lockClip(input.guildId, input.sourceMessageId, called, { configurationId: config!.configurationId }),
+    ).toBe('ran');
+    expect(
+      await lockClip(input.guildId, input.sourceMessageId, called, { configurationId: randomUUID() }),
+    ).toBeNull();
+    expect(called).toHaveBeenCalledTimes(1);
+  });
+
+  test('lockClip with a configurationId refuses when the guild has no config', async () => {
+    const input = newClipInput();
+    await claimClip(input);
+    expect(
+      await lockClip(input.guildId, input.sourceMessageId, async () => 'ran', { configurationId: randomUUID() }),
+    ).toBeNull();
+  });
+
+  test('lockClip with a captured "no configuration" refuses once a configuration exists', async () => {
+    const input = newClipInput();
+    await claimClip(input);
+    // Case 12: no configuration then, none now -- the write proceeds.
+    expect(
+      await lockClip(input.guildId, input.sourceMessageId, async () => 'ran', { configurationId: null }),
+    ).toBe('ran');
+
+    await upsertGuildArchiveConfig({
+      guildId: input.guildId,
+      archiveChannelId: fakeSnowflake(),
+      configuredByUserId: fakeSnowflake(),
+      allowedRoleIds: [],
+    });
+    expect(
+      await lockClip(input.guildId, input.sourceMessageId, async () => 'ran', { configurationId: null }),
+    ).toBeNull();
+  });
+
+  test('a Clip row lock waits behind the guild lock', async () => {
+    const input = newClipInput();
+    await claimClip(input);
+    await warmConnectionPool(2);
+    const holding = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const order: string[] = [];
+    const guildWriter = withGuildLock(input.guildId, async () => {
+      holding.resolve();
+      await release.promise;
+      order.push('guild');
+    });
+    await holding.promise;
+    const clipWriter = lockClip(input.guildId, input.sourceMessageId, async () => {
+      order.push('clip');
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(order).toEqual([]);
+    release.resolve();
+    await Promise.all([guildWriter, clipWriter]);
+    expect(order).toEqual(['guild', 'clip']);
   });
 
   test('countArchivedClips counts only ACTIVE clips for the guild', async () => {
@@ -689,6 +798,7 @@ describe('clip repository', () => {
     const roles = [fakeSnowflake(), fakeSnowflake()];
     await finalizeGuildArchiveConfig({
       guildId,
+      sessionTokenHash: await liveSession(guildId),
       archiveChannelId: fakeSnowflake(),
       configuredByUserId: fakeSnowflake(),
       allowedRoleIds: roles,
@@ -702,12 +812,14 @@ describe('clip repository', () => {
     const [kept, dropped, added] = [fakeSnowflake(), fakeSnowflake(), fakeSnowflake()];
     await finalizeGuildArchiveConfig({
       guildId,
+      sessionTokenHash: await liveSession(guildId),
       archiveChannelId: channel,
       configuredByUserId: fakeSnowflake(),
       allowedRoleIds: [kept, dropped],
     });
     await finalizeGuildArchiveConfig({
       guildId,
+      sessionTokenHash: await liveSession(guildId),
       archiveChannelId: channel,
       configuredByUserId: fakeSnowflake(),
       allowedRoleIds: [kept, added],
@@ -720,17 +832,104 @@ describe('clip repository', () => {
     const channel = fakeSnowflake();
     await finalizeGuildArchiveConfig({
       guildId,
+      sessionTokenHash: await liveSession(guildId),
       archiveChannelId: channel,
       configuredByUserId: fakeSnowflake(),
       allowedRoleIds: [fakeSnowflake()],
     });
     await finalizeGuildArchiveConfig({
       guildId,
+      sessionTokenHash: await liveSession(guildId),
       archiveChannelId: channel,
       configuredByUserId: fakeSnowflake(),
       allowedRoleIds: [],
     });
     expect((await findGuildArchiveConfig(guildId))?.allowedRoleIds).toEqual([]);
+  });
+
+  test('finalize refuses when the session was revoked before the save committed', async () => {
+    const guildId = trackedGuildId();
+    const sessionTokenHash = await liveSession(guildId);
+    await prisma.adminSession.delete({ where: { tokenHash: sessionTokenHash } });
+    const outcome = await finalizeGuildArchiveConfig({
+      guildId,
+      archiveChannelId: fakeSnowflake(),
+      configuredByUserId: fakeSnowflake(),
+      allowedRoleIds: [],
+      sessionTokenHash,
+    });
+    expect(outcome).toEqual({ kind: 'SESSION_REVOKED' });
+    expect(await prisma.guildConfig.count({ where: { guildId } })).toBe(0);
+  });
+
+  test('simultaneous first setups both settle, and one configuration exists', async () => {
+    const guildId = trackedGuildId();
+    const sessionTokenHash = await liveSession(guildId);
+    await warmConnectionPool(2);
+    const results = await Promise.all(
+      [fakeSnowflake(), fakeSnowflake()].map((archiveChannelId) =>
+        finalizeGuildArchiveConfig({
+          guildId,
+          archiveChannelId,
+          configuredByUserId: fakeSnowflake(),
+          allowedRoleIds: [],
+          sessionTokenHash,
+        }),
+      ),
+    );
+    expect(results).toEqual([{ kind: 'SAVED' }, { kind: 'SAVED' }]);
+    expect(await prisma.guildConfig.count({ where: { guildId } })).toBe(1);
+  });
+
+  test('repointing off a channel confirmed gone is allowed even with live Clips', async () => {
+    const input = newClipInput();
+    const goneChannelId = fakeSnowflake();
+    await upsertGuildArchiveConfig({
+      guildId: input.guildId,
+      archiveChannelId: goneChannelId,
+      configuredByUserId: fakeSnowflake(),
+      allowedRoleIds: [],
+    });
+    await claimClip(input);
+    const before = await findGuildArchiveConfig(input.guildId);
+    const newChannelId = fakeSnowflake();
+
+    const outcome = await finalizeGuildArchiveConfig({
+      guildId: input.guildId,
+      archiveChannelId: newChannelId,
+      configuredByUserId: fakeSnowflake(),
+      allowedRoleIds: [],
+      sessionTokenHash: await liveSession(input.guildId),
+      goneArchiveChannelId: goneChannelId,
+    });
+
+    expect(outcome).toEqual({ kind: 'SAVED' });
+    const after = await findGuildArchiveConfig(input.guildId);
+    expect(after?.archiveChannelId).toBe(newChannelId);
+    // Still the same configuration lifetime: in-flight Clip work is not discarded.
+    expect(after?.configurationId).toBe(before?.configurationId);
+  });
+
+  test('a gone-channel confirmation for some other channel does not lift the live-Clips refusal', async () => {
+    const input = newClipInput();
+    await upsertGuildArchiveConfig({
+      guildId: input.guildId,
+      archiveChannelId: fakeSnowflake(),
+      configuredByUserId: fakeSnowflake(),
+      allowedRoleIds: [],
+    });
+    await claimClip(input);
+
+    const outcome = await finalizeGuildArchiveConfig({
+      guildId: input.guildId,
+      archiveChannelId: fakeSnowflake(),
+      configuredByUserId: fakeSnowflake(),
+      allowedRoleIds: [],
+      sessionTokenHash: await liveSession(input.guildId),
+      goneArchiveChannelId: fakeSnowflake(),
+    });
+
+    expect(outcome).toEqual({ kind: 'CONFLICT' });
   });
 
   test('first setup leaves no configuration row when the role write fails', async () => {
@@ -741,6 +940,7 @@ describe('clip repository', () => {
     await expect(
       finalizeGuildArchiveConfig({
         guildId,
+        sessionTokenHash: await liveSession(guildId),
         archiveChannelId: fakeSnowflake(),
         configuredByUserId: fakeSnowflake(),
         allowedRoleIds: [duplicate, duplicate],

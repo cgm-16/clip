@@ -6,14 +6,18 @@ import { PERMISSION } from '@/lib/discord/permissions';
 import { DiscordApiError } from '@/lib/discord/rest-client';
 
 const authenticateAdminSession = vi.hoisted(() => vi.fn());
-vi.mock('@/lib/admin-session/service', () => ({ authenticateAdminSession }));
+vi.mock('@/lib/admin-session/service', () => ({
+  authenticateAdminSession,
+  sessionTokenHash: (token: string) => `session-hash:${token}`,
+}));
 
 const getGuildSetupChannels = vi.hoisted(() => vi.fn());
 const getGuildRoles = vi.hoisted(() => vi.fn());
 const getChannelOverwrites = vi.hoisted(() => vi.fn());
 const getMemberRoleIds = vi.hoisted(() => vi.fn());
+const isChannelGone = vi.hoisted(() => vi.fn());
 const createDiscordGuildLookup = vi.hoisted(() =>
-  vi.fn(() => ({ getGuildSetupChannels, getGuildRoles, getChannelOverwrites, getMemberRoleIds })),
+  vi.fn(() => ({ getGuildSetupChannels, getGuildRoles, getChannelOverwrites, getMemberRoleIds, isChannelGone })),
 );
 vi.mock('@/lib/discord/guild-lookup', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/discord/guild-lookup')>();
@@ -214,6 +218,7 @@ describe('POST /setup/save', () => {
       expect.objectContaining({ name: 'clip-archive' }),
     );
     expect(finalizeGuildArchiveConfig).toHaveBeenCalledWith({
+      sessionTokenHash: 'session-hash:session-bearer',
       guildId: GUILD_ID,
       archiveChannelId: '222',
       configuredByUserId: USER_ID,
@@ -236,6 +241,29 @@ describe('POST /setup/save', () => {
     expect(upsertGuildArchiveConfig).not.toHaveBeenCalled();
   });
 
+  test('a session revoked during an auto-create save deletes the new channel and returns 401', async () => {
+    stubEnv();
+    authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
+    finalizeGuildArchiveConfig.mockResolvedValue({ kind: 'SESSION_REVOKED' });
+
+    const response = await POST(postJson({ destination: 'create', channelId: null, allowedRoleIds: [] }));
+
+    expect(response.status).toBe(401);
+    expect(discordRequest).toHaveBeenLastCalledWith('DELETE', '/channels/222');
+  });
+
+  test('a session revoked during an existing-channel save returns 401 and deletes nothing', async () => {
+    stubEnv();
+    authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
+    getGuildSetupChannels.mockResolvedValue([{ id: '111', name: 'general', type: 0 }]);
+    finalizeGuildArchiveConfig.mockResolvedValue({ kind: 'SESSION_REVOKED' });
+
+    const response = await POST(postJson({ destination: 'existing', channelId: '111', allowedRoleIds: [] }));
+
+    expect(response.status).toBe(401);
+    expect(discordRequest).not.toHaveBeenCalledWith('DELETE', expect.anything());
+  });
+
   test('returns 409 without deleting an existing channel when final reconfiguration conflicts', async () => {
     stubEnv();
     authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
@@ -248,6 +276,7 @@ describe('POST /setup/save', () => {
     expect(response.status).toBe(409);
     expect(getGuildSetupChannels).toHaveBeenCalledWith(GUILD_ID);
     expect(finalizeGuildArchiveConfig).toHaveBeenCalledWith({
+      sessionTokenHash: 'session-hash:session-bearer',
       guildId: GUILD_ID,
       archiveChannelId: '222',
       configuredByUserId: USER_ID,
@@ -338,6 +367,7 @@ describe('POST /setup/save', () => {
       .permission_overwrites;
     expect(overwrites.map((overwrite) => overwrite.id)).not.toContain(APPLICATION_ID);
     expect(finalizeGuildArchiveConfig).toHaveBeenCalledWith({
+      sessionTokenHash: 'session-hash:session-bearer',
       guildId: GUILD_ID,
       archiveChannelId: '222',
       configuredByUserId: USER_ID,
@@ -413,6 +443,36 @@ describe('POST /setup/save', () => {
       // channel-creation POST.
       expect(getGuildSetupChannels).not.toHaveBeenCalled();
       expect(discordRequest).not.toHaveBeenCalled();
+    });
+
+    test('the current channel still existing keeps the refusal, and the check asks Discord about that channel', async () => {
+      stubEnv();
+      authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
+      findGuildArchiveConfig.mockResolvedValue({ archiveChannelId: '111', allowedRoleIds: [] });
+      hasLiveClips.mockResolvedValue(true);
+      isChannelGone.mockResolvedValue(false);
+
+      const response = await POST(postJson({ destination: 'existing', channelId: '222', allowedRoleIds: [] }));
+
+      expect(response.status).toBe(409);
+      expect(isChannelGone).toHaveBeenCalledWith('111');
+    });
+
+    test('moving off a current channel Discord confirms deleted is allowed despite live Clips (#58)', async () => {
+      stubEnv();
+      authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
+      findGuildArchiveConfig.mockResolvedValue({ archiveChannelId: 'gone', allowedRoleIds: [] });
+      hasLiveClips.mockResolvedValue(true);
+      isChannelGone.mockResolvedValue(true);
+      countArchivedClips.mockResolvedValue(4);
+
+      const response = await POST(postJson({ destination: 'create', channelId: null, allowedRoleIds: [] }));
+
+      expect(response.status).toBe(200);
+      expect(isChannelGone).toHaveBeenCalledWith('gone');
+      expect(finalizeGuildArchiveConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ archiveChannelId: '222', goneArchiveChannelId: 'gone' }),
+      );
     });
 
     test('a create-destination save is refused (409) when the guild already has a config and a live Clip', async () => {

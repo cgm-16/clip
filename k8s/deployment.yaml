@@ -5,6 +5,13 @@ metadata:
   namespace: clip
 spec:
   replicas: 1
+  # Recreate, not the default RollingUpdate: an old pod must never keep
+  # writing while a new one runs. The guild lock and configurationId
+  # boundary (lib/guild-lock.ts) only protect writers that know about them
+  # (design: "Guild-data deletion and concurrent work"). One replica, so the
+  # cost is a few seconds of downtime per deploy.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: clip

@@ -1,6 +1,8 @@
 import type { AuthorNotificationStatus, ClipStatus, Prisma } from '@/generated/prisma/client';
 import type { ArchiveMessageIds } from '@/lib/clip/types';
 import { getPrismaClient } from '@/lib/db';
+import { isAdminSessionLive } from '@/lib/admin-session/repository';
+import { lockGuild, withGuildLock } from '@/lib/guild-lock';
 
 /** A Prisma client scoped to an open transaction. See `lockClip`. */
 export type TxClient = Prisma.TransactionClient;
@@ -19,6 +21,8 @@ export type ClipRecord = {
 export type GuildArchiveConfig = {
   archiveChannelId: string;
   allowedRoleIds: string[];
+  /** This configuration's lifetime id; see `GuildConfig.configurationId`. */
+  configurationId: string;
 };
 
 const clipRecordSelect = {
@@ -33,16 +37,19 @@ const clipRecordSelect = {
 
 const guildArchiveConfigSelect = {
   archiveChannelId: true,
+  configurationId: true,
   allowedRoles: { select: { roleId: true } },
 } as const;
 
 function guildArchiveConfigOf(config: {
   archiveChannelId: string;
+  configurationId: string;
   allowedRoles: { roleId: string }[];
 }): GuildArchiveConfig {
   return {
     archiveChannelId: config.archiveChannelId,
     allowedRoleIds: config.allowedRoles.map((role) => role.roleId),
+    configurationId: config.configurationId,
   };
 }
 
@@ -128,13 +135,36 @@ export function claimClipInTransaction(
  * obligation, and the count-dependent ones -- `removeClipper` and
  * `countClippers` -- return answers that are simply wrong if it is not
  * honoured.
+ *
+ * With `options.configurationId`, resolves to null without calling `fn`
+ * unless the guild's current configuration still has that id -- or, for a
+ * captured null, still has none. The guild lock makes the check and the write
+ * atomic with respect to deletion and re-setup.
  */
 export function lockClip<T>(
   guildId: string,
   sourceMessageId: string,
   fn: (tx: TxClient, clip: ClipRecord) => Promise<T>,
+  options: { configurationId?: string | null } = {},
 ): Promise<T | null> {
   return getPrismaClient().$transaction(async (tx) => {
+    // Guild lock first, always: see lib/guild-lock.ts for the lock order.
+    await lockGuild(tx, guildId);
+    if (options.configurationId !== undefined) {
+      // The caller started under a configuration that a deletion (and
+      // perhaps a re-setup) has since replaced. Its write belongs to a
+      // lifetime that no longer exists, so it is discarded rather than
+      // applied to whatever Clip now holds the same key.
+      const current = await tx.guildConfig.findUnique({
+        where: { guildId },
+        select: { configurationId: true },
+      });
+      // A captured null ("this guild had no configuration") must still find
+      // none: a re-setup in between is a different lifetime too.
+      if ((current?.configurationId ?? null) !== options.configurationId) {
+        return null;
+      }
+    }
     const locked = await tx.$executeRaw`
       SELECT 1 FROM clips
       WHERE guild_id = ${guildId} AND source_message_id = ${sourceMessageId}
@@ -166,6 +196,8 @@ export function lockGuildConfig<T>(
   fn: (tx: TxClient, config: GuildArchiveConfig) => Promise<T>,
 ): Promise<T | null> {
   return getPrismaClient().$transaction(async (tx) => {
+    // Guild lock first, always: see lib/guild-lock.ts.
+    await lockGuild(tx, guildId);
     const locked = await tx.$executeRaw`
       SELECT 1 FROM guild_configs
       WHERE guild_id = ${guildId}
@@ -469,30 +501,46 @@ export function hasLiveClips(guildId: string): Promise<boolean> {
 }
 
 /**
- * Persists setup after Discord work, rechecking a reconfiguration against the
- * Clip rows while holding the same guild lock used by canonical Clip claims.
+ * Persists setup after Discord work. Runs under the guild lock, so it is
+ * ordered against Clip claims, deletion and other saves -- first setup
+ * included, when there is no config row to lock. The session is rechecked
+ * inside: a deletion between this request's authentication and its commit
+ * revokes the session, and the save must not recreate the configuration the
+ * deletion removed.
  */
 export async function finalizeGuildArchiveConfig(
-  input: UpsertGuildArchiveConfigInput,
-): Promise<{ kind: 'SAVED' } | { kind: 'CONFLICT' }> {
-  const outcome = await lockGuildConfig(input.guildId, async (tx, config) => {
+  input: UpsertGuildArchiveConfigInput & {
+    sessionTokenHash: string;
+    now?: Date;
+    /**
+     * The current archive channel, when the caller has confirmed with Discord
+     * that it no longer exists. Moving off it is then allowed despite live
+     * Clips: their archive messages went with the channel, so there is nothing
+     * left to strand (Ori, 2026-10-09, #58).
+     */
+    goneArchiveChannelId?: string;
+  },
+): Promise<{ kind: 'SAVED' } | { kind: 'CONFLICT' } | { kind: 'SESSION_REVOKED' }> {
+  const { sessionTokenHash, now = new Date(), goneArchiveChannelId, ...config } = input;
+  return withGuildLock(config.guildId, async (tx) => {
+    if (!(await isAdminSessionLive(tx, sessionTokenHash, config.guildId, now))) {
+      return { kind: 'SESSION_REVOKED' as const };
+    }
+    const existing = await tx.guildConfig.findUnique({
+      where: { guildId: config.guildId },
+      select: { archiveChannelId: true },
+    });
     if (
-      config.archiveChannelId !== input.archiveChannelId &&
-      (await hasLiveClipsWithClient(tx, input.guildId))
+      existing !== null &&
+      existing.archiveChannelId !== config.archiveChannelId &&
+      existing.archiveChannelId !== goneArchiveChannelId &&
+      (await hasLiveClipsWithClient(tx, config.guildId))
     ) {
       return { kind: 'CONFLICT' as const };
     }
-    await upsertGuildArchiveConfigWithClient(tx, input);
+    await upsertGuildArchiveConfigWithClient(tx, config);
     return { kind: 'SAVED' as const };
   });
-  if (outcome !== null) {
-    return outcome;
-  }
-
-  // There is no row to lock on first setup. Simultaneous first setup is a
-  // separate problem; preserve the existing database upsert path here.
-  await upsertGuildArchiveConfig(input);
-  return { kind: 'SAVED' };
 }
 
 /**

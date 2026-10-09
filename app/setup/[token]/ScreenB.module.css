@@ -140,3 +140,11 @@
   align-items: center;
   gap: var(--sp-2);
 }
+
+/* #59: the live-Clips refusal's link to the web archive. */
+.inlineLink {
+  display: inline-block;
+  margin-top: var(--sp-2);
+  font: 500 var(--fs-small) var(--font-ui);
+  color: var(--accent-text);
+}

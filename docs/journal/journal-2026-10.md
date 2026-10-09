@@ -45,3 +45,36 @@ Found along the way, none caused by Wave 4 code:
 - **A deleted archive channel is a dead end in setup.** Ori had deleted the old `#clip-archive` while one Aug-20 clip was still `ACTIVE`. The fresh link prefilled the dead channel id, so the select showed only its placeholder with no `누락` explanation, and every destination change hit the `LIVE_CLIPS` refusal, which does not say which messages are live. Recovery needed a database query to find the message, then `Remove from Clip Archive` on it (deleting archive messages in a missing channel 404s, which the deleter already treats as gone). Fixing it needs new Korean copy; candidate issue for Wave 5 planning. Extends the deferred minor "deleted archive channel surfaces only as the generic save failure".
 - **The bot's own managed role is selectable** in the role picker. No member can hold it, so selecting it is a no-op. Minor; could mark managed roles non-selectable like `@everyone`.
 - My check-4 instructions said the refusal would carry `누락`; the design reserves `누락` for a missing archive copy, and `오류` is correct.
+
+## 2026-10-09 — Wave 5: web archive, settings and guild-data deletion
+
+Shipped on `wave/5-web-archive` (plan `docs/superpowers/plans/2026-10-09-wave-5-web-archive.md`, inline execution):
+
+- **Lifecycle boundary.** `GuildConfig.configurationId` (DB-generated UUID, never updated) and a per-guild transaction-scoped advisory lock (`lib/guild-lock.ts`) taken first by every guild control-plane writer: setup-token issuance and exchange, `finalizeGuildArchiveConfig` (which now also covers first setup and rechecks the admin session under the lock), guild-data deletion, and every `lockClip`/`lockGuildConfig` transaction. Clip operations capture `configurationId` at claim and recheck it under the lock before each later write; a completion straddling delete-and-re-setup is discarded and its Discord pair deleted. The RED for that test was the stale request reporting `CLIPPER_ADDED` against the new configuration's Clip.
+- **Deletion (5.4).** `POST /api/admin/guilds/:guildId/delete-data`: same-origin JSON, session for this guild, explicit `acknowledged: true`; one transaction deletes config, roles, Clips (tombstones and notification state), clippers, setup tokens and sessions; no Discord calls; clears the cookie.
+- **Archive (5.1–5.3, F.5).** Cursor-paginated ACTIVE reader in one REPEATABLE READ snapshot over the new `clips_guild_status_created_idx`; a bounded content route (≤20 ids, all resolved against this guild's ACTIVE rows before any fetch, ≤4 concurrent, two reads per row for content and reply/original availability); the clip card; Screen D.
+- **Screen E and routing.** Settings page with two-step deletion; a configured guild's `/setup` link opens Screen E; 설정 변경 opens a session-based edit (`/admin/:guildId/setup`) that returns with the saved toast; Screen C links to the web archive and settings; #59 (refusal links to the archive) and #58 (deleted archive channel flagged with 누락, Ori's copy) closed. `k8s/deployment.yaml` now rolls out with `Recreate`.
+
+Rulings made during execution (all in the plan ledger; decisions D1–D9 are in the plan):
+
+- The Prisma CLI here has no `--shadow-database-url` for `migrate diff`; the migration was checked with `--from-config-datasource` against the migrated local DB ("No difference detected").
+- An existing race test's `pg_stat_activity` probe was widened to accept a `pg_advisory_xact_lock` waiter, as the plan anticipated.
+- The React compiler lint (`set-state-in-effect`) rejected the plan's archive-loading `useCallback`; restructured to apply results only from promise callbacks.
+- `/setup/data` now projects config to `{archiveChannelId, allowedRoleIds}`: adding `configurationId` to `GuildArchiveConfig` had started sending it to the browser.
+- A deleted archive channel is not prefilled, so a save cannot resubmit an id Discord no longer has.
+- Removed SetupFlow's ScreenB `key` and its comment and ScreenC's "web archive is cut" comment — both provably false after D1. Updated one existing assertion that pinned Screen C's old Discord-channel link.
+
+Responsive pass (local dev, real Postgres, seeded session; Discord deliberately unreachable): `/admin/:g/archive`, `/admin/:g/settings`, `/admin/:g/setup` and an other-guild session at 1280/960/640/390 px — `scrollWidth === clientWidth` at every width (the probe was checked against an injected 900px element, which it reported). Screen E stacks to one column, the confirm panel and 4 consequence rows render, 삭제 실행 is disabled until acknowledged; an other-guild session renders the session-expired screen. **Not checked locally**: Screen B's edit form (its data load needs Discord, so it showed the load-error screen) and a ready card with real long code/URLs — both move to the live checks.
+
+Deferred minors: the Callout primitive's tag column wraps `오류` onto two lines at 390px (pre-existing, visible in Wave 4's screenshots too); a per-row retry is not aborted on unmount (its result is applied to an unmounted component's discarded state, harmless).
+
+### 2026-10-09 — Wave 5 review fixes and the #58 exception
+
+The whole-branch review found no Critical issues. Fixed test-first: a cursor past year 9999 made Postgres reject the cast and the page 500 instead of recovering; one clip leaving ACTIVE after render turned the whole page's content batch INVALID (now such ids are skipped, no Discord call, per-row 오류); a captured "no configuration" was not rechecked under the lock (now compared as nullable). Ori chose to allow moving off an archive channel Discord confirms gone even with live Clips (#58 otherwise dead-ended at the live-Clips refusal) — recorded in the restoration design's 2026-10-09 decision. The cross-guild cookie landing found by the same review is #62. Review minors are listed in the PR #61 body.
+
+
+Known limitation, accepted by Ori 2026-10-09: after moving off a deleted archive channel, Clips archived there stay ACTIVE and show `누락`; clipping one of those source messages again only adds a clipper (no new copy is posted). Recovery today: every clipper unclips (record cleared, then a fresh clip reposts), or guild-data deletion. Remove from Clip Archive tombstones the message instead. Reposting a confirmed-missing copy on re-clip is "ambient reconciliation", deferred to P1 as #63.
+
+### 2026-10-09 — #62 fixed in PR #61
+
+A fresh `/setup` link now exchanges its own token even when a live admin session already exists, so a guild-A session can no longer hijack (or, with the 15-min token vs 30-min session, block) a guild-B link. The session alone is trusted only on a reload of a link this tab already exchanged (a `sessionStorage` marker) or on a retry after an exchange whose response was lost. Exchange-first was tried first and reverted: it reordered every call in SetupFlow's 14 race tests. The landed version changes only the "session found" branch; three tests that encoded the old "live session ⇒ don't exchange" behaviour were updated to the new guarantee (exchange exactly once), and seven save-path tests gained an exchange stub. Cost: a used link opened in a new tab (no marker) shows Screen A instead of reusing the session. Mutation-checked: disabling the marker fails the reload test.

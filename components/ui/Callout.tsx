@@ -3,13 +3,14 @@ import { TextTag } from './TextTag';
 import styles from './Callout.module.css';
 import { WEB_COPY } from '@/lib/ui/copy';
 
-export type CalloutVariant = 'note' | 'ok' | 'confirm' | 'error';
+export type CalloutVariant = 'note' | 'ok' | 'confirm' | 'error' | 'missing';
 
 const TAG_TEXT: Record<CalloutVariant, string> = {
   note: WEB_COPY.tags.note,
   ok: WEB_COPY.tags.ok,
   confirm: WEB_COPY.tags.confirm,
   error: WEB_COPY.tags.error,
+  missing: WEB_COPY.tags.missing,
 };
 
 export interface CalloutProps {

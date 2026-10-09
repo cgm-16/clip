@@ -1,6 +1,6 @@
 import type { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { authenticateAdminSession } from '@/lib/admin-session/service';
+import { authenticateAdminSession, sessionTokenHash } from '@/lib/admin-session/service';
 import { ADMIN_SESSION_COOKIE_NAME } from '@/lib/admin-session/tokens';
 import {
   countArchivedClips,
@@ -123,12 +123,22 @@ export async function POST(request: NextRequest) {
   // already-configured channel is a no-op, not a reconfigure, so it is
   // allowed too even with live Clips. "create" always makes a brand-new
   // channel, so it is a reconfigure whenever a config already exists.
+  //
+  // The one exception: Discord confirms the current archive channel itself
+  // is gone. Its archive messages went with it, so there is nothing left to
+  // strand, and refusing would leave the guild with no way to set a new
+  // archive short of deleting its data (Ori, 2026-10-09, #58).
   const existingConfig = await findGuildArchiveConfig(guildId);
   const isReconfigure =
     existingConfig !== null &&
     (destination === 'create' || existingConfig.archiveChannelId !== channelId);
+  let goneArchiveChannelId: string | undefined;
   if (isReconfigure && (await hasLiveClips(guildId))) {
-    return liveClipsConflict();
+    const lookup = createDiscordGuildLookup({ botToken: env.DISCORD_BOT_TOKEN, fetchImpl: fetch });
+    if (!(await lookup.isChannelGone(existingConfig.archiveChannelId))) {
+      return liveClipsConflict();
+    }
+    goneArchiveChannelId = existingConfig.archiveChannelId;
   }
 
   let archiveChannelId: string;
@@ -242,29 +252,44 @@ export async function POST(request: NextRequest) {
     throw error;
   }
 
+  // A channel this request auto-created that the save then did not keep.
+  async function deleteCreatedChannel(): Promise<void> {
+    const client = createDiscordRestClient({ botToken: env.DISCORD_BOT_TOKEN, fetchImpl: fetch });
+    try {
+      await client.request('DELETE', `/channels/${archiveChannelId}`);
+    } catch (error) {
+      logClipEvent({
+        event: 'setup.archive-channel-cleanup-failed',
+        guildId,
+        errorCode:
+          error instanceof DiscordApiError
+            ? String(error.code ?? error.status)
+            : 'UNKNOWN',
+      });
+    }
+  }
+
   const finalized = await finalizeGuildArchiveConfig({
     guildId,
     archiveChannelId,
     configuredByUserId: identity.userId,
     allowedRoleIds: requestedRoleIds,
+    sessionTokenHash: sessionTokenHash(sessionToken),
+    goneArchiveChannelId,
   });
   if (finalized.kind === 'CONFLICT') {
     if (destination === 'create') {
-      const client = createDiscordRestClient({ botToken: env.DISCORD_BOT_TOKEN, fetchImpl: fetch });
-      try {
-        await client.request('DELETE', `/channels/${archiveChannelId}`);
-      } catch (error) {
-        logClipEvent({
-          event: 'setup.archive-channel-cleanup-failed',
-          guildId,
-          errorCode:
-            error instanceof DiscordApiError
-              ? String(error.code ?? error.status)
-              : 'UNKNOWN',
-        });
-      }
+      await deleteCreatedChannel();
     }
     return liveClipsConflict();
+  }
+  if (finalized.kind === 'SESSION_REVOKED') {
+    // A guild-data deletion revoked this session after it was authenticated;
+    // the save must not leave a channel the deleted configuration never owned.
+    if (destination === 'create') {
+      await deleteCreatedChannel();
+    }
+    return new Response(null, { status: 401 });
   }
   const clipCount = await countArchivedClips(guildId);
 

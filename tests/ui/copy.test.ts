@@ -159,4 +159,32 @@ describe('web UI copy', () => {
   it('keeps the approved role-removal announcement exact', () => {
     expect(WEB_COPY_AUTHORED.roleRemoved).toBe('{role} 역할이 제거되었습니다.');
   });
+
+  it('pins the Wave 5 strings Ori approved on 2026-10-09 exactly', () => {
+    expect(WEB_COPY_AUTHORED.archiveFetchFailed).toBe('보관된 내용을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    expect(WEB_COPY_AUTHORED.archiveAccessDenied).toBe(
+      '아카이브 채널에 접근할 수 없습니다. Discord에서 Clip의 채널 권한을 확인해 주세요.',
+    );
+    expect(WEB_COPY_AUTHORED.archiveEmpty).toBe('아직 보관된 메시지가 없습니다.');
+    expect(WEB_COPY_AUTHORED.archiveFilterEmpty).toBe('이 채널에서 보관된 메시지가 없습니다.');
+    expect(WEB_COPY_AUTHORED.originalUnavailable).toBe('원본 메시지를 찾을 수 없습니다.');
+    expect(WEB_COPY_AUTHORED.adminSessionExpiredTitle).toBe('관리자 세션이 만료되었습니다');
+    expect(WEB_COPY_AUTHORED.deletionLosesControlState).toBe(
+      '보관 기록과 삭제 차단 기록이 사라집니다. 남아 있는 Discord 사본은 Clip에서 관리할 수 없으며, 같은 원본 메시지가 다시 보관될 수 있습니다.',
+    );
+    expect(WEB_COPY_AUTHORED.deletionCompleted).toBe(
+      '이 서버의 Clip 데이터를 삭제했습니다. Discord 아카이브 채널과 그 안의 메시지는 그대로 남아 있습니다.',
+    );
+    expect(WEB_COPY_AUTHORED.deletionFailed).toBe('Clip 데이터를 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+  });
+
+  it('pins the #58 deleted-archive-channel string Ori supplied exactly', () => {
+    expect(WEB_COPY_AUTHORED.archiveChannelMissing).toBe(
+      '설정된 아카이브 채널이 Discord에 없습니다. 다른 채널을 선택하거나 새로 만들어 주세요.',
+    );
+  });
+
+  it('the clip card action reuses the handoff label', () => {
+    expect(WEB_COPY.clipCard.viewOriginal).toBe('원본 보기');
+  });
 });

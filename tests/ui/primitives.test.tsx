@@ -195,6 +195,7 @@ describe('Callout', () => {
     ['ok', WEB_COPY.tags.ok],
     ['confirm', WEB_COPY.tags.confirm],
     ['error', WEB_COPY.tags.error],
+    ['missing', WEB_COPY.tags.missing],
   ] as const)('renders the %s variant with its text tag, never colour alone', (variant, tag) => {
     render(<Callout variant={variant}>메시지 본문</Callout>);
     expect(screen.getByText(tag)).toBeInTheDocument();

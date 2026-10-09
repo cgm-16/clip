@@ -9,6 +9,9 @@ import '@testing-library/jest-dom/vitest';
 // across tests. See tests/ui/primitives.test.tsx for the same pattern.
 afterEach(cleanup);
 
+const navigation = vi.hoisted(() => ({ replace: vi.fn(), push: vi.fn() }));
+vi.mock('next/navigation', () => ({ useRouter: () => navigation }));
+
 import { ScreenA } from '@/app/setup/[token]/ScreenA';
 import { ScreenB, type SaveOutcome } from '@/app/setup/[token]/ScreenB';
 import { ScreenC } from '@/app/setup/[token]/ScreenC';
@@ -319,26 +322,22 @@ describe('ScreenC — setup complete', () => {
     ).toBeInTheDocument();
   });
 
-  it('"아카이브 열기" is a real link to the Discord archive channel', () => {
+  it('Screen C opens the web archive and Screen E (decision D1)', () => {
     render(<ScreenC {...BASE_PROPS} guildId="g1" archiveChannelId="111" />);
-    const link = screen.getByRole('link', { name: WEB_COPY.setupComplete.openArchive });
-    expect(link).toHaveAttribute('href', 'https://discord.com/channels/g1/111');
-    expect(link).toHaveAttribute('target', '_blank');
-    expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'));
-  });
-
-  it('"설정 다시 보기" invokes the review-settings callback', async () => {
-    const user = userEvent.setup();
-    const onReviewSettings = vi.fn();
-    render(<ScreenC {...BASE_PROPS} onReviewSettings={onReviewSettings} />);
-
-    await user.click(screen.getByRole('button', { name: WEB_COPY.setupComplete.reviewSettings }));
-    expect(onReviewSettings).toHaveBeenCalledOnce();
+    expect(screen.getByRole('link', { name: WEB_COPY.setupComplete.openArchive })).toHaveAttribute(
+      'href',
+      '/admin/g1/archive',
+    );
+    expect(screen.getByRole('link', { name: WEB_COPY.setupComplete.reviewSettings })).toHaveAttribute(
+      'href',
+      '/admin/g1/settings',
+    );
   });
 });
 
 describe('SetupFlow — session exchange and Screen A/B branching', () => {
   afterEach(() => {
+    window.sessionStorage.clear();
     vi.unstubAllGlobals();
   });
 
@@ -381,7 +380,7 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
     ).toHaveLength(0);
   });
 
-  it('retries setup data without exchanging when the token remains unspent', async () => {
+  it('retries setup data after a load error, then exchanges the still-unspent token exactly once (#62)', async () => {
     const user = userEvent.setup();
     let dataCalls = 0;
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
@@ -391,6 +390,9 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
         return dataCalls === 1
           ? new Response(null, { status: 502 })
           : Response.json(setupDataBody());
+      }
+      if (url.endsWith('/api/setup/exchange')) {
+        return new Response(null, { status: 204 });
       }
       throw new Error(`unexpected fetch: ${url}`);
     });
@@ -402,10 +404,11 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
     await user.click(screen.getByRole('button', { name: WEB_COPY_AUTHORED.retry }));
 
     await waitFor(() => expect(screen.getByText(WEB_COPY.setup.destinationLegend)).toBeInTheDocument());
-    expect(dataCalls).toBe(2);
+    // A live session does not stand in for a fresh link: the link's own token
+    // decides which guild this page is for, and is spent exactly once.
     expect(
       fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/api/setup/exchange')),
-    ).toHaveLength(0);
+    ).toHaveLength(1);
   });
 
   it('keeps only one retry active while retried setup data is pending', async () => {
@@ -414,6 +417,9 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
     let dataCalls = 0;
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
+      if (url.endsWith('/api/setup/exchange')) {
+        return new Response(null, { status: 204 });
+      }
       if (!url.endsWith('/setup/data')) {
         throw new Error(`unexpected fetch: ${url}`);
       }
@@ -421,9 +427,12 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
       if (dataCalls === 1) {
         return new Response(null, { status: 502 });
       }
-      return new Promise<Response>((resolve) => {
-        resolveRetryData = resolve;
-      });
+      if (dataCalls === 2) {
+        return new Promise<Response>((resolve) => {
+          resolveRetryData = resolve;
+        });
+      }
+      return Response.json(setupDataBody());
     });
     vi.stubGlobal('fetch', fetchMock);
 
@@ -733,6 +742,10 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
         if (dataCalls === 1) {
           return new Response(null, { status: 401 });
         }
+        if (dataCalls >= 4) {
+          // The current token's own post-exchange load.
+          return Response.json(setupDataBody());
+        }
         return new Promise<Response>((resolve) => {
           if (dataCalls === 2) {
             resolveStaleData = resolve;
@@ -824,6 +837,55 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
     );
   });
 
+  it('a fresh link exchanges its own token instead of trusting a live session for another guild (#62)', async () => {
+    let exchanged = false;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/api/setup/exchange')) {
+        exchanged = true;
+        return new Response(null, { status: 204 });
+      }
+      if (url.endsWith('/setup/data')) {
+        // Before the exchange the cookie belongs to guild A (configured);
+        // after it, to the link's own guild B.
+        return Response.json(
+          exchanged
+            ? setupDataBody({ guildId: 'gB', guildName: 'Guild B' })
+            : setupDataBody({ guildId: 'gA', guildName: 'Guild A', config: { archiveChannelId: '111', allowedRoleIds: [] } }),
+        );
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<SetupFlow token="fresh-b-token" />);
+
+    expect(await screen.findByText('Guild B')).toBeInTheDocument();
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/api/setup/exchange'))).toHaveLength(1);
+    expect(navigation.replace).not.toHaveBeenCalled();
+  });
+
+  it('a refused link shows Screen A even when a session for some guild is live (#62)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith('/api/setup/exchange')) {
+          return new Response(null, { status: 401 });
+        }
+        if (url.endsWith('/setup/data')) {
+          return Response.json(setupDataBody({ guildId: 'gA', config: { archiveChannelId: '111', allowedRoleIds: [] } }));
+        }
+        throw new Error(`unexpected fetch: ${url}`);
+      }),
+    );
+
+    render(<SetupFlow token="expired-b-token" />);
+
+    expect(await screen.findByText(WEB_COPY.expiredSetupLink.title)).toBeInTheDocument();
+    expect(navigation.replace).not.toHaveBeenCalled();
+  });
+
   it('reuses an already-live admin session on reload, without re-exchanging the (now spent) token', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -833,6 +895,8 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
       throw new Error(`unexpected fetch: ${url}`);
     });
     vi.stubGlobal('fetch', fetchMock);
+    // A reload: this tab exchanged the token on its first load.
+    window.sessionStorage.setItem('clip:setup-exchanged:already-used-token', '1');
 
     render(<SetupFlow token="already-used-token" />);
 
@@ -848,6 +912,9 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
     const user = userEvent.setup();
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      if (url.endsWith('/api/setup/exchange')) {
+        return new Response(null, { status: 204 });
+      }
       if (url.endsWith('/setup/data')) {
         return Response.json(setupDataBody());
       }
@@ -877,7 +944,7 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
     expect(screen.getByText('OK')).toBeInTheDocument(); // autoCreated callout
     expect(screen.getByRole('link', { name: WEB_COPY.setupComplete.openArchive })).toHaveAttribute(
       'href',
-      'https://discord.com/channels/g1/999',
+      '/admin/g1/archive',
     );
   });
 
@@ -885,6 +952,9 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
     const user = userEvent.setup();
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
+      if (url.endsWith('/api/setup/exchange')) {
+        return new Response(null, { status: 204 });
+      }
       if (url.endsWith('/setup/data')) {
         return Response.json(setupDataBody());
       }
@@ -913,6 +983,9 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
     const user = userEvent.setup();
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
+      if (url.endsWith('/api/setup/exchange')) {
+        return new Response(null, { status: 204 });
+      }
       if (url.endsWith('/setup/data')) {
         return Response.json(setupDataBody());
       }
@@ -948,6 +1021,9 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
     window.addEventListener('unhandledrejection', unhandledRejection);
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
+      if (url.endsWith('/api/setup/exchange')) {
+        return new Response(null, { status: 204 });
+      }
       if (url.endsWith('/setup/data')) {
         return Response.json(setupDataBody());
       }
@@ -982,6 +1058,9 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
     let saveAttempts = 0;
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
+      if (url.endsWith('/api/setup/exchange')) {
+        return new Response(null, { status: 204 });
+      }
       if (url.endsWith('/setup/data')) {
         return Response.json(setupDataBody());
       }
@@ -1026,6 +1105,9 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
     const user = userEvent.setup();
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
+      if (url.endsWith('/api/setup/exchange')) {
+        return new Response(null, { status: 204 });
+      }
       if (url.endsWith('/setup/data')) {
         return Response.json(setupDataBody());
       }
@@ -1052,38 +1134,6 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
     // Still Screen B — a rejected save must never silently advance.
     expect(screen.getByText(WEB_COPY.setup.destinationLegend)).toBeInTheDocument();
     expect(screen.queryByText(WEB_COPY.setupComplete.title)).not.toBeInTheDocument();
-  });
-
-  it('"설정 다시 보기" on Screen C returns to Screen B with the same fetched channels', async () => {
-    const user = userEvent.setup();
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith('/setup/data')) {
-        return Response.json(setupDataBody());
-      }
-      if (url.endsWith('/setup/save')) {
-        return Response.json({
-          archiveChannelId: '111',
-          archiveChannelName: 'clip-archive',
-          autoCreated: false,
-          clipCount: 2,
-          allowedRoles: [],
-        });
-      }
-      throw new Error(`unexpected fetch: ${url}`);
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    render(<SetupFlow token="fresh-token" />);
-    await waitFor(() =>
-      expect(screen.getByText(WEB_COPY.setup.destinationLegend)).toBeInTheDocument(),
-    );
-    await user.click(screen.getByRole('button', { name: WEB_COPY.setup.save }));
-    await waitFor(() => expect(screen.getByText(WEB_COPY.setupComplete.title)).toBeInTheDocument());
-
-    await user.click(screen.getByRole('button', { name: WEB_COPY.setupComplete.reviewSettings }));
-
-    expect(screen.getByText(WEB_COPY.setup.destinationLegend)).toBeInTheDocument();
   });
 });
 
@@ -1182,58 +1232,45 @@ describe('Wave 4 — clipping roles and refused destinations', () => {
     expect(screen.queryByText(WEB_COPY.setupComplete.allowedRolesKey)).not.toBeInTheDocument();
   });
 
-  it('SetupFlow prefills a configured guild and maps a 422 MISSING_PERMISSIONS body to the refusal', async () => {
-    const user = userEvent.setup();
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
-      const url = String(input);
-      if (url.endsWith('/setup/data')) {
-        return Response.json(setupDataBody({ config: { archiveChannelId: '111', allowedRoleIds: ['m'] } }));
-      }
-      if (url.endsWith('/setup/save')) {
-        return Response.json(
-          { reason: 'MISSING_PERMISSIONS', missingPermissions: ['SEND_MESSAGES'] },
-          { status: 422 },
-        );
-      }
-      throw new Error(`unexpected fetch: ${url}`);
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    render(<SetupFlow token="live-token" />);
-
-    expect(await screen.findByRole('button', { name: 'moderator', pressed: true })).toBeInTheDocument();
-    expect(screen.getByText('Test guild')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: WEB_COPY.setup.save }));
-
-    expect(await screen.findByText('SEND_MESSAGES')).toBeInTheDocument();
-    const saveCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/setup/save'));
-    expect(JSON.parse(String(saveCall?.[1]?.body))).toEqual({
-      destination: 'existing',
-      channelId: '111',
-      allowedRoleIds: ['m'],
-    });
-  });
-
-  it('SetupFlow maps a 409 to the live-Clips explanation', async () => {
-    const user = userEvent.setup();
+  it('a fresh link for a configured guild goes to Screen E (decision D1)', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
-        const url = String(input);
-        if (url.endsWith('/setup/data')) {
-          return Response.json(setupDataBody());
-        }
-        if (url.endsWith('/setup/save')) {
-          return Response.json({ reason: 'LIVE_CLIPS' }, { status: 409 });
-        }
-        throw new Error(`unexpected fetch: ${url}`);
-      }),
+      vi.fn(async () => Response.json(setupDataBody({ config: { archiveChannelId: '111', allowedRoleIds: [] } }))),
     );
 
     render(<SetupFlow token="live-token" />);
-    await user.click(await screen.findByRole('button', { name: WEB_COPY.setup.save }));
 
-    expect(await screen.findByText(WEB_COPY_AUTHORED.destinationChangeBlocked)).toBeInTheDocument();
+    await waitFor(() => expect(navigation.replace).toHaveBeenCalledWith('/admin/g1/settings'));
+    expect(screen.queryByText(WEB_COPY.setup.destinationLegend)).toBeNull();
+  });
+
+  it('the live-clips refusal links to the web archive (#59)', async () => {
+    const user = userEvent.setup();
+    render(
+      <ScreenB
+        channels={CHANNELS}
+        archiveHref="/admin/g1/archive"
+        onSubmit={vi.fn().mockResolvedValue({ kind: 'live-clips' } satisfies SaveOutcome)}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: WEB_COPY.setup.save }));
+    expect(await screen.findByRole('link', { name: WEB_COPY.setupComplete.openArchive })).toHaveAttribute(
+      'href',
+      '/admin/g1/archive',
+    );
+  });
+
+  it('a deleted configured channel is called out with 누락 (#58)', async () => {
+    render(
+      <ScreenB
+        channels={CHANNELS}
+        initial={{ archiveChannelId: 'gone', allowedRoleIds: [] }}
+        archiveChannelMissing
+        onSubmit={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(WEB_COPY.tags.missing)).toBeInTheDocument();
+    expect(screen.getByText(WEB_COPY_AUTHORED.archiveChannelMissing)).toBeInTheDocument();
   });
 
   it('SetupFlow shows the guild id when Discord cannot supply the guild name', async () => {
@@ -1245,34 +1282,5 @@ describe('Wave 4 — clipping roles and refused destinations', () => {
     render(<SetupFlow token="live-token" />);
 
     expect(await screen.findByText('g1')).toBeInTheDocument();
-  });
-
-  it('after auto-creating the channel, 설정 다시 보기 shows the new channel selected', async () => {
-    const user = userEvent.setup();
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
-        const url = String(input);
-        if (url.endsWith('/setup/data')) {
-          return Response.json(setupDataBody());
-        }
-        if (url.endsWith('/setup/save')) {
-          return Response.json({
-            archiveChannelId: '999',
-            archiveChannelName: 'clip-archive-new',
-            autoCreated: true,
-            clipCount: 0,
-            allowedRoles: [],
-          });
-        }
-        throw new Error(`unexpected fetch: ${url}`);
-      }),
-    );
-
-    render(<SetupFlow token="live-token" />);
-    await user.click(await screen.findByRole('button', { name: WEB_COPY.setup.save }));
-    await user.click(await screen.findByRole('button', { name: WEB_COPY.setupComplete.reviewSettings }));
-
-    expect(await screen.findByRole('combobox')).toHaveDisplayValue('#clip-archive-new');
   });
 });

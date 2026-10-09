@@ -307,3 +307,13 @@ The role multi-select's highlighted option uses the existing `--hover-surface` (
 ## 14. 2026-10-08 — Role chip removal announcement
 
 The role multi-select removed chips silently for screen-reader users: Backspace on the add control said nothing, and a chip click only moved focus to the add control. Issue #11 requires the selection state to be announced, so the PR #55 review flagged it. Both removal paths now write `{role} 역할이 제거되었습니다.` into a visually hidden polite live region inside the component, with `{role}` filled by the role exactly as its chip shows it. The handoff had no string for this; Ori supplied the copy on 2026-10-08, and it lives in `WEB_COPY_AUTHORED` and the handoff's "Role multi-select" section.
+
+## 15. 2026-10-09 — Deleted archive channel callout (#58)
+
+When the saved archive channel had been deleted in Discord, the settings flow prefilled its dead id: the channel select showed only its placeholder and nothing said why. The handoff has no string for this condition. Ori supplied `설정된 아카이브 채널이 Discord에 없습니다. 다른 채널을 선택하거나 새로 만들어 주세요.` on 2026-10-09; it renders as a `누락`-tagged callout on the prefilled setup form (above the channel select) and on Screen E, and lives in `WEB_COPY_AUTHORED`. Screen E claims the channel is missing only when Discord's channel list actually loaded.
+
+## 16. 2026-10-09 — Clip card: 2px reply/embed rule and the embed block
+
+The handoff's clip card specifies the reply-provenance line with a `2px` left border (`docs/06_DESIGN_HANDOFF.md` "Clip card", item 2), which conflicts with the general "borders are 1px" rule (CLAUDE.md design rule 5). The component-specific value wins, the same resolution §10.7 applied to other measured component values: the 2px rule is the quote mark that separates provenance from body. The card's embed preview reuses that same left rule.
+
+The handoff's fixed hierarchy has no embed slot, but the restoration design requires "safe embed previews" from the forward's snapshot. Embeds render after the body and code and before attachments, as a title (a link only for `https:` URLs) and a description in body text — no images, colours or interactive components. Recorded during the PR #61 review.

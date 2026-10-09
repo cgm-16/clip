@@ -195,6 +195,13 @@ export type DiscordGuildLookup = {
   getGuildName(guildId: string): Promise<string | null>;
   /** Display only: null on any failure. */
   getUserHandle(userId: string): Promise<string | null>;
+  /** Display only: every channel type, {} on any failure. Threads are absent; callers fall back to the id. */
+  getGuildChannelNames(guildId: string): Promise<Record<string, string>>;
+  /**
+   * True only when Discord confirms the channel no longer exists (Unknown
+   * Channel). Access denials, timeouts and server errors are not confirmation.
+   */
+  isChannelGone(channelId: string): Promise<boolean>;
 };
 
 export function createDiscordGuildLookup(options: DiscordGuildLookupOptions): DiscordGuildLookup {
@@ -241,6 +248,25 @@ export function createDiscordGuildLookup(options: DiscordGuildLookupOptions): Di
     },
     async getUserHandle(userId: string): Promise<string | null> {
       return stringField(await fetchOrNull(`/users/${userId}`), 'username');
+    },
+    async isChannelGone(channelId: string): Promise<boolean> {
+      try {
+        await client.request('GET', `/channels/${channelId}`);
+        return false;
+      } catch (error) {
+        return error instanceof DiscordApiError && error.code === DISCORD_ERROR.UNKNOWN_CHANNEL;
+      }
+    },
+    async getGuildChannelNames(guildId: string): Promise<Record<string, string>> {
+      const body = await fetchOrNull(`/guilds/${guildId}/channels`);
+      const names: Record<string, string> = {};
+      for (const item of Array.isArray(body) ? body : []) {
+        const channel = item as { id?: unknown; name?: unknown } | null;
+        if (typeof channel?.id === 'string' && typeof channel.name === 'string') {
+          names[channel.id] = channel.name;
+        }
+      }
+      return names;
     },
   };
 }

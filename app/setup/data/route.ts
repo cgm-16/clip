@@ -51,7 +51,11 @@ export async function GET(request: NextRequest) {
         channels,
         // `@everyone` (id === guild id) is listed but can never be selected.
         roles: roles.map(({ id, name }) => ({ id, name, selectable: id !== identity.guildId })),
-        config,
+        // The two fields the form prefills; the internal configurationId stays server-side.
+        config: config && { archiveChannelId: config.archiveChannelId, allowedRoleIds: config.allowedRoleIds },
+        // #58: the saved archive channel is no longer among the guild's channels.
+        archiveChannelMissing:
+          config !== null && !channels.some((channel) => channel.id === config.archiveChannelId),
       },
       { headers: { 'Cache-Control': 'private, no-store' } },
     );

@@ -1,0 +1,109 @@
+/* Values: docs/06_DESIGN_HANDOFF.md "Screen D". Every value is a tokens.css token. */
+.page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-12) var(--sp-6);
+}
+
+.panel {
+  width: min(var(--w-archive), 100%);
+  box-sizing: border-box;
+  background: var(--surface);
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius);
+}
+
+.filterBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--card-pad-x);
+  background: var(--raised);
+  border-bottom: var(--hairline) solid var(--divider);
+}
+
+.filterLabel {
+  font: var(--fs-micro) var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.select {
+  max-width: 100%;
+  padding: var(--sp-1) var(--sp-2);
+  background: var(--sunken);
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius);
+  font: var(--fs-small) var(--font-mono);
+  color: var(--text);
+}
+
+.count,
+.sort,
+.range {
+  font: var(--fs-meta) var(--font-mono);
+  color: var(--muted);
+}
+
+.sort {
+  margin-left: auto;
+}
+
+.empty {
+  margin: 0;
+  padding: var(--sp-8) var(--card-pad-x);
+  font: var(--fs-body) var(--font-ui);
+  color: var(--muted);
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--card-pad-x);
+}
+
+.range {
+  margin-right: auto;
+}
+
+.pagerButton {
+  padding: var(--sp-2) var(--sp-btn-x);
+  border: var(--hairline) solid var(--border-strong);
+  border-radius: var(--radius);
+  font: 500 var(--fs-small) var(--font-ui);
+  color: var(--text-2);
+  text-decoration: none;
+  transition: background-color 120ms;
+}
+
+.pagerButton:hover {
+  background: var(--hover-surface);
+}
+
+.pagerButton[aria-disabled='true'] {
+  color: var(--pager-disabled-fg);
+  border-color: var(--pager-disabled-border);
+  pointer-events: none;
+}
+
+@media (max-width: 640px) {
+  .page {
+    padding: var(--sp-6) var(--sp-4);
+  }
+
+  .filterBar,
+  .pager {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .sort,
+  .range {
+    margin: 0;
+  }
+}

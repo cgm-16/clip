@@ -1,4 +1,6 @@
+import type { TxClient } from '@/lib/clip/repository';
 import { getPrismaClient } from '@/lib/db';
+import { lockGuild, withGuildLock } from '@/lib/guild-lock';
 
 /** The `(guild, admin)` pair a setup token or admin session is bound to. */
 export type AdminIdentity = {
@@ -14,8 +16,14 @@ export type BearerCredential = {
 
 export type StoredCredential = AdminIdentity & BearerCredential;
 
+/**
+ * Under the guild lock, so a token is either issued before a deletion (and
+ * deleted by it) or after it (and valid for the new setup), never in between.
+ */
 export async function insertSetupToken(credential: StoredCredential): Promise<void> {
-  await getPrismaClient().setupToken.create({ data: credential });
+  await withGuildLock(credential.guildId, async (tx) => {
+    await tx.setupToken.create({ data: credential });
+  });
 }
 
 /**
@@ -38,13 +46,29 @@ export async function insertSetupToken(credential: StoredCredential): Promise<vo
  * The session's guild and user come from the consumed token rather than from
  * the caller: a session can only ever be scoped to the pair its token was
  * issued for.
+ *
+ * The guild lock orders the exchange against deletion: a token deleted first
+ * matches nothing.
  */
 export async function exchangeSetupTokenForSession(
   setupTokenHash: string,
   session: BearerCredential,
   now: Date,
 ): Promise<AdminIdentity | null> {
+  // The token hash is all the exchange has, so its guild is read first,
+  // unlocked, to know which lock to take. The conditional update below still
+  // decides the outcome: a deletion that removed the token meanwhile leaves it
+  // matching nothing.
+  const pending = await getPrismaClient().setupToken.findUnique({
+    where: { tokenHash: setupTokenHash },
+    select: { guildId: true },
+  });
+  if (pending === null) {
+    return null;
+  }
+
   return getPrismaClient().$transaction(async (tx) => {
+    await lockGuild(tx, pending.guildId);
     const { count } = await tx.setupToken.updateMany({
       where: { tokenHash: setupTokenHash, usedAt: null, expiresAt: { gt: now } },
       data: { usedAt: now },
@@ -74,4 +98,23 @@ export async function findLiveAdminSession(
     where: { tokenHash, revokedAt: null, expiresAt: { gt: now } },
     select: { guildId: true, userId: true },
   });
+}
+
+/**
+ * True if the session is still live *for this guild*, read on the caller's
+ * locked transaction. Admin writers recheck the session here, under the guild
+ * lock, because a deletion can revoke it between the request's authentication
+ * and its commit.
+ */
+export async function isAdminSessionLive(
+  tx: TxClient,
+  tokenHash: string,
+  guildId: string,
+  now: Date,
+): Promise<boolean> {
+  const session = await tx.adminSession.findFirst({
+    where: { tokenHash, guildId, revokedAt: null, expiresAt: { gt: now } },
+    select: { tokenHash: true },
+  });
+  return session !== null;
 }
