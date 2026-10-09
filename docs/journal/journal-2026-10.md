@@ -74,3 +74,7 @@ The whole-branch review found no Critical issues. Fixed test-first: a cursor pas
 
 
 Known limitation, accepted by Ori 2026-10-09: after moving off a deleted archive channel, Clips archived there stay ACTIVE and show `누락`; clipping one of those source messages again only adds a clipper (no new copy is posted). Recovery today: every clipper unclips (record cleared, then a fresh clip reposts), or guild-data deletion. Remove from Clip Archive tombstones the message instead. Reposting a confirmed-missing copy on re-clip is "ambient reconciliation", deferred to P1 as #63.
+
+### 2026-10-09 — #62 fixed in PR #61
+
+A fresh `/setup` link now exchanges its own token even when a live admin session already exists, so a guild-A session can no longer hijack (or, with the 15-min token vs 30-min session, block) a guild-B link. The session alone is trusted only on a reload of a link this tab already exchanged (a `sessionStorage` marker) or on a retry after an exchange whose response was lost. Exchange-first was tried first and reverted: it reordered every call in SetupFlow's 14 race tests. The landed version changes only the "session found" branch; three tests that encoded the old "live session ⇒ don't exchange" behaviour were updated to the new guarantee (exchange exactly once), and seven save-path tests gained an exchange stub. Cost: a used link opened in a new tab (no marker) shows Screen A instead of reusing the session. Mutation-checked: disabling the marker fails the reload test.
