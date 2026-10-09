@@ -106,3 +106,25 @@ Live checks for PR #61 ran on `sha-1c78a43`, test guild `testa`. Checks 1–9 pa
   - a new path into the cluster for anything that reaches `main`.
 - **If deploys become frequent:** Ori's preferred shape is tag-based, with `main` deploying only when a prod tag is pushed. That keeps an explicit release step separate from merging.
 - **Command registration is not part of a deploy.** It only reruns when `lib/discord/commands.ts` changes (#67).
+
+## 2026-10-10 — live check 10, and setup links decided by the server (#72)
+
+The Wave 5 live checks finished on `sha-51d55eb`. Checks 1–9 and 11 pass, as do #67 and the 390px recheck. Check 11's database half: zero `testa` rows in clips, clippers, configs, roles and sessions. Check 10 (#62) passed its stated criterion, a fresh link opens its own server, but Ori found two related bugs.
+
+1. **Re-opening a used link failed.** Re-clicking a link after closing its tab showed Screen A, despite a live login for that server. This was the trade-off #62 had accepted, and it turned out to be common in real use.
+2. **A reload could show another server.** Reloading A's tab after B's link replaced the browser's single session showed B's form under A's link.
+
+**Root cause:** the tab decided whether to trust a found session, using a per-tab sessionStorage note, but a tab can't tell which server a link belongs to. Ori also reported a "case 1" (making B's link expires A's). It was a false alarm: no code path revokes tokens on issue, and it didn't reproduce.
+
+**Fix (approved by Ori, 2026-10-10):**
+- The exchange answers 204, minting nothing, when a used token is inside its lifetime and the request carries a live session for the token's own server and user.
+- The tab drops its note and always asks the exchange, unless this mount already spent the token.
+
+**Verification:**
+- Server tests cover the reopen and its five refusals: another server's login, another user's login, no login, an expired login, and an expired link. They were mutation-checked: dropping the server/user match fails the cross-server and cross-user tests.
+- The UI reload test rendered "Guild B" before the fix.
+- A browser run against a local dev server with real exchanges confirmed the re-click, the reload and #62.
+
+**Ruling:** a re-open also requires the link itself to be inside its 15-minute lifetime, so a used link stops working when its expiry passes, even with a live session. That matches the setup copy, which promises a 15-minute link.
+
+**Instrument note:** the first local reproduction showed Screen A for every fresh link. The cause was the probe, not the app. A Playwright `response` handler recorded the cookie-to-server map after an `await`, so the flow's next `/setup/data` call arrived before the mapping existed. Intercepting the exchange with `route.fetch()` removed the race.

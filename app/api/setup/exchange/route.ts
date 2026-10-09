@@ -1,6 +1,6 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { exchangeSetupToken } from '@/lib/admin-session/service';
+import { exchangeSetupToken, findReopenableSetupTokenGuild } from '@/lib/admin-session/service';
 import { parseEnv } from '@/lib/env';
 import { ADMIN_SESSION_COOKIE_NAME, ADMIN_SESSION_TTL_MS } from '@/lib/admin-session/tokens';
 
@@ -27,12 +27,23 @@ export async function POST(request: Request) {
 
   const grant = await exchangeSetupToken(parsed.data.token);
   if (!grant) {
+    // A used link re-opened by the admin it was spent for (#72) is confirmed
+    // without minting anything; the existing session cookie stays as it is.
+    const sessionToken = new NextRequest(request.url, { headers: request.headers }).cookies.get(ADMIN_SESSION_COOKIE_NAME)?.value;
+    const reopenedGuildId =
+      sessionToken === undefined ? null : await findReopenableSetupTokenGuild(parsed.data.token, sessionToken);
+    if (reopenedGuildId !== null) {
+      return Response.json({ guildId: reopenedGuildId });
+    }
     // Unknown, expired and already-used tokens are one indistinguishable
     // failure; Screen A's copy covers all three (product spec §17 case 2).
     return new Response(null, { status: 401 });
   }
 
-  const response = new NextResponse(null, { status: 204 });
+  // Both successes name the token's guild: the browser holds one session
+  // cookie, which another tab's link can replace before this tab loads its
+  // setup data, and the guild is how the tab tells its own session apart.
+  const response = NextResponse.json({ guildId: grant.guildId });
   // Path=/ reaches the setup pages and their APIs. Secure stays conditional
   // so local development over plain http can send the cookie back.
   // NODE_ENV is set by the framework, not part of the validated Env schema.

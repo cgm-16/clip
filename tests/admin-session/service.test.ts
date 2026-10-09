@@ -12,6 +12,7 @@ import {
 import {
   authenticateAdminSession,
   exchangeSetupToken,
+  findReopenableSetupTokenGuild,
   issueSetupToken,
 } from '@/lib/admin-session/service';
 import { exchangeSetupTokenForSession } from '@/lib/admin-session/repository';
@@ -108,7 +109,8 @@ describe('admin session service', () => {
         body: JSON.stringify({ token: issued.token }),
       }),
     );
-    expect(response.status).toBe(204);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ guildId });
     const cookie = response.headers.get('Set-Cookie')!;
     const browserRequest = new NextRequest('https://clipendpoint.cc/setup/data', {
       headers: { Cookie: cookie.split(';')[0] },
@@ -231,5 +233,86 @@ describe('admin session service', () => {
 
   test('an unknown session token fails', async () => {
     expect(await authenticateAdminSession('not-a-session-we-ever-issued')).toBeNull();
+  });
+  // #72: a used link re-opened (re-click, reload, retry after a lost response)
+  // is answered by the server, which knows the token's guild and user -- the
+  // browser tab cannot tell which guild a link belongs to.
+  describe('re-opening a used link', () => {
+    function exchangeRequest(token: string, cookie?: string): Request {
+      return new Request('https://clipendpoint.cc/api/setup/exchange', {
+        method: 'POST',
+        headers: cookie ? { Cookie: cookie } : {},
+        body: JSON.stringify({ token }),
+      });
+    }
+
+    async function openLink(guildId: string, userId: string) {
+      const issued = await issueSetupToken(guildId, userId);
+      const response = await POST(exchangeRequest(issued.token));
+      expect(response.status).toBe(200);
+      return { token: issued.token, cookie: response.headers.get('Set-Cookie')!.split(';')[0] };
+    }
+
+    test('succeeds with a live session for the token\'s own guild and user, minting nothing', async () => {
+      const guildId = trackedGuildId();
+      const link = await openLink(guildId, fakeSnowflake());
+
+      const response = await POST(exchangeRequest(link.token, link.cookie));
+
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ guildId });
+      expect(response.headers.get('Set-Cookie')).toBeNull();
+      expect(await prisma.adminSession.count({ where: { guildId } })).toBe(1);
+    });
+
+    test('names the token\'s own guild, so the tab can tell its session from a replaced one', async () => {
+      const guildId = trackedGuildId();
+      const userId = fakeSnowflake();
+      const issued = await issueSetupToken(guildId, userId);
+      const grant = await exchangeSetupToken(issued.token);
+
+      expect(await findReopenableSetupTokenGuild(issued.token, grant!.token)).toBe(guildId);
+
+      const other = await exchangeSetupToken((await issueSetupToken(trackedGuildId(), userId)).token);
+      expect(await findReopenableSetupTokenGuild(issued.token, other!.token)).toBeNull();
+    });
+
+    test('is refused with another guild\'s session', async () => {
+      const userId = fakeSnowflake();
+      const linkA = await openLink(trackedGuildId(), userId);
+      const linkB = await openLink(trackedGuildId(), userId);
+
+      expect((await POST(exchangeRequest(linkA.token, linkB.cookie))).status).toBe(401);
+    });
+
+    test('is refused with another user\'s session for the same guild', async () => {
+      const guildId = trackedGuildId();
+      const mine = await openLink(guildId, fakeSnowflake());
+      const theirs = await openLink(guildId, fakeSnowflake());
+
+      expect((await POST(exchangeRequest(mine.token, theirs.cookie))).status).toBe(401);
+    });
+
+    test('is refused with no session', async () => {
+      const link = await openLink(trackedGuildId(), fakeSnowflake());
+
+      expect((await POST(exchangeRequest(link.token))).status).toBe(401);
+    });
+
+    test('is refused when its own session has expired', async () => {
+      const guildId = trackedGuildId();
+      const link = await openLink(guildId, fakeSnowflake());
+      await prisma.adminSession.updateMany({ where: { guildId }, data: { expiresAt: new Date(Date.now() - 1000) } });
+
+      expect((await POST(exchangeRequest(link.token, link.cookie))).status).toBe(401);
+    });
+
+    test('is refused once the link itself has expired, even with a live session', async () => {
+      const guildId = trackedGuildId();
+      const link = await openLink(guildId, fakeSnowflake());
+      await prisma.setupToken.updateMany({ where: { guildId }, data: { expiresAt: new Date(Date.now() - 1000) } });
+
+      expect((await POST(exchangeRequest(link.token, link.cookie))).status).toBe(401);
+    });
   });
 });

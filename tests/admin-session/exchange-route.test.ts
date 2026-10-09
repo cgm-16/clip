@@ -32,7 +32,7 @@ describe('POST /api/setup/exchange', () => {
     vi.resetAllMocks();
   });
 
-  test('a valid token returns the session cookie and no body', async () => {
+  test('a valid token returns the session cookie and the token\'s guild', async () => {
     exchangeSetupToken.mockResolvedValue({
       token: 'session-bearer',
       guildId: '1539212298600718416',
@@ -42,7 +42,7 @@ describe('POST /api/setup/exchange', () => {
 
     const response = await POST(postJson({ token: 'setup-bearer' }));
 
-    expect(response.status).toBe(204);
+    expect(response.status).toBe(200);
     expect(exchangeSetupToken).toHaveBeenCalledWith('setup-bearer');
     const cookie = response.headers.get('Set-Cookie');
     expect(cookie).toContain(`${ADMIN_SESSION_COOKIE_NAME}=session-bearer`);
@@ -50,7 +50,7 @@ describe('POST /api/setup/exchange', () => {
     expect(cookie?.toLowerCase()).toContain('samesite=lax');
     expect(cookie).toContain('Path=/');
     expect(cookie).toContain('Max-Age=1800');
-    expect(await response.text()).toBe('');
+    expect(await response.json()).toEqual({ guildId: '1539212298600718416' });
   });
 
   test.each(['development', 'production'] as const)(
@@ -101,7 +101,7 @@ describe('POST /api/setup/exchange', () => {
     // request.json() ignores Content-Type, so a text/plain POST from any site
     // is a CORS simple request with no preflight, and SameSite=Lax does not
     // stop a cookie from being *set*. Without the Origin check this returns
-    // 204 and plants the attacker's guild session in the admin's browser.
+    // 200 and plants the attacker's guild session in the admin's browser.
     stubEnv();
 
     const response = await POST(
@@ -124,7 +124,7 @@ describe('POST /api/setup/exchange', () => {
 
     const response = await POST(postJson({ token: 'setup-bearer' }, { Origin: BASE_URL }));
 
-    expect(response.status).toBe(204);
+    expect(response.status).toBe(200);
     expect(exchangeSetupToken).toHaveBeenCalledExactlyOnceWith('setup-bearer');
   });
 });
