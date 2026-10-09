@@ -337,6 +337,7 @@ describe('ScreenC — setup complete', () => {
 
 describe('SetupFlow — session exchange and Screen A/B branching', () => {
   afterEach(() => {
+    window.sessionStorage.clear();
     vi.unstubAllGlobals();
   });
 
@@ -379,7 +380,7 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
     ).toHaveLength(0);
   });
 
-  it('retries setup data without exchanging when the token remains unspent', async () => {
+  it('retries setup data after a load error, then exchanges the still-unspent token exactly once (#62)', async () => {
     const user = userEvent.setup();
     let dataCalls = 0;
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
@@ -389,6 +390,9 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
         return dataCalls === 1
           ? new Response(null, { status: 502 })
           : Response.json(setupDataBody());
+      }
+      if (url.endsWith('/api/setup/exchange')) {
+        return new Response(null, { status: 204 });
       }
       throw new Error(`unexpected fetch: ${url}`);
     });
@@ -400,10 +404,11 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
     await user.click(screen.getByRole('button', { name: WEB_COPY_AUTHORED.retry }));
 
     await waitFor(() => expect(screen.getByText(WEB_COPY.setup.destinationLegend)).toBeInTheDocument());
-    expect(dataCalls).toBe(2);
+    // A live session does not stand in for a fresh link: the link's own token
+    // decides which guild this page is for, and is spent exactly once.
     expect(
       fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/api/setup/exchange')),
-    ).toHaveLength(0);
+    ).toHaveLength(1);
   });
 
   it('keeps only one retry active while retried setup data is pending', async () => {
@@ -412,6 +417,9 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
     let dataCalls = 0;
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
+      if (url.endsWith('/api/setup/exchange')) {
+        return new Response(null, { status: 204 });
+      }
       if (!url.endsWith('/setup/data')) {
         throw new Error(`unexpected fetch: ${url}`);
       }
@@ -419,9 +427,12 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
       if (dataCalls === 1) {
         return new Response(null, { status: 502 });
       }
-      return new Promise<Response>((resolve) => {
-        resolveRetryData = resolve;
-      });
+      if (dataCalls === 2) {
+        return new Promise<Response>((resolve) => {
+          resolveRetryData = resolve;
+        });
+      }
+      return Response.json(setupDataBody());
     });
     vi.stubGlobal('fetch', fetchMock);
 
@@ -731,6 +742,10 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
         if (dataCalls === 1) {
           return new Response(null, { status: 401 });
         }
+        if (dataCalls >= 4) {
+          // The current token's own post-exchange load.
+          return Response.json(setupDataBody());
+        }
         return new Promise<Response>((resolve) => {
           if (dataCalls === 2) {
             resolveStaleData = resolve;
@@ -822,6 +837,55 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
     );
   });
 
+  it('a fresh link exchanges its own token instead of trusting a live session for another guild (#62)', async () => {
+    let exchanged = false;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/api/setup/exchange')) {
+        exchanged = true;
+        return new Response(null, { status: 204 });
+      }
+      if (url.endsWith('/setup/data')) {
+        // Before the exchange the cookie belongs to guild A (configured);
+        // after it, to the link's own guild B.
+        return Response.json(
+          exchanged
+            ? setupDataBody({ guildId: 'gB', guildName: 'Guild B' })
+            : setupDataBody({ guildId: 'gA', guildName: 'Guild A', config: { archiveChannelId: '111', allowedRoleIds: [] } }),
+        );
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<SetupFlow token="fresh-b-token" />);
+
+    expect(await screen.findByText('Guild B')).toBeInTheDocument();
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/api/setup/exchange'))).toHaveLength(1);
+    expect(navigation.replace).not.toHaveBeenCalled();
+  });
+
+  it('a refused link shows Screen A even when a session for some guild is live (#62)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith('/api/setup/exchange')) {
+          return new Response(null, { status: 401 });
+        }
+        if (url.endsWith('/setup/data')) {
+          return Response.json(setupDataBody({ guildId: 'gA', config: { archiveChannelId: '111', allowedRoleIds: [] } }));
+        }
+        throw new Error(`unexpected fetch: ${url}`);
+      }),
+    );
+
+    render(<SetupFlow token="expired-b-token" />);
+
+    expect(await screen.findByText(WEB_COPY.expiredSetupLink.title)).toBeInTheDocument();
+    expect(navigation.replace).not.toHaveBeenCalled();
+  });
+
   it('reuses an already-live admin session on reload, without re-exchanging the (now spent) token', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -831,6 +895,8 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
       throw new Error(`unexpected fetch: ${url}`);
     });
     vi.stubGlobal('fetch', fetchMock);
+    // A reload: this tab exchanged the token on its first load.
+    window.sessionStorage.setItem('clip:setup-exchanged:already-used-token', '1');
 
     render(<SetupFlow token="already-used-token" />);
 
@@ -846,6 +912,9 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
     const user = userEvent.setup();
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      if (url.endsWith('/api/setup/exchange')) {
+        return new Response(null, { status: 204 });
+      }
       if (url.endsWith('/setup/data')) {
         return Response.json(setupDataBody());
       }
@@ -883,6 +952,9 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
     const user = userEvent.setup();
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
+      if (url.endsWith('/api/setup/exchange')) {
+        return new Response(null, { status: 204 });
+      }
       if (url.endsWith('/setup/data')) {
         return Response.json(setupDataBody());
       }
@@ -911,6 +983,9 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
     const user = userEvent.setup();
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
+      if (url.endsWith('/api/setup/exchange')) {
+        return new Response(null, { status: 204 });
+      }
       if (url.endsWith('/setup/data')) {
         return Response.json(setupDataBody());
       }
@@ -946,6 +1021,9 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
     window.addEventListener('unhandledrejection', unhandledRejection);
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
+      if (url.endsWith('/api/setup/exchange')) {
+        return new Response(null, { status: 204 });
+      }
       if (url.endsWith('/setup/data')) {
         return Response.json(setupDataBody());
       }
@@ -980,6 +1058,9 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
     let saveAttempts = 0;
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
+      if (url.endsWith('/api/setup/exchange')) {
+        return new Response(null, { status: 204 });
+      }
       if (url.endsWith('/setup/data')) {
         return Response.json(setupDataBody());
       }
@@ -1024,6 +1105,9 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
     const user = userEvent.setup();
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
+      if (url.endsWith('/api/setup/exchange')) {
+        return new Response(null, { status: 204 });
+      }
       if (url.endsWith('/setup/data')) {
         return Response.json(setupDataBody());
       }

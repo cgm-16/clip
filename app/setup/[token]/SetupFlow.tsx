@@ -23,19 +23,41 @@ type FlowState =
  * spent (`lib/admin-session/repository.ts`'s `exchangeSetupTokenForSession`
  * is one-shot).
  */
+// Marks a token this tab has exchanged, so a reload reuses the session it
+// created instead of re-spending (and being refused) the one-time token.
+// sessionStorage can be unavailable; a missing marker only costs a refused
+// exchange and Screen A, never another guild's session.
+const EXCHANGED_PREFIX = 'clip:setup-exchanged:';
+
+function wasExchangedHere(token: string): boolean {
+  try {
+    return window.sessionStorage.getItem(EXCHANGED_PREFIX + token) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function markExchangedHere(token: string): void {
+  try {
+    window.sessionStorage.setItem(EXCHANGED_PREFIX + token, '1');
+  } catch {
+    // See above: the marker is an optimisation, not a guarantee.
+  }
+}
+
 export function SetupFlow({ token }: { token: string }) {
   const router = useRouter();
   const [state, setState] = useState<FlowState>({ status: 'loading' });
   const [loadAttempt, setLoadAttempt] = useState(0);
   const currentAttempt = useRef(0);
-  const tokenCapability = useRef({ token, canExchangeToken: true });
+  const tokenCapability = useRef({ token, canExchangeToken: true, exchangeOutcomeUnknown: false });
   const retryPending = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
     const attempt = ++currentAttempt.current;
     if (tokenCapability.current.token !== token) {
-      tokenCapability.current = { token, canExchangeToken: true };
+      tokenCapability.current = { token, canExchangeToken: true, exchangeOutcomeUnknown: false };
     }
     const capability = tokenCapability.current;
 
@@ -51,18 +73,21 @@ export function SetupFlow({ token }: { token: string }) {
         return;
       }
       if (existing.status === 'ready') {
-        retryPending.current = false;
-        showSetup(existing.data);
-        return;
-      }
-
-      if (existing.status === 'failed') {
+        // A live session is only trusted when it is this link's own: a reload
+        // of a link this tab exchanged, a token already spent here, or a retry
+        // after an exchange whose response was lost (it may have succeeded).
+        // Otherwise it may belong to another guild's earlier link, so the
+        // fresh token is exchanged and decides (#62).
+        if (!capability.canExchangeToken || wasExchangedHere(token) || capability.exchangeOutcomeUnknown) {
+          retryPending.current = false;
+          showSetup(existing.data);
+          return;
+        }
+      } else if (existing.status === 'failed') {
         retryPending.current = false;
         setState({ status: 'load-error', canExchangeToken: capability.canExchangeToken });
         return;
-      }
-
-      if (!capability.canExchangeToken) {
+      } else if (!capability.canExchangeToken) {
         retryPending.current = false;
         setState({ status: 'expired' });
         return;
@@ -79,6 +104,9 @@ export function SetupFlow({ token }: { token: string }) {
         if (!ownsAttempt()) {
           return;
         }
+        // The exchange may have reached the server before the connection
+        // dropped; on retry, a live session is then trusted.
+        capability.exchangeOutcomeUnknown = true;
         retryPending.current = false;
         setState({ status: 'load-error', canExchangeToken: capability.canExchangeToken });
         return;
@@ -93,6 +121,7 @@ export function SetupFlow({ token }: { token: string }) {
       }
 
       capability.canExchangeToken = false;
+      markExchangedHere(token);
       const data = await fetchSetupData();
       if (!ownsAttempt()) {
         return;
