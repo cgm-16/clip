@@ -79,4 +79,42 @@ describe('register-discord-commands', () => {
       /401/,
     );
   });
+  test('--global without --register makes zero network calls', async () => {
+    const fetchImpl = vi.fn();
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await main(['--global'], { fetchImpl, envSource: validEnv });
+
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  test('--register --global registers for every server, then clears the test server\'s own copies', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => '' });
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await main(['--register', '--global'], { fetchImpl, envSource: validEnv });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    const [globalUrl, globalInit] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(globalUrl).toBe('https://discord.com/api/v10/applications/app-1/commands');
+    expect(globalInit.method).toBe('PUT');
+    expect(globalInit.headers).toMatchObject({ Authorization: 'Bot bot-token-value' });
+    expect(JSON.parse(globalInit.body as string)).toEqual(DISCORD_COMMANDS);
+    const [guildUrl, guildInit] = fetchImpl.mock.calls[1] as [string, RequestInit];
+    expect(guildUrl).toBe('https://discord.com/api/v10/applications/app-1/guilds/guild-1/commands');
+    expect(guildInit.method).toBe('PUT');
+    expect(JSON.parse(guildInit.body as string)).toEqual([]);
+  });
+
+  test('--register --global leaves the test server\'s commands alone when the global registration fails', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue({ ok: false, status: 500, text: async () => 'Server Error' });
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await expect(main(['--register', '--global'], { fetchImpl, envSource: validEnv })).rejects.toThrow(
+      /500/,
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
 });

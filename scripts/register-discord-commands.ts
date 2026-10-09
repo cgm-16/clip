@@ -41,15 +41,15 @@ function shouldRegister(argv: readonly string[]): boolean {
   return argv.includes('--register');
 }
 
-async function putGuildCommands(env: RegisterEnv, fetchImpl: typeof fetch): Promise<void> {
-  const url = `https://discord.com/api/v10/applications/${env.DISCORD_APPLICATION_ID}/guilds/${env.DISCORD_TEST_GUILD_ID}/commands`;
+async function putCommands(env: RegisterEnv, fetchImpl: typeof fetch, path: string, commands: readonly unknown[]): Promise<void> {
+  const url = `https://discord.com/api/v10/applications/${env.DISCORD_APPLICATION_ID}${path}`;
   const response = await fetchImpl(url, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bot ${env.DISCORD_BOT_TOKEN}`,
     },
-    body: JSON.stringify(DISCORD_COMMANDS),
+    body: JSON.stringify(commands),
   });
   if (!response.ok) {
     const body = await response.text();
@@ -67,7 +67,19 @@ export async function main(argv: readonly string[], deps: RegisterCommandsDeps):
   }
 
   const env = parseRegisterEnv(deps.envSource);
-  await putGuildCommands(env, deps.fetchImpl);
+  const guildPath = `/guilds/${env.DISCORD_TEST_GUILD_ID}/commands`;
+  if (argv.includes('--global')) {
+    // Every server that installs Clip needs the commands, so production
+    // registers them application-wide. A server-scoped copy of the same name
+    // would show beside the global one, so the guild's copies are cleared --
+    // only after the global PUT succeeds, so a failure never leaves the test
+    // guild with no commands at all.
+    await putCommands(env, deps.fetchImpl, '/commands', DISCORD_COMMANDS);
+    await putCommands(env, deps.fetchImpl, guildPath, []);
+    console.log(`\nRegistered ${DISCORD_COMMANDS.length} global command(s) and cleared guild ${env.DISCORD_TEST_GUILD_ID}'s own copies.`);
+    return;
+  }
+  await putCommands(env, deps.fetchImpl, guildPath, DISCORD_COMMANDS);
   console.log(`\nRegistered ${DISCORD_COMMANDS.length} guild command(s) for guild ${env.DISCORD_TEST_GUILD_ID}.`);
 }
 
