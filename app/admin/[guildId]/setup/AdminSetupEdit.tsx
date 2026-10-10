@@ -27,7 +27,8 @@ export function AdminSetupEdit({ guildId }: { guildId: string }) {
         return;
       }
       if (result.status === 'ready') {
-        setState({ status: 'ready', data: result.data });
+        // The browser's one session may now belong to another link's guild.
+        setState(result.data.guildId === guildId ? { status: 'ready', data: result.data } : { status: 'expired' });
       } else {
         setState({ status: result.status === 'unauthenticated' ? 'expired' : 'failed' });
       }
@@ -35,7 +36,7 @@ export function AdminSetupEdit({ guildId }: { guildId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [attempt]);
+  }, [attempt, guildId]);
 
   if (state.status === 'loading') {
     return null;
@@ -60,7 +61,7 @@ export function AdminSetupEdit({ guildId }: { guildId: string }) {
       const response = await fetch('/setup/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(submission),
+        body: JSON.stringify({ ...submission, guildId }),
       });
       if (response.status === 401) {
         // The session expired or was revoked (e.g. by a data deletion): the

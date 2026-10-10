@@ -25,9 +25,11 @@ import { logClipEvent } from '@/lib/logging/safe-log';
 
 // `channelId` is required only for "existing" -- "create" never carries a
 // caller-chosen id (see `SetupSubmission` in `ScreenB.tsx`, which this
-// mirrors exactly rather than inventing a different shape).
+// mirrors rather than inventing a different shape). `guildId` is the one
+// addition: the guild the client's form was rendered for.
 const SaveRequestSchema = z
   .object({
+    guildId: z.string().min(1),
     destination: z.enum(['create', 'existing']),
     channelId: z.string().min(1).nullable(),
     allowedRoleIds: z.array(z.string().min(1)).max(250),
@@ -107,6 +109,12 @@ export async function POST(request: NextRequest) {
   const parsed = SaveRequestSchema.safeParse(body);
   if (!parsed.success) {
     return new Response(null, { status: 400 });
+  }
+  // The browser holds one session cookie, and another tab's setup link can
+  // replace it after this form rendered; the client names the guild it
+  // rendered for, so a save never lands on whichever guild the cookie holds now.
+  if (parsed.data.guildId !== identity.guildId) {
+    return new Response(null, { status: 401 });
   }
   const { destination, channelId } = parsed.data;
   const requestedRoleIds = [...new Set(parsed.data.allowedRoleIds)];

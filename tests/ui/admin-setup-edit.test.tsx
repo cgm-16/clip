@@ -78,6 +78,7 @@ test('opens prefilled and maps a 422 MISSING_PERMISSIONS body to the refusal', a
     destination: 'existing',
     channelId: '111',
     allowedRoleIds: ['m'],
+    guildId: 'g1',
   });
   expect(navigation.push).not.toHaveBeenCalled();
 });
@@ -119,6 +120,17 @@ test('a lost session renders the session-expired screen', async () => {
   );
   render(<AdminSetupEdit guildId="g1" />);
   expect(await screen.findByText(WEB_COPY_AUTHORED.adminSessionExpiredTitle)).toBeInTheDocument();
+});
+
+test('setup data for another guild renders the session-expired screen, not the form', async () => {
+  // Another tab's setup link replaced the session cookie with g2's.
+  stubFetch(
+    () => Response.json(SAVED),
+    () => Response.json(setupDataBody({ guildId: 'g2' })),
+  );
+  render(<AdminSetupEdit guildId="g1" />);
+  expect(await screen.findByText(WEB_COPY_AUTHORED.adminSessionExpiredTitle)).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: WEB_COPY.setup.save })).not.toBeInTheDocument();
 });
 
 test('a deleted archive channel is flagged on the form (#58)', async () => {
