@@ -20,6 +20,8 @@
 - Invariants: one canonical Clip per `(guild_id, source_message_id)`; one Clipper per `(…, clipper_user_id)`; DB uniqueness/upsert, never check-then-insert; tombstone wins; never `ACTIVE` with a missing or partial archive (`clips_active_requires_archive`); never hold locks across Discord I/O.
 - Gate: `pnpm lint`, `pnpm test`, `pnpm build` (plus `pnpm lint:design` after Task 4). Tests use `DATABASE_URL=postgresql://clip:clip@localhost:5433/clip_dev`.
 - A flaky race test is a locking bug. Never add a retry to make it pass.
+- Environment for every implementer: worktree `/Users/ori/repos/clip-wave6`; `export DATABASE_URL=postgresql://clip:clip@localhost:5433/clip_dev` before `pnpm prisma generate`, `pnpm lint`, `pnpm test`, `pnpm build`. Baseline on `08f197d`: lint OK, 554/554 tests, build OK.
+- Vitest here has no `--repeat`; repeat runs with a shell loop (`for i in $(seq 20); do pnpm vitest run <file> || break; done`).
 
 ## Review Focus
 
@@ -51,7 +53,7 @@
 - [ ] **Step 1: RED.** Tests:
   - `describeDiscordFailure` for a 429 `DiscordApiError` (code 0 → `discordCode: '0'`), a 503 with null code (no `discordCode` key), a `TimeoutError` DOMException, and a `TypeError('fetch failed')`.
   - `createArchiveMessage` failing at each of the three steps yields an `ArchiveCreationFailedError` with the matching `step` and facts.
-  - `clip()` with a gateway that throws a 429-class `ArchiveCreationFailedError` logs one `clip.archive_failed` line containing `step`, `failure: 'http'`, `httpStatus: '429'`, `discordCode`, and the line contains neither the error message nor any body text (spy on `console.log`, assert the parsed JSON keys exactly).
+  - `clip()` with a gateway that throws a 429-class `ArchiveCreationFailedError` logs one `clip.archive_failed` line containing `step`, `failure: 'http'`, `httpStatus: '429'`, `discordCode`, and the line contains neither the error message nor any body text. Make the thrown errors carry a sentinel (`message: 'SENTINEL-MSG body: SENTINEL-BODY'`) and assert the sentinel is absent from the raw `console.log` argument, as well as asserting the exact parsed key set.
   - `loadArchiveContent` with the forward read throwing a 5xx and a timeout logs `archive.content_read_failed` with `guildId`, `sourceMessageId`, `step: 'forward_read'` (or `'source_read'` for the source GET), and the facts; a successful read logs nothing. Add `'forward_read'` to the `step` union in `SafeClipLog`'s doc comment only — it is a string field.
   Record the RED reason (missing export / missing keys).
 - [ ] **Step 2: GREEN.** Implement as above. `errorCodeOf` in `service.ts` stays; the log call spreads `step` and the facts when the error is an `ArchiveCreationFailedError`.
@@ -84,6 +86,7 @@ The repository-level races already exist (`tests/clip/repository.test.ts:128,166
   - Parallel final Unclips by every clipper → exactly one archive delete call, Clip gone.
   - Author removal racing a normal clip → tombstone exists, no ACTIVE Clip, and a later clip is refused.
   - Gateway create throws (retryable) → Clip is `FAILED` or absent, never `ACTIVE`; a following clip succeeds. Gateway delete throws on final Unclip → control plane is consistent and the attempt is retryable.
+  `Promise.all` alone may never land in the windows that matter. Force the bad orderings with the fake gateway's existing `onNextCreate(hook)` / `onNextDelete(hook)` (`tests/clip/fake-gateway.ts:17-20`): e.g. run the author removal *inside* the create hook, i.e. after the claim committed and before the archive publishes; run a clip inside the final Unclip's delete hook. Add a gate only if a needed window has no hook.
   These test existing behaviour, so they may pass at once. For each, record the production change that would make it fail (e.g. "dropping the row lock in `unclip`") and prove one by temporarily breaking it locally, then restoring. Note the result in the commit body.
 - [ ] **Step 2:** Run each test 20× (`pnpm vitest run tests/integration --repeat 20` or a loop). Any failure is a locking bug → systematic-debugging, never a retry.
 - [ ] **Step 3: Commit** `test(clip): race the service end to end against real Postgres` with `Closes #36`.
@@ -99,7 +102,7 @@ The repository-level races already exist (`tests/clip/repository.test.ts:128,166
 
 Checks over `app/`, `lib/`, `components/` (never `scripts/`, `tests/`, `design/`):
 1. Hex colour literal outside `tokens.css`.
-2. Hangul in a `.ts`/`.tsx` outside `lib/ui/copy.ts` and `lib/discord/copy.ts`. Comments count too unless the existing code has Korean in comments. Check first and rule.
+2. Hangul inside a string or template literal in a `.ts`/`.tsx` outside `lib/ui/copy.ts` and `lib/discord/copy.ts`. Comments are exempt (orchestrator ruling: ~25 existing comments quote approved copy to explain code, which is not an invented string). Known literals today: `app/layout.tsx:26` (metadata description) and `app/setup/[token]/ScreenC.tsx:13` (`'채널 관리'`). Report both to the orchestrator, who decides with Ori whether they move into the string table or become documented exceptions.
 3. In `.css`, a `px` value that is not a multiple of 4, except `1px`, `2px` (radius per CLAUDE.md rule 5), and the type sizes `13.5 / 12.5 / 11.5 / 11 / 10px`.
 4. `var(--faint)` in a rule whose selector lacks `:disabled` or `[aria-disabled`.
 
@@ -109,7 +112,9 @@ Checks over `app/`, `lib/`, `components/` (never `scripts/`, `tests/`, `design/`
 
 ### Release checkpoint (orchestrator)
 
-Push, CI green, Ori deploys the branch image (or merges a partial PR. Ori decides). The manual suites run against code that includes #64 logging.
+Push, CI green. Previous deploys ran from a `main` checkout, so Ori chooses: merge a partial PR (Tasks 1–4) and deploy `main` as usual, or deploy the branch image. The manual suites must run against code that includes #64 logging.
+
+**Order after the checkpoint:** Task 5's checklist is written right away; Tasks 6 (7.1) and 7 (6.4) run next, because #37 lists 6.4 as a prerequisite of 6.3. Ori runs 6.1 and 6.3 last. If 6.4 is cut for time, 6.3 goes ahead without it.
 
 ### Task 5: 6.1 (#35) and 6.3 (#37) checklists for Ori
 
@@ -133,11 +138,12 @@ Runs only after Tasks 1–7 and the manual suite are green.
 
 **Design (orchestrator's decision):**
 - Trigger: `clip()` returns `CLIPPER_ADDED` or `ALREADY_CLIPPED_BY_USER` for an `ACTIVE` Clip. After that commit (no locks held), call a new gateway method `isArchiveCopyMissing(archiveChannelId, ids): Promise<boolean>`: true only when the forward GET fails with Unknown Message or Unknown Channel; false on success; any other error → false (logged with Task 1's facts).
-- If missing: `createArchiveMessage` into the current archive channel (no locks). Then, under the guild advisory lock and the Clip row lock, swap both ids in one `UPDATE … WHERE status='ACTIVE' AND archive ids = old ids AND configurationId = captured`. Zero rows updated → delete the new pair quietly. The row never passes through an ACTIVE state without both ids.
+- If missing: `createArchiveMessage` into the current archive channel (no locks).
+- After a successful swap, delete the *old* pair quietly (`deleteArchiveMessage` already treats Unknown Message as done). When only the forward was deleted by hand, the old provenance line survives and would otherwise describe nothing (§17 case 19). Then, under the guild advisory lock and the Clip row lock, swap both ids in one `UPDATE … WHERE status='ACTIVE' AND archive ids = old ids AND configurationId = captured`. Zero rows updated → delete the new pair quietly. The row never passes through an ACTIVE state without both ids.
 - Reply stays the existing success copy (both kinds already read as success). No new Korean.
 - A failed repost leaves the Clip as it was (still `누락`) and logs `clip.repost_failed`.
 
-**Tests (real Postgres, fake gateway):** missing → swapped ids, clippers kept; access error or 5xx → no repost; Unclip-to-zero racing the swap → no ACTIVE row, new pair deleted; author removal racing → tombstone, new pair deleted; configuration deleted/re-setup between read and swap → discarded; create fails → row unchanged.
+**Tests (real Postgres, fake gateway):** missing → swapped ids, clippers kept, old pair delete attempted (provenance-only survivor removed); access error or 5xx → no repost; Unclip-to-zero racing the swap → no ACTIVE row, new pair deleted; author removal racing → tombstone, new pair deleted; configuration deleted/re-setup between read and swap → discarded; create fails → row unchanged.
 
 Commit `feat(clip): repost an archive copy that Discord confirms is gone when it is clipped again` with `Closes #63`.
 
