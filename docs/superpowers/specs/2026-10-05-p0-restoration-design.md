@@ -172,6 +172,10 @@ Update README/status and the issue briefs after each completed wave, and record 
 
 - Destination changes keep the live-Clips refusal, with one exception (Ori, PR #61 review, #58): when Discord confirms the current archive channel itself is gone (Unknown Channel), moving to another channel is allowed despite live Clips. Its archive messages went with the channel, so nothing is stranded; without the exception a guild whose archive channel was deleted could only recover by deleting its data. Access denials, timeouts and server errors are not confirmation. Those Clips stay ACTIVE and read as `누락` in the archive; Unclip and removal treat the already-gone messages as deleted.
 
+## Decision confirmed 2026-10-11
+
+- Ori folded #63 (repost a confirmed-missing archive copy on re-clip) into `wave/6-verification`, as its last task, after the P0 verification (F.6, 6.1–6.4, 7.1) is green. This narrows the P1 deferral of ambient reconciliation above to that one re-clip path; bulk re-forwarding on a destination change stays out. #60 and #64 also join the wave.
+
 ## Review and next step
 
 Review this written design and the Korean copy table. On approval, produce the executable implementation plan against the current code, reopen the appropriate task issues, and select its execution method. Until that review, changes are documentation only.
