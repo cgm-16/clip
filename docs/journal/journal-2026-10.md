@@ -142,3 +142,19 @@ PR #73 merged as `b380be6` and is deployed as `sha-b380be6`, with no pending mig
 **Issues:** #72 closed by the merge. #58 was closed against `2b8dfc0` and `be727aa`, and #59 against `2b8dfc0`. #62, #65, #66 and #67 were already closed.
 
 **Not fixed here (#74):** `/setup/save` still takes the guild from whichever session the cookie holds. A save from a form loaded before another tab replaced the session would write to the other guild. The setup form and the settings edit page are both affected.
+
+## 2026-10-10 — #74 fixed and verified live: a save names the guild its form shows
+
+PR #76 merged as `fee7cff` and is deployed as `sha-fee7cff`, with no pending migrations.
+
+**Fix:** the `/setup/save` body requires `guildId`, the guild the form was loaded for. The session's guild stays authoritative: a body guild that differs from it answers 401, the same as an expired session, before any Discord call or database write. A missing `guildId` answers 400. Client and server ship in one image under a Recreate rollout, so no backward compatibility was kept for bodies without it.
+- The setup form (Screen B) shows Screen A on a 401 save instead of the save-failed callout, since a retry would be refused again.
+- The settings edit page shows the expired screen when loaded data names another guild than its URL.
+
+**Review round (CodeRabbit):** the edit page sent its URL's guild, so a form still showing the previous guild after an in-place guild change would have saved the old values to the new guild. It sends the guild of the data it renders instead (`2d9f765`). CodeRabbit's suggested loading reset was not added; the server's refusal covers it.
+
+**Verification:** 6 tests failed with `main`'s app code before the fix, and the review-round test failed with `g2` in the body before its change. Lint, 554 tests and the build pass.
+
+**Live check, run by Ori on production:** with A's settings edit page open in one tab and B's fresh `/setup` link opened in another, saving in A shows the expired screen. B's settings are unchanged and no channel was created in B.
+
+**Issues:** #74 closed by the merge.
