@@ -61,7 +61,7 @@ export function AdminSetupEdit({ guildId }: { guildId: string }) {
       const response = await fetch('/setup/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...submission, guildId }),
+        body: JSON.stringify({ ...submission, guildId: data.guildId }),
       });
       if (response.status === 401) {
         // The session expired or was revoked (e.g. by a data deletion): the
