@@ -128,3 +128,17 @@ The Wave 5 live checks finished on `sha-51d55eb`. Checks 1–9 and 11 pass, as d
 **Ruling:** a re-open also requires the link itself to be inside its 15-minute lifetime, so a used link stops working when its expiry passes, even with a live session. That matches the setup copy, which promises a 15-minute link.
 
 **Instrument note:** the first local reproduction showed Screen A for every fresh link. The cause was the probe, not the app. A Playwright `response` handler recorded the cookie-to-server map after an `await`, so the flow's next `/setup/data` call arrived before the mapping existed. Intercepting the exchange with `route.fetch()` removed the race.
+
+## 2026-10-10 — #72 deployed and verified live; the reload guard moved to the guild
+
+PR #73 merged as `b380be6` and is deployed as `sha-b380be6`, with no pending migrations.
+
+**A review-round change after the entry above:** the exchange no longer answers a re-open with 204. Both successes, minting and re-opening, answer 200 `{ guildId }`, and only a mint sets the cookie. The tab shows setup data only when `/setup/data` names that same guild; otherwise it shows Screen A. This closed a race the per-mount rule left open: if another tab's link replaced the session after this tab's exchange, this tab's next load would have shown the other guild's form.
+
+**Live checks, run by Ori on production within 15 minutes of `/setup`:**
+1. Re-clicking a used link after closing its tab opens the setup form.
+2. Reloading A's tab after B's link opened in another tab shows Screen A (관리자 세션이 만료되었습니다), not B's data.
+
+**Issues:** #72 closed by the merge. #58 and #59 were closed against `2b8dfc0` and `be727aa`. #62, #65, #66 and #67 were already closed.
+
+**Not fixed here (#74):** `/setup/save` still takes the guild from whichever session the cookie holds. A save from a form loaded before another tab replaced the session would write to the other guild. The setup form and the settings edit page are both affected.
