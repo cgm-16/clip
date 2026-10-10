@@ -78,6 +78,7 @@ test('opens prefilled and maps a 422 MISSING_PERMISSIONS body to the refusal', a
     destination: 'existing',
     channelId: '111',
     allowedRoleIds: ['m'],
+    guildId: 'g1',
   });
   expect(navigation.push).not.toHaveBeenCalled();
 });
@@ -121,6 +122,17 @@ test('a lost session renders the session-expired screen', async () => {
   expect(await screen.findByText(WEB_COPY_AUTHORED.adminSessionExpiredTitle)).toBeInTheDocument();
 });
 
+test('setup data for another guild renders the session-expired screen, not the form', async () => {
+  // Another tab's setup link replaced the session cookie with g2's.
+  stubFetch(
+    () => Response.json(SAVED),
+    () => Response.json(setupDataBody({ guildId: 'g2' })),
+  );
+  render(<AdminSetupEdit guildId="g1" />);
+  expect(await screen.findByText(WEB_COPY_AUTHORED.adminSessionExpiredTitle)).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: WEB_COPY.setup.save })).not.toBeInTheDocument();
+});
+
 test('a deleted archive channel is flagged on the form (#58)', async () => {
   stubFetch(
     () => Response.json(SAVED),
@@ -136,4 +148,25 @@ test('a save refused for an expired session shows the session-expired screen, no
   render(<AdminSetupEdit guildId="g1" />);
   await user.click(await screen.findByRole('button', { name: WEB_COPY.setup.save }));
   expect(await screen.findByText(WEB_COPY_AUTHORED.adminSessionExpiredTitle)).toBeInTheDocument();
+});
+
+test('a form still showing the previous guild saves to that guild, not the new prop', async () => {
+  // The guildId prop changes while g2's setup data is still loading, so g1's
+  // form stays on screen; its save must name g1 for the server to refuse it.
+  const user = userEvent.setup();
+  let dataCalls = 0;
+  const fetchMock = stubFetch(
+    () => new Response(null, { status: 401 }),
+    () => (dataCalls++ === 0 ? Response.json(setupDataBody()) : (new Promise<Response>(() => {}) as unknown as Response)),
+  );
+  const { rerender } = render(<AdminSetupEdit guildId="g1" />);
+  await screen.findByRole('button', { name: WEB_COPY.setup.save });
+
+  rerender(<AdminSetupEdit guildId="g2" />);
+  await waitFor(() => expect(dataCalls).toBe(2));
+  await user.click(screen.getByRole('button', { name: WEB_COPY.setup.save }));
+
+  await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/setup/save'))).toBe(true));
+  const saveCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/setup/save'));
+  expect(JSON.parse(String(saveCall?.[1]?.body)).guildId).toBe('g1');
 });

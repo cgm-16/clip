@@ -1086,7 +1086,12 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
       }
       if (url.endsWith('/setup/save')) {
         expect(init?.method).toBe('POST');
-        expect(JSON.parse(String(init?.body))).toEqual({ destination: 'create', channelId: null, allowedRoleIds: [] });
+        expect(JSON.parse(String(init?.body))).toEqual({
+          destination: 'create',
+          channelId: null,
+          allowedRoleIds: [],
+          guildId: 'g1',
+        });
         return Response.json({
           archiveChannelId: '999',
           archiveChannelName: 'clip-archive',
@@ -1265,6 +1270,34 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
 
     await waitFor(() => expect(screen.getByText(WEB_COPY.setupComplete.title)).toBeInTheDocument());
     expect(screen.queryByText('오류')).not.toBeInTheDocument();
+  });
+
+  it('shows Screen A when /setup/save refuses the session, since another link may have replaced it', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/api/setup/exchange')) {
+        return Response.json({ guildId: 'g1' });
+      }
+      if (url.endsWith('/setup/data')) {
+        return Response.json(setupDataBody());
+      }
+      if (url.endsWith('/setup/save')) {
+        return new Response(null, { status: 401 });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<SetupFlow token="fresh-token" />);
+    await waitFor(() =>
+      expect(screen.getByText(WEB_COPY.setup.destinationLegend)).toBeInTheDocument(),
+    );
+
+    await user.click(screen.getByRole('button', { name: WEB_COPY.setup.save }));
+
+    await waitFor(() => expect(screen.getByText(WEB_COPY.expiredSetupLink.title)).toBeInTheDocument());
+    expect(screen.queryByText(WEB_COPY.setup.destinationLegend)).not.toBeInTheDocument();
   });
 
   it('shows the save-failed callout when the /setup/save request itself rejects, instead of throwing', async () => {

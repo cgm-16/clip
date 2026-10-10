@@ -214,8 +214,13 @@ export function SetupFlow({ token }: { token: string }) {
       const response = await fetch('/setup/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(submission),
+        body: JSON.stringify({ ...submission, guildId: setup.guildId }),
       });
+      if (response.status === 401) {
+        // The session expired, or another link's exchange replaced it.
+        setState({ status: 'expired' });
+        return { kind: 'failed' };
+      }
       if (!response.ok) {
         return saveOutcomeOf(response);
       }

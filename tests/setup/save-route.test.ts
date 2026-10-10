@@ -129,7 +129,7 @@ describe('POST /setup/save', () => {
   test('a session cookie that does not resolve is refused with 401', async () => {
     authenticateAdminSession.mockResolvedValue(null);
 
-    const response = await POST(postJson({ destination: 'create', channelId: null, allowedRoleIds: [] }));
+    const response = await POST(postJson({ destination: 'create', channelId: null, allowedRoleIds: [], guildId: GUILD_ID }));
 
     expect(response.status).toBe(401);
   });
@@ -137,7 +137,7 @@ describe('POST /setup/save', () => {
   test('a malformed body ("existing" with no channelId) is rejected before any Discord or DB call', async () => {
     authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
 
-    const response = await POST(postJson({ destination: 'existing', channelId: null, allowedRoleIds: [] }));
+    const response = await POST(postJson({ destination: 'existing', channelId: null, allowedRoleIds: [], guildId: GUILD_ID }));
 
     expect(response.status).toBe(400);
     expect(createDiscordGuildLookup).not.toHaveBeenCalled();
@@ -149,10 +149,9 @@ describe('POST /setup/save', () => {
     authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
     getGuildSetupChannels.mockResolvedValue([{ id: '111', name: 'general', type: 0 }]);
 
-    // Attempted cross-guild escalation: body names a foreign guild and a
-    // channel id that is not among the *session* guild's channels.
+    // A channel id that is not among the *session* guild's channels.
     const response = await POST(
-      postJson({ destination: 'existing', channelId: '999-not-eligible', allowedRoleIds: [], guildId: OTHER_GUILD_ID }),
+      postJson({ destination: 'existing', channelId: '999-not-eligible', allowedRoleIds: [], guildId: GUILD_ID }),
     );
 
     expect(response.status).toBe(422);
@@ -160,21 +159,37 @@ describe('POST /setup/save', () => {
     expect(finalizeGuildArchiveConfig).not.toHaveBeenCalled();
   });
 
-  test('the guild id always comes from the session, never the request body', async () => {
+  test('a body naming another guild than the session\'s is refused with 401 before any Discord or DB call', async () => {
     stubEnv();
     authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
-    getGuildSetupChannels.mockResolvedValue([{ id: '111', name: 'general', type: 0 }]);
     countArchivedClips.mockResolvedValue(0);
 
+    // Another tab's setup link replaced the session cookie after this tab's
+    // form rendered for OTHER_GUILD_ID.
     const response = await POST(
-      postJson({ destination: 'existing', channelId: '111', allowedRoleIds: [], guildId: OTHER_GUILD_ID }),
+      postJson({ destination: 'create', channelId: null, allowedRoleIds: [], guildId: OTHER_GUILD_ID }),
     );
 
-    expect(response.status).toBe(200);
-    expect(getGuildSetupChannels).toHaveBeenCalledWith(GUILD_ID);
-    expect(finalizeGuildArchiveConfig).toHaveBeenCalledWith(
-      expect.objectContaining({ guildId: GUILD_ID, configuredByUserId: USER_ID }),
-    );
+    expect(response.status).toBe(401);
+    expect(createDiscordGuildLookup).not.toHaveBeenCalled();
+    expect(createDiscordRestClient).not.toHaveBeenCalled();
+    expect(discordRequest).not.toHaveBeenCalled();
+    expect(findGuildArchiveConfig).not.toHaveBeenCalled();
+    expect(hasLiveClips).not.toHaveBeenCalled();
+    expect(finalizeGuildArchiveConfig).not.toHaveBeenCalled();
+  });
+
+  test('a body without the guild it was rendered for is rejected before any Discord or DB call', async () => {
+    stubEnv();
+    authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
+    countArchivedClips.mockResolvedValue(0);
+
+    const response = await POST(postJson({ destination: 'create', channelId: null, allowedRoleIds: [] }));
+
+    expect(response.status).toBe(400);
+    expect(createDiscordGuildLookup).not.toHaveBeenCalled();
+    expect(createDiscordRestClient).not.toHaveBeenCalled();
+    expect(finalizeGuildArchiveConfig).not.toHaveBeenCalled();
   });
 
   test('existing-channel save persists the eligible channel and reports it was not auto-created', async () => {
@@ -183,7 +198,7 @@ describe('POST /setup/save', () => {
     getGuildSetupChannels.mockResolvedValue([{ id: '111', name: 'general', type: 0 }]);
     countArchivedClips.mockResolvedValue(3);
 
-    const response = await POST(postJson({ destination: 'existing', channelId: '111', allowedRoleIds: [] }));
+    const response = await POST(postJson({ destination: 'existing', channelId: '111', allowedRoleIds: [], guildId: GUILD_ID }));
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
@@ -202,7 +217,7 @@ describe('POST /setup/save', () => {
     authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
     countArchivedClips.mockResolvedValue(0);
 
-    const response = await POST(postJson({ destination: 'create', channelId: null, allowedRoleIds: [] }));
+    const response = await POST(postJson({ destination: 'create', channelId: null, allowedRoleIds: [], guildId: GUILD_ID }));
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
@@ -233,7 +248,7 @@ describe('POST /setup/save', () => {
     finalizeGuildArchiveConfig.mockResolvedValue({ kind: 'CONFLICT' });
     countArchivedClips.mockResolvedValue(0);
 
-    const response = await POST(postJson({ destination: 'create', channelId: null, allowedRoleIds: [] }));
+    const response = await POST(postJson({ destination: 'create', channelId: null, allowedRoleIds: [], guildId: GUILD_ID }));
 
     expect(response.status).toBe(409);
     expect(discordRequest).toHaveBeenCalledTimes(3);
@@ -246,7 +261,7 @@ describe('POST /setup/save', () => {
     authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
     finalizeGuildArchiveConfig.mockResolvedValue({ kind: 'SESSION_REVOKED' });
 
-    const response = await POST(postJson({ destination: 'create', channelId: null, allowedRoleIds: [] }));
+    const response = await POST(postJson({ destination: 'create', channelId: null, allowedRoleIds: [], guildId: GUILD_ID }));
 
     expect(response.status).toBe(401);
     expect(discordRequest).toHaveBeenLastCalledWith('DELETE', '/channels/222');
@@ -258,7 +273,7 @@ describe('POST /setup/save', () => {
     getGuildSetupChannels.mockResolvedValue([{ id: '111', name: 'general', type: 0 }]);
     finalizeGuildArchiveConfig.mockResolvedValue({ kind: 'SESSION_REVOKED' });
 
-    const response = await POST(postJson({ destination: 'existing', channelId: '111', allowedRoleIds: [] }));
+    const response = await POST(postJson({ destination: 'existing', channelId: '111', allowedRoleIds: [], guildId: GUILD_ID }));
 
     expect(response.status).toBe(401);
     expect(discordRequest).not.toHaveBeenCalledWith('DELETE', expect.anything());
@@ -271,7 +286,7 @@ describe('POST /setup/save', () => {
     getGuildSetupChannels.mockResolvedValue([{ id: '222', name: 'selected-existing-channel', type: 0 }]);
     finalizeGuildArchiveConfig.mockResolvedValue({ kind: 'CONFLICT' });
 
-    const response = await POST(postJson({ destination: 'existing', channelId: '222', allowedRoleIds: [] }));
+    const response = await POST(postJson({ destination: 'existing', channelId: '222', allowedRoleIds: [], guildId: GUILD_ID }));
 
     expect(response.status).toBe(409);
     expect(getGuildSetupChannels).toHaveBeenCalledWith(GUILD_ID);
@@ -309,7 +324,7 @@ describe('POST /setup/save', () => {
     countArchivedClips.mockResolvedValue(0);
     const logged = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    const response = await POST(postJson({ destination: 'create', channelId: null, allowedRoleIds: [] }));
+    const response = await POST(postJson({ destination: 'create', channelId: null, allowedRoleIds: [], guildId: GUILD_ID }));
 
     expect(response.status).toBe(409);
     expect(discordRequest).toHaveBeenCalledTimes(3);
@@ -344,7 +359,7 @@ describe('POST /setup/save', () => {
     authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
     countArchivedClips.mockResolvedValue(0);
 
-    const response = await POST(postJson({ destination: 'create', channelId: null, allowedRoleIds: [] }));
+    const response = await POST(postJson({ destination: 'create', channelId: null, allowedRoleIds: [], guildId: GUILD_ID }));
 
     expect(discordRequest).toHaveBeenCalledWith(
       'POST',
@@ -381,7 +396,7 @@ describe('POST /setup/save', () => {
     authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
     discordRequest.mockResolvedValue({ username: 'clip' });
 
-    const response = await POST(postJson({ destination: 'create', channelId: null, allowedRoleIds: [] }));
+    const response = await POST(postJson({ destination: 'create', channelId: null, allowedRoleIds: [], guildId: GUILD_ID }));
 
     expect(response.status).toBe(502);
     expect(discordRequest).toHaveBeenCalledWith('GET', '/users/@me');
@@ -398,7 +413,7 @@ describe('POST /setup/save', () => {
     authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
     countArchivedClips.mockResolvedValue(0);
 
-    await POST(postJson({ destination: 'create', channelId: null, allowedRoleIds: [] }));
+    await POST(postJson({ destination: 'create', channelId: null, allowedRoleIds: [], guildId: GUILD_ID }));
 
     const VIEW_CHANNEL = 1n << 10n;
 
@@ -435,7 +450,7 @@ describe('POST /setup/save', () => {
         { id: '222', name: 'new-channel', type: 0 },
       ]);
 
-      const response = await POST(postJson({ destination: 'existing', channelId: '222', allowedRoleIds: [] }));
+      const response = await POST(postJson({ destination: 'existing', channelId: '222', allowedRoleIds: [], guildId: GUILD_ID }));
 
       expect(response.status).toBe(409);
       expect(finalizeGuildArchiveConfig).not.toHaveBeenCalled();
@@ -452,7 +467,7 @@ describe('POST /setup/save', () => {
       hasLiveClips.mockResolvedValue(true);
       isChannelGone.mockResolvedValue(false);
 
-      const response = await POST(postJson({ destination: 'existing', channelId: '222', allowedRoleIds: [] }));
+      const response = await POST(postJson({ destination: 'existing', channelId: '222', allowedRoleIds: [], guildId: GUILD_ID }));
 
       expect(response.status).toBe(409);
       expect(isChannelGone).toHaveBeenCalledWith('111');
@@ -466,7 +481,7 @@ describe('POST /setup/save', () => {
       isChannelGone.mockResolvedValue(true);
       countArchivedClips.mockResolvedValue(4);
 
-      const response = await POST(postJson({ destination: 'create', channelId: null, allowedRoleIds: [] }));
+      const response = await POST(postJson({ destination: 'create', channelId: null, allowedRoleIds: [], guildId: GUILD_ID }));
 
       expect(response.status).toBe(200);
       expect(isChannelGone).toHaveBeenCalledWith('gone');
@@ -481,7 +496,7 @@ describe('POST /setup/save', () => {
       findGuildArchiveConfig.mockResolvedValue({ archiveChannelId: '111', allowedRoleIds: [] });
       hasLiveClips.mockResolvedValue(true);
 
-      const response = await POST(postJson({ destination: 'create', channelId: null, allowedRoleIds: [] }));
+      const response = await POST(postJson({ destination: 'create', channelId: null, allowedRoleIds: [], guildId: GUILD_ID }));
 
       expect(response.status).toBe(409);
       expect(finalizeGuildArchiveConfig).not.toHaveBeenCalled();
@@ -495,7 +510,7 @@ describe('POST /setup/save', () => {
       getGuildSetupChannels.mockResolvedValue([{ id: '111', name: 'general', type: 0 }]);
       countArchivedClips.mockResolvedValue(0);
 
-      const response = await POST(postJson({ destination: 'existing', channelId: '111', allowedRoleIds: [] }));
+      const response = await POST(postJson({ destination: 'existing', channelId: '111', allowedRoleIds: [], guildId: GUILD_ID }));
 
       expect(response.status).toBe(200);
       expect(hasLiveClips).not.toHaveBeenCalled();
@@ -509,7 +524,7 @@ describe('POST /setup/save', () => {
       getGuildSetupChannels.mockResolvedValue([{ id: '111', name: 'general', type: 0 }]);
       countArchivedClips.mockResolvedValue(5);
 
-      const response = await POST(postJson({ destination: 'existing', channelId: '111', allowedRoleIds: [] }));
+      const response = await POST(postJson({ destination: 'existing', channelId: '111', allowedRoleIds: [], guildId: GUILD_ID }));
 
       expect(response.status).toBe(200);
       expect(finalizeGuildArchiveConfig).toHaveBeenCalled();
@@ -521,7 +536,7 @@ describe('POST /setup/save', () => {
     authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
     getGuildSetupChannels.mockRejectedValue(new GuildUnavailableError('gone'));
 
-    const response = await POST(postJson({ destination: 'existing', channelId: '111', allowedRoleIds: [] }));
+    const response = await POST(postJson({ destination: 'existing', channelId: '111', allowedRoleIds: [], guildId: GUILD_ID }));
 
     expect(response.status).toBe(404);
     expect(finalizeGuildArchiveConfig).not.toHaveBeenCalled();
@@ -531,7 +546,7 @@ describe('POST /setup/save', () => {
     stubEnv();
 
     const response = await POST(
-      postJson({ destination: 'create', channelId: null, allowedRoleIds: [] }, { Origin: 'https://evil.example' }),
+      postJson({ destination: 'create', channelId: null, allowedRoleIds: [], guildId: GUILD_ID }, { Origin: 'https://evil.example' }),
     );
 
     expect(response.status).toBe(403);
@@ -545,7 +560,7 @@ describe('POST /setup/save', () => {
     countArchivedClips.mockResolvedValue(0);
 
     const response = await POST(
-      postJson({ destination: 'existing', channelId: '111', allowedRoleIds: [] }, { Origin: BASE_URL }),
+      postJson({ destination: 'existing', channelId: '111', allowedRoleIds: [], guildId: GUILD_ID }, { Origin: BASE_URL }),
     );
 
     expect(response.status).toBe(200);
@@ -561,7 +576,7 @@ describe('POST /setup/save', () => {
 
     test('saves deduplicated allowed roles and returns their names', async () => {
       const response = await POST(
-        postJson({ destination: 'existing', channelId: '111', allowedRoleIds: [MOD_ROLE_ID, MOD_ROLE_ID] }),
+        postJson({ destination: 'existing', channelId: '111', allowedRoleIds: [MOD_ROLE_ID, MOD_ROLE_ID], guildId: GUILD_ID }),
       );
 
       expect(response.status).toBe(200);
@@ -576,7 +591,7 @@ describe('POST /setup/save', () => {
       ['a role from no guild role list', '1539212298600718000'],
     ])('refuses %s as an allowed role without saving', async (_name, roleId) => {
       const response = await POST(
-        postJson({ destination: 'existing', channelId: '111', allowedRoleIds: [roleId] }),
+        postJson({ destination: 'existing', channelId: '111', allowedRoleIds: [roleId], guildId: GUILD_ID }),
       );
 
       expect(response.status).toBe(422);
@@ -586,7 +601,7 @@ describe('POST /setup/save', () => {
 
     test('role validation runs before the archive channel is created', async () => {
       const response = await POST(
-        postJson({ destination: 'create', channelId: null, allowedRoleIds: [GUILD_ID] }),
+        postJson({ destination: 'create', channelId: null, allowedRoleIds: [GUILD_ID], guildId: GUILD_ID }),
       );
 
       expect(response.status).toBe(422);
@@ -598,7 +613,7 @@ describe('POST /setup/save', () => {
         { id: BOT_ROLE_ID, type: 0, allow: 0n, deny: PERMISSION.READ_MESSAGE_HISTORY },
       ]);
 
-      const response = await POST(postJson({ destination: 'existing', channelId: '111', allowedRoleIds: [] }));
+      const response = await POST(postJson({ destination: 'existing', channelId: '111', allowedRoleIds: [], guildId: GUILD_ID }));
 
       expect(response.status).toBe(422);
       expect(await response.json()).toEqual({
@@ -629,7 +644,7 @@ describe('POST /setup/save', () => {
         actual.createDiscordGuildLookup({ botToken: 'bot-token-value', fetchImpl: fetch }).getChannelOverwrites(channelId),
       );
 
-      const response = await POST(postJson({ destination: 'existing', channelId: '111', allowedRoleIds: [] }));
+      const response = await POST(postJson({ destination: 'existing', channelId: '111', allowedRoleIds: [], guildId: GUILD_ID }));
 
       expect(response.status).toBe(502);
       expect(getChannelOverwrites).toHaveBeenCalledWith('111');
@@ -637,7 +652,7 @@ describe('POST /setup/save', () => {
     });
 
     test('an existing channel not in the eligible list explains itself', async () => {
-      const response = await POST(postJson({ destination: 'existing', channelId: '999', allowedRoleIds: [] }));
+      const response = await POST(postJson({ destination: 'existing', channelId: '999', allowedRoleIds: [], guildId: GUILD_ID }));
 
       expect(response.status).toBe(422);
       expect(await response.json()).toEqual({ reason: 'INVALID_CHANNEL' });
@@ -647,7 +662,7 @@ describe('POST /setup/save', () => {
       findGuildArchiveConfig.mockResolvedValue({ archiveChannelId: 'old-channel', allowedRoleIds: [] });
       hasLiveClips.mockResolvedValue(true);
 
-      const response = await POST(postJson({ destination: 'existing', channelId: '111', allowedRoleIds: [] }));
+      const response = await POST(postJson({ destination: 'existing', channelId: '111', allowedRoleIds: [], guildId: GUILD_ID }));
 
       expect(response.status).toBe(409);
       expect(await response.json()).toEqual({ reason: 'LIVE_CLIPS' });
@@ -656,7 +671,7 @@ describe('POST /setup/save', () => {
     test('a final-recheck conflict explains itself the same way', async () => {
       finalizeGuildArchiveConfig.mockResolvedValue({ kind: 'CONFLICT' });
 
-      const response = await POST(postJson({ destination: 'existing', channelId: '111', allowedRoleIds: [] }));
+      const response = await POST(postJson({ destination: 'existing', channelId: '111', allowedRoleIds: [], guildId: GUILD_ID }));
 
       expect(response.status).toBe(409);
       expect(await response.json()).toEqual({ reason: 'LIVE_CLIPS' });
@@ -667,7 +682,7 @@ describe('POST /setup/save', () => {
       hasLiveClips.mockResolvedValue(true);
 
       const response = await POST(
-        postJson({ destination: 'existing', channelId: '111', allowedRoleIds: [MOD_ROLE_ID] }),
+        postJson({ destination: 'existing', channelId: '111', allowedRoleIds: [MOD_ROLE_ID], guildId: GUILD_ID }),
       );
 
       expect(response.status).toBe(200);
