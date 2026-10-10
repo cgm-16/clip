@@ -139,6 +139,6 @@ PR #73 merged as `b380be6` and is deployed as `sha-b380be6`, with no pending mig
 1. Re-clicking a used link after closing its tab opens the setup form.
 2. Reloading A's tab after B's link opened in another tab shows Screen A (관리자 세션이 만료되었습니다), not B's data.
 
-**Issues:** #72 closed by the merge. #58 and #59 were closed against `2b8dfc0` and `be727aa`. #62, #65, #66 and #67 were already closed.
+**Issues:** #72 closed by the merge. #58 was closed against `2b8dfc0` and `be727aa`, and #59 against `2b8dfc0`. #62, #65, #66 and #67 were already closed.
 
 **Not fixed here (#74):** `/setup/save` still takes the guild from whichever session the cookie holds. A save from a form loaded before another tab replaced the session would write to the other guild. The setup form and the settings edit page are both affected.
