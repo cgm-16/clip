@@ -67,6 +67,12 @@ Restore everything between rows. For each, clip a new message as A and record wh
 | 17 | Archive copy deleted by hand | Delete a forward in the archive channel; open Screen D | Row shows `누락` + `WEB_COPY.archive.missingCopyTitle` | |
 | 17b | Poll / system message | Clip a poll | `DISCORD_COPY.invalidTarget`; no row written | |
 
+### Retry timing (#78)
+
+- A clip that answered `DISCORD_COPY.transientFailure` (row `FAILED`) can be retried at once.
+- A Clip stuck in `DELETING` (its final delete failed, so the archive copy stays up) or `PENDING` (its creator died) recovers only when someone clips or unclips **that same message** after it has sat untouched for **5 minutes**. Nothing runs in the background.
+- If an unclip leaves the archive copy up, wait 5+ minutes before retrying. A retry inside that window changes nothing by design, so it is not a new bug.
+
 ### Burst repeat (#64)
 
 - [ ] A and R clip 5 different messages within ~10 s.
