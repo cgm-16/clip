@@ -9,7 +9,7 @@
   gap: var(--sp-1);
   padding: var(--sp-control-y) var(--sp-control-x);
   background: var(--sunken);
-  border: var(--hairline) solid var(--border-strong);
+  border: var(--hairline) solid var(--control-border);
   border-radius: var(--radius);
 }
 

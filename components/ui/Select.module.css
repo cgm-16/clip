@@ -11,13 +11,19 @@
   box-sizing: border-box;
   padding: var(--sp-control-y) var(--sp-control-x);
   background: var(--sunken);
-  border: var(--hairline) solid var(--border-strong);
+  border: var(--hairline) solid var(--control-border);
   border-radius: var(--radius);
   font: 400 var(--fs-label) / 1 var(--font-ui);
   color: var(--text);
 }
+/* The handoff's invalid field border (docs/06_DESIGN_HANDOFF.md "Inputs", "Screen B" validation). */
+.select[aria-invalid='true'] {
+  border-color: var(--error-control-border);
+}
 .select:focus-visible {
-  border-color: var(--accent);
+  /* The handoff's focus border (--accent) is darker than --control-border,
+     so focus would dim the boundary; --focus keeps it brighter than rest. */
+  border-color: var(--focus);
 }
 
 .mono {

@@ -9,6 +9,7 @@
   --divider: #1c1f23;
   --border: #26292e;
   --border-strong: #2f3339;
+  --control-border: #62676d; /* 3.36:1 on --surface, 3.23:1 on --raised, 3.45:1 on --sunken. Form-control boundaries (WCAG 1.4.11). */
   --focus: #8f9fd6;
 
   --text: #e6e8ea;
@@ -33,6 +34,8 @@
   --error-surface: #1a1111;
   --error-border: #5e3636;
   --danger-solid: #7d3a3a;
+  --error-control-border: #9f4a4a; /* --danger-solid's hue. 3.24:1 on --surface, 3.33:1 on --sunken. Invalid form-control boundaries (WCAG 1.4.11). */
+  --danger-solid-text: #ffffff; /* text on --danger-solid. docs/06_DESIGN_HANDOFF.md:90 "danger (confirm step)" fg #fff */
 
   --btn-primary-bg: #dfe3e7;
   --btn-primary-bg-hover: #ffffff;
@@ -131,6 +134,7 @@
   --divider: #e6e6e4;
   --border: #d9d9d7;
   --border-strong: #c4c4c1;
+  --control-border: #82878d; /* 3.38:1 on --surface, 3.20:1 on --raised, 3.62:1 on --sunken. Form-control boundaries (WCAG 1.4.11). */
 
   --text: #17181a;
   --text-2: #3a3d42;
@@ -149,6 +153,7 @@
   --error-text: #8a3535;
   --error-surface: #f7eeee;
   --error-border: #d9b6b6;
+  --error-control-border: #c76c6c; /* --error-text's hue. 3.38:1 on --surface, 3.21:1 on --raised, 3.63:1 on --sunken. Invalid form-control boundaries (WCAG 1.4.11). */
 
   --btn-primary-bg: #22242a;
   --btn-primary-bg-hover: #0e0f11;
