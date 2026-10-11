@@ -6,9 +6,16 @@ import { seeded, signIn } from './seeded';
  * The two-step deletion, stopped at its last step. `삭제 실행` is never
  * clicked: the spec only proves it stays disabled until the acknowledgement
  * is ticked, then cancels. A request to the delete endpoint fails the test.
+ *
+ * The suite runs against production, so the delete endpoint is also blocked
+ * outright (Ori, 2026-10-12): a future edit that clicks `삭제 실행` by mistake
+ * aborts in the browser instead of deleting the test guild's data. This is a
+ * safety interlock, not a stand-in for the endpoint, which this spec never
+ * exercises.
  */
 test('deletion needs the acknowledgement, and cancelling deletes nothing', async ({ page }) => {
   const copy = WEB_COPY.deleteData;
+  await page.route('**/delete-data', (route) => route.abort());
   const deleteRequests: string[] = [];
   page.on('request', (request) => {
     if (request.url().includes('/delete-data')) {
