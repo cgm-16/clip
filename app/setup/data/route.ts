@@ -49,8 +49,9 @@ export async function GET(request: NextRequest) {
         guildName,
         adminHandle,
         channels,
-        // `@everyone` (id === guild id) is listed but can never be selected.
-        roles: roles.map(({ id, name }) => ({ id, name, selectable: id !== identity.guildId })),
+        // `@everyone` (id === guild id) and managed roles (#60) are listed but
+        // can never be selected: no member can be given either.
+        roles: roles.map(({ id, name, managed }) => ({ id, name, selectable: id !== identity.guildId && !managed })),
         // The two fields the form prefills; the internal configurationId stays server-side.
         config: config && { archiveChannelId: config.archiveChannelId, allowedRoleIds: config.allowedRoleIds },
         // #58: the saved archive channel is no longer among the guild's channels.

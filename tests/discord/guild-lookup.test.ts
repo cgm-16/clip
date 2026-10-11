@@ -198,11 +198,13 @@ function stubPaths(routes: Record<string, StubResponse>) {
 }
 
 describe('getGuildRoles', () => {
-  test('returns id, name and BigInt permissions only, skipping malformed roles', async () => {
+  test('returns id, name, BigInt permissions and managed only, skipping malformed roles', async () => {
     const { fetchImpl, calls } = stubPaths({
       [`/guilds/${GUILD_ID}/roles`]: json([
         { id: GUILD_ID, name: '@everyone', permissions: '1024', color: 0, icon: null, tags: {} },
         { id: ROLE_ID, name: 'moderator', permissions: '9007199254740993', managed: false },
+        { id: '4000000000000000003', name: 'Clip', permissions: '0', managed: true, tags: { bot_id: '1' } },
+        { id: '4000000000000000004', name: 'odd', permissions: '0', managed: 'yes' },
         { id: '4000000000000000002', name: 'broken', permissions: 1024 },
       ]),
     });
@@ -212,8 +214,10 @@ describe('getGuildRoles', () => {
 
     expect(calls).toHaveLength(1);
     expect(roles).toEqual([
-      { id: GUILD_ID, name: '@everyone', permissions: 1024n },
-      { id: ROLE_ID, name: 'moderator', permissions: 9007199254740993n },
+      { id: GUILD_ID, name: '@everyone', permissions: 1024n, managed: false },
+      { id: ROLE_ID, name: 'moderator', permissions: 9007199254740993n, managed: false },
+      { id: '4000000000000000003', name: 'Clip', permissions: 0n, managed: true },
+      { id: '4000000000000000004', name: 'odd', permissions: 0n, managed: false },
     ]);
   });
 

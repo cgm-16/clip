@@ -47,9 +47,11 @@ export type GuildRole = {
   id: string;
   name: string;
   permissions: bigint;
+  /** Held only by its integration (e.g. the bot's own role); no member can be given it. */
+  managed: boolean;
 };
 
-/** A role as the setup page shows it; `@everyone` is listed but not selectable. */
+/** A role as the setup page shows it; `@everyone` and managed roles are listed but not selectable. */
 export type SetupRole = {
   id: string;
   name: string;
@@ -124,7 +126,12 @@ function parseRoles(body: unknown): GuildRole[] {
     if (typeof item !== 'object' || item === null) {
       continue;
     }
-    const { id, name, permissions } = item as { id?: unknown; name?: unknown; permissions?: unknown };
+    const { id, name, permissions, managed } = item as {
+      id?: unknown;
+      name?: unknown;
+      permissions?: unknown;
+      managed?: unknown;
+    };
     if (
       typeof id !== 'string' ||
       typeof name !== 'string' ||
@@ -133,7 +140,7 @@ function parseRoles(body: unknown): GuildRole[] {
     ) {
       continue;
     }
-    roles.push({ id, name, permissions: BigInt(permissions) });
+    roles.push({ id, name, permissions: BigInt(permissions), managed: managed === true });
   }
   return roles;
 }

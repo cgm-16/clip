@@ -1362,6 +1362,35 @@ describe('Wave 4 — clipping roles and refused destinations', () => {
     );
   });
 
+  it('a saved role that is no longer selectable shows by name and can be removed before a retry (#60)', async () => {
+    const user = userEvent.setup();
+    // The save route refuses the managed role with INVALID_ROLE, which the
+    // flow settles as `failed`; removing the chip must clear it from the retry.
+    const onSubmit = vi.fn().mockResolvedValueOnce({ kind: 'failed' }).mockResolvedValue({ kind: 'saved' });
+    render(
+      <ScreenB
+        channels={CHANNELS}
+        roles={[...ROLES, { id: 'bot', name: 'Clip', selectable: false }]}
+        initial={{ archiveChannelId: '111', allowedRoleIds: ['bot', 'm'] }}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: WEB_COPY.setup.rolesPlaceholder }));
+    expect(screen.getByRole('checkbox', { name: 'Clip' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: WEB_COPY.setup.save }));
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenLastCalledWith({ destination: 'existing', channelId: '111', allowedRoleIds: ['bot', 'm'] }),
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Clip', pressed: true }));
+    await user.click(screen.getByRole('button', { name: WEB_COPY.setup.save }));
+
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenLastCalledWith({ destination: 'existing', channelId: '111', allowedRoleIds: ['m'] }),
+    );
+  });
+
   it('shows the roles NOTE callout', () => {
     render(<ScreenB channels={CHANNELS} roles={ROLES} onSubmit={vi.fn()} />);
 
