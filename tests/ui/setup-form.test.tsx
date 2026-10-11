@@ -117,6 +117,19 @@ describe('ScreenB — archive destination configuration', () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
+  it('announces the channel validation error and ties it to the select', async () => {
+    const user = userEvent.setup();
+    render(<ScreenB channels={CHANNELS} onSubmit={vi.fn()} />);
+
+    await user.click(screen.getByRole('radio', { name: WEB_COPY.setup.destinationExistingLabel }));
+    await user.click(screen.getByRole('button', { name: WEB_COPY.setup.save }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent(WEB_COPY.setup.destinationChannelRequired);
+    expect(screen.getByRole('combobox')).toHaveAccessibleDescription(
+      expect.stringContaining(WEB_COPY.setup.destinationChannelRequired),
+    );
+  });
+
   it('validates on blur, before any submit attempt', async () => {
     const user = userEvent.setup();
     render(<ScreenB channels={CHANNELS} onSubmit={vi.fn()} />);
@@ -378,6 +391,17 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
     expect(
       fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/api/setup/exchange')),
     ).toHaveLength(0);
+  });
+
+  it('announces the load error as an alert', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(null, { status: 502 })),
+    );
+
+    render(<SetupFlow token="fresh-token" />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(WEB_COPY_AUTHORED.setupDataLoadFailed);
   });
 
   it('retries setup data after a load error, then exchanges the still-unspent token exactly once (#62)', async () => {

@@ -16,6 +16,7 @@ import styles from './ScreenB.module.css';
 type Destination = 'create' | 'existing';
 
 const RETRY_COMMAND = '/setup';
+const CHANNEL_ERROR_ID = 'archive-channel-error';
 // The save-failed copy wraps a mono "/setup" token; split on the literal
 // command and render the halves around a MonoChip, the same technique
 // ScreenA's recovery callout uses for `WEB_COPY.expiredSetupLink.recovery`.
@@ -199,6 +200,7 @@ export function ScreenB({
               onChange={(event) => handleChannelChange(event.target.value)}
               onBlur={handleChannelBlur}
               aria-invalid={channelError ? true : undefined}
+              aria-describedby={channelError ? CHANNEL_ERROR_ID : undefined}
               options={[
                 { value: '', label: WEB_COPY_AUTHORED.setupExistingChannelPlaceholder },
                 ...channels.map((channel) => ({
@@ -207,7 +209,12 @@ export function ScreenB({
                 })),
               ]}
             />
-            {channelError && <Callout variant="confirm">{channelError}</Callout>}
+            {channelError && (
+              // Announced on arrival (it appears on submit or blur) and read again with the select.
+              <div id={CHANNEL_ERROR_ID} role="alert">
+                <Callout variant="confirm">{channelError}</Callout>
+              </div>
+            )}
             <p className={styles.warning}>{WEB_COPY.setup.destinationExistingWarning}</p>
           </div>
         )}

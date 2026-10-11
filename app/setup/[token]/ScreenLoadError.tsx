@@ -9,7 +9,10 @@ export function ScreenLoadError({ onRetry }: { onRetry: () => void }) {
     <div className={styles.container}>
       <div className={styles.card}>
         <Wordmark />
-        <Callout variant="error">{WEB_COPY_AUTHORED.setupDataLoadFailed}</Callout>
+        {/* The whole screen replaces the loading state, so the failure is announced on arrival. */}
+        <div role="alert">
+          <Callout variant="error">{WEB_COPY_AUTHORED.setupDataLoadFailed}</Callout>
+        </div>
         <Button variant="primary" onClick={onRetry}>
           {WEB_COPY_AUTHORED.retry}
         </Button>
