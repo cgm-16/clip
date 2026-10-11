@@ -1,0 +1,39 @@
+import { expect, test } from '@playwright/test';
+import { WEB_COPY, WEB_COPY_AUTHORED } from '../lib/ui/copy';
+import { seeded, signIn } from './seeded';
+
+/*
+ * The two-step deletion, stopped at its last step. `삭제 실행` is never
+ * clicked: the spec only proves it stays disabled until the acknowledgement
+ * is ticked, then cancels. A request to the delete endpoint fails the test.
+ */
+test('deletion needs the acknowledgement, and cancelling deletes nothing', async ({ page }) => {
+  const copy = WEB_COPY.deleteData;
+  const deleteRequests: string[] = [];
+  page.on('request', (request) => {
+    if (request.url().includes('/delete-data')) {
+      deleteRequests.push(request.url());
+    }
+  });
+
+  await signIn(page, 'E2E_DELETION_TOKEN');
+  await page.goto(`/admin/${seeded('E2E_GUILD_ID')}/settings`);
+  const clipCountRow = page.getByText(WEB_COPY.setupComplete.clipCountKey).locator('..');
+  const clipCountBefore = await clipCountRow.textContent();
+
+  await page.getByRole('button', { name: copy.startDeletion }).click();
+  const panel = page.getByRole('region', { name: copy.confirmTitle });
+  const confirm = panel.getByRole('button', { name: copy.confirmDeletion });
+  await expect(confirm).toBeDisabled();
+
+  await panel.getByRole('checkbox', { name: copy.acknowledgement }).check();
+  await expect(confirm).toBeEnabled();
+  await panel.getByRole('button', { name: copy.cancel }).click();
+  await expect(panel).toBeHidden();
+
+  await page.reload();
+  await expect(page.getByRole('button', { name: copy.startDeletion })).toBeEnabled();
+  await expect(clipCountRow).toHaveText(clipCountBefore ?? '');
+  await expect(page.getByText(WEB_COPY_AUTHORED.deletionCompleted)).toHaveCount(0);
+  expect(deleteRequests).toEqual([]);
+});
