@@ -170,3 +170,15 @@ test('opening the confirm panel moves focus into it, and cancelling returns focu
   await userEvent.click(within(confirmPanel()).getByRole('button', { name: '취소' }));
   expect(start).toHaveFocus();
 });
+
+test('a failed deletion returns focus to the acknowledgement, the panel\'s first enabled control', async () => {
+  fetchMock.mockResolvedValueOnce(new Response(null, { status: 500 }));
+  render(<SettingsScreen {...props} />);
+  await openAndAcknowledge();
+  await userEvent.click(screen.getByRole('button', { name: '삭제 실행' }));
+  await screen.findByText('Clip 데이터를 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+  // 삭제 실행 and 취소 were disabled while the request ran, so focus had fallen to the body.
+  expect(
+    within(confirmPanel()).getByRole('checkbox', { name: '위 내용을 이해했으며 되돌릴 수 없다는 것을 알고 있습니다.' }),
+  ).toHaveFocus();
+});

@@ -44,10 +44,17 @@ export function SettingsScreen(props: SettingsScreenProps) {
   const startButton = useRef<HTMLButtonElement>(null);
   const returnFocusToStart = useRef(false);
 
+  // 삭제 실행 and 취소 are disabled while the request runs, so a failure hands
+  // focus to the acknowledgement, the panel's first enabled control.
+  const acknowledgement = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     if (flow === 'idle' && returnFocusToStart.current) {
       returnFocusToStart.current = false;
       startButton.current?.focus();
+    }
+    if (flow === 'failed') {
+      acknowledgement.current?.focus();
     }
   }, [flow]);
 
@@ -151,6 +158,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
               <label className={styles.acknowledge}>
                 {/* Opening disables the focused start button; focus moves to the panel's first control. */}
                 <input
+                  ref={acknowledgement}
                   type="checkbox"
                   autoFocus
                   checked={acknowledged}

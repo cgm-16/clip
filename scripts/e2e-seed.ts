@@ -9,9 +9,10 @@
  * minutes: run the suite right after seeding.
  *
  * The token's admin is the guild's current configurer, so the setup spec's
- * re-save writes back the same `configuredByUserId`. A guild with no
- * configuration has no configurer, and then `--user <discord user id>` is
- * required.
+ * re-save writes back the same `configuredByUserId`. For a configured guild,
+ * `--user` may be omitted or must name that configurer; any other user is
+ * refused. A guild with no configuration has no configurer, and then
+ * `--user <discord user id>` is required.
  *
  * Locally (dev server started with the same `.env`):
  *
@@ -38,7 +39,8 @@
  *   export DISCORD_APPLICATION_ID=unused DISCORD_PUBLIC_KEY=unused DISCORD_BOT_TOKEN=unused
  *   eval "$(pnpm exec tsx scripts/e2e-seed.ts --guild <guild-id>)"
  *   E2E_BASE_URL=https://clipendpoint.cc pnpm e2e
- *   unset DATABASE_URL ADMIN_SESSION_SECRET
+ *   unset DATABASE_URL ADMIN_SESSION_SECRET PUBLIC_BASE_URL DISCORD_APPLICATION_ID DISCORD_PUBLIC_KEY DISCORD_BOT_TOKEN \
+ *     E2E_GUILD_ID E2E_ARCHIVE_CHANNEL_ID E2E_SETUP_TOKEN E2E_ARCHIVE_TOKEN E2E_DELETION_TOKEN E2E_EXPIRED_TOKEN E2E_USED_TOKEN
  */
 import { parseArgs } from 'node:util';
 import { exchangeSetupToken, issueSetupToken } from '../lib/admin-session/service';
@@ -62,6 +64,11 @@ async function main(): Promise<void> {
       where: { guildId },
       select: { archiveChannelId: true, configuredByUserId: true },
     });
+    if (config && values.user !== undefined && values.user !== config.configuredByUserId) {
+      throw new Error(
+        `Guild ${guildId} is configured by ${config.configuredByUserId}; the setup spec's re-save writes the token's user back as the configurer, so --user must be omitted or name that user.`,
+      );
+    }
     const userId = values.user ?? config?.configuredByUserId;
     if (!userId) {
       throw new Error(`Guild ${guildId} has no configuration, so --user is required. ${USAGE}`);
@@ -85,7 +92,11 @@ async function main(): Promise<void> {
       E2E_EXPIRED_TOKEN: await issue(new Date(now.getTime() - SETUP_TOKEN_TTL_MS - 60_000)),
       E2E_USED_TOKEN: used,
     };
-    // Ids are checked above or Discord snowflakes, and tokens base64url, so no value needs quoting.
+    // Every line is `eval`ed, so refuse the lot unless each value needs no quoting.
+    const unsafe = Object.entries(exports).find(([, value]) => !/^[\w-]*$/.test(value));
+    if (unsafe) {
+      throw new Error(`Refusing to print ${unsafe[0]}: its value is not word characters only`);
+    }
     for (const [name, value] of Object.entries(exports)) {
       console.log(`export ${name}=${value}`);
     }

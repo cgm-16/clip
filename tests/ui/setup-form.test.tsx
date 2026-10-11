@@ -130,6 +130,16 @@ describe('ScreenB — archive destination configuration', () => {
     );
   });
 
+  it('moves focus to the channel select when a submit is refused, since 설정 저장 disables', async () => {
+    const user = userEvent.setup();
+    render(<ScreenB channels={CHANNELS} onSubmit={vi.fn()} />);
+
+    await user.click(screen.getByRole('radio', { name: WEB_COPY.setup.destinationExistingLabel }));
+    await user.click(screen.getByRole('button', { name: WEB_COPY.setup.save }));
+
+    expect(screen.getByRole('combobox')).toHaveFocus();
+  });
+
   it('validates on blur, before any submit attempt', async () => {
     const user = userEvent.setup();
     render(<ScreenB channels={CHANNELS} onSubmit={vi.fn()} />);

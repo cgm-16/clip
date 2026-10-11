@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Callout } from '@/components/ui/Callout';
 import { MonoChip } from '@/components/ui/MonoChip';
@@ -106,6 +106,8 @@ export function ScreenB({
   const [channelError, setChannelError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [saveOutcome, setSaveOutcome] = useState<SaveOutcome | null>(null);
+  // A refused submit disables 설정 저장, so focus moves to the select it names.
+  const channelSelect = useRef<HTMLSelectElement>(null);
 
   function handleDestinationChange(value: string) {
     const next = value as Destination;
@@ -140,6 +142,7 @@ export function ScreenB({
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!validateChannelSelection(channelId)) {
+      channelSelect.current?.focus();
       return;
     }
 
@@ -193,6 +196,7 @@ export function ScreenB({
               <Callout variant="missing">{WEB_COPY_AUTHORED.archiveChannelMissing}</Callout>
             )}
             <Select
+              ref={channelSelect}
               id="archive-channel"
               label={WEB_COPY.archive.channelFilterLabel}
               mono
