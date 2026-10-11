@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AdminHeader } from '@/components/admin/AdminHeader';
 import { ConfigTable } from '@/components/admin/ConfigTable';
 import { SessionExpired } from '@/components/admin/SessionExpired';
@@ -39,6 +39,17 @@ export function SettingsScreen(props: SettingsScreenProps) {
   const copy = WEB_COPY.deleteData;
   const [flow, setFlow] = useState<DeleteFlow>('idle');
   const [acknowledged, setAcknowledged] = useState(false);
+  // The start button is disabled while the panel is open, so 취소 hands focus
+  // back to it once it is enabled again rather than leaving it on the page body.
+  const startButton = useRef<HTMLButtonElement>(null);
+  const returnFocusToStart = useRef(false);
+
+  useEffect(() => {
+    if (flow === 'idle' && returnFocusToStart.current) {
+      returnFocusToStart.current = false;
+      startButton.current?.focus();
+    }
+  }, [flow]);
 
   if (flow === 'expired') {
     return <SessionExpired />;
@@ -61,6 +72,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
   function cancel() {
     setFlow('idle');
     setAcknowledged(false);
+    returnFocusToStart.current = true;
   }
 
   const panelOpen = flow === 'confirming' || flow === 'deleting' || flow === 'failed';
@@ -113,7 +125,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
               <legend className={styles.dangerLegend}>{copy.dangerZoneLegend}</legend>
               <p className={styles.dangerText}>{copy.dangerZoneExplanation}</p>
               <div>
-                <Button variant="danger" onClick={() => setFlow('confirming')} disabled={panelOpen}>
+                <Button ref={startButton} variant="danger" onClick={() => setFlow('confirming')} disabled={panelOpen}>
                   {copy.startDeletion}
                 </Button>
               </div>
@@ -137,8 +149,10 @@ export function SettingsScreen(props: SettingsScreenProps) {
               </ul>
               <p className={styles.dangerText}>{WEB_COPY_AUTHORED.deletionLosesControlState}</p>
               <label className={styles.acknowledge}>
+                {/* Opening disables the focused start button; focus moves to the panel's first control. */}
                 <input
                   type="checkbox"
+                  autoFocus
                   checked={acknowledged}
                   onChange={(event) => setAcknowledged(event.target.checked)}
                 />

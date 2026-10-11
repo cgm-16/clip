@@ -147,3 +147,15 @@ test('a completed deletion is announced in a live region', async () => {
   const done = await screen.findByText(/이 서버의 Clip 데이터를 삭제했습니다/);
   expect(done.closest('[aria-live="polite"]')).not.toBeNull();
 });
+
+test('opening the confirm panel moves focus into it, and cancelling returns focus to the start button', async () => {
+  render(<SettingsScreen {...props} />);
+  const start = screen.getByRole('button', { name: 'Clip 데이터 삭제' });
+  await userEvent.click(start);
+  // The start button is disabled while the panel is open, so focus left on it is lost.
+  expect(
+    within(confirmPanel()).getByRole('checkbox', { name: '위 내용을 이해했으며 되돌릴 수 없다는 것을 알고 있습니다.' }),
+  ).toHaveFocus();
+  await userEvent.click(within(confirmPanel()).getByRole('button', { name: '취소' }));
+  expect(start).toHaveFocus();
+});
