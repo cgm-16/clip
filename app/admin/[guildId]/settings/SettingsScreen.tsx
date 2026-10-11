@@ -48,6 +48,9 @@ export function SettingsScreen(props: SettingsScreenProps) {
   // focus to the acknowledgement, the panel's first enabled control.
   const acknowledgement = useRef<HTMLInputElement>(null);
 
+  // Success unmounts the confirm panel that held focus, so focus moves to the result.
+  const deletionResult = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (flow === 'idle' && returnFocusToStart.current) {
       returnFocusToStart.current = false;
@@ -55,6 +58,9 @@ export function SettingsScreen(props: SettingsScreenProps) {
     }
     if (flow === 'failed') {
       acknowledgement.current?.focus();
+    }
+    if (flow === 'deleted') {
+      deletionResult.current?.focus();
     }
   }, [flow]);
 
@@ -100,7 +106,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
       <div aria-live="polite" className={styles.toast}>
         {props.saved && flow === 'idle' && <Callout variant="ok">{WEB_COPY.setup.saved}</Callout>}
         {flow === 'deleted' && (
-          <div className={styles.done}>
+          <div ref={deletionResult} tabIndex={-1} className={styles.done}>
             <Callout variant="ok">{WEB_COPY_AUTHORED.deletionCompleted}</Callout>
             <Callout variant="note">
               {RECOVERY_BEFORE}

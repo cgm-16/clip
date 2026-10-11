@@ -182,3 +182,13 @@ test('a failed deletion returns focus to the acknowledgement, the panel\'s first
     within(confirmPanel()).getByRole('checkbox', { name: '위 내용을 이해했으며 되돌릴 수 없다는 것을 알고 있습니다.' }),
   ).toHaveFocus();
 });
+
+test('a completed deletion moves focus to the result, since the confirm panel holding focus unmounts', async () => {
+  fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ deleted: true }), { status: 200 }));
+  render(<SettingsScreen {...props} />);
+  await openAndAcknowledge();
+  await userEvent.click(screen.getByRole('button', { name: '삭제 실행' }));
+  const done = await screen.findByText(/이 서버의 Clip 데이터를 삭제했습니다/);
+  expect(document.activeElement).not.toBe(document.body);
+  expect(document.activeElement).toContainElement(done);
+});

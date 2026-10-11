@@ -39,8 +39,9 @@ test('the archive list renders', async () => {
   }
   const { start, end } = await readRange();
   expect(start).toBe(1);
-  // One card per clip in the range, each linking to its original message.
-  await expect(page.locator('a[href^="https://discord.com/channels/"]')).toHaveCount(end - start + 1);
+  // One card per clip in the range. Cards are counted, not original-message
+  // links: a card whose original is unavailable shows a label instead.
+  await expect(page.getByRole('article')).toHaveCount(end - start + 1);
 });
 
 test('pagination moves by page and keeps the page in the URL', async () => {

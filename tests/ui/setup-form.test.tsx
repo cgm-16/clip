@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 
@@ -150,6 +150,21 @@ describe('ScreenB — archive destination configuration', () => {
     await user.tab();
 
     expect(screen.getByText(WEB_COPY.setup.destinationChannelRequired)).toBeInTheDocument();
+  });
+
+  it('keeps focus on the channel select when blurring it toward 설정 저장, which the error disables', async () => {
+    const user = userEvent.setup();
+    render(<ScreenB channels={CHANNELS} onSubmit={vi.fn()} />);
+
+    await user.click(screen.getByRole('radio', { name: WEB_COPY.setup.destinationExistingLabel }));
+    const select = screen.getByRole('combobox');
+    const save = screen.getByRole('button', { name: WEB_COPY.setup.save });
+    select.focus();
+    act(() => save.focus());
+
+    expect(screen.getByText(WEB_COPY.setup.destinationChannelRequired)).toBeInTheDocument();
+    expect(save).toBeDisabled();
+    await waitFor(() => expect(select).toHaveFocus());
   });
 
   it('clears the validation error once a channel is chosen', async () => {

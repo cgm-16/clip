@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useRef, useState, type FormEvent } from 'react';
+import { useRef, useState, type FocusEvent, type FormEvent } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Callout } from '@/components/ui/Callout';
 import { MonoChip } from '@/components/ui/MonoChip';
@@ -108,6 +108,7 @@ export function ScreenB({
   const [saveOutcome, setSaveOutcome] = useState<SaveOutcome | null>(null);
   // A refused submit disables 설정 저장, so focus moves to the select it names.
   const channelSelect = useRef<HTMLSelectElement>(null);
+  const saveButton = useRef<HTMLButtonElement>(null);
 
   function handleDestinationChange(value: string) {
     const next = value as Destination;
@@ -135,8 +136,14 @@ export function ScreenB({
     }
   }
 
-  function handleChannelBlur() {
-    validateChannelSelection(channelId);
+  function handleChannelBlur(event: FocusEvent<HTMLSelectElement>) {
+    // The error disables 설정 저장, so focus heading there would be dropped
+    // before its click runs; it returns to the select the error names. The
+    // return waits a task, since focusing during blur loses to the focus
+    // change already under way.
+    if (!validateChannelSelection(channelId) && event.relatedTarget === saveButton.current) {
+      setTimeout(() => channelSelect.current?.focus());
+    }
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -288,7 +295,7 @@ export function ScreenB({
           {/* Disabled while the channel 확인 error shows (handoff Screen B
               "save disabled until resolved"); choosing a channel or the
               create destination clears that error and re-enables it. */}
-          <Button type="submit" variant="primary" disabled={pending || channelError !== null}>
+          <Button ref={saveButton} type="submit" variant="primary" disabled={pending || channelError !== null}>
             {WEB_COPY.setup.save}
           </Button>
           <Button type="button" variant="secondary" onClick={onCancel}>

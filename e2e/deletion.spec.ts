@@ -14,6 +14,11 @@ import { seeded, signIn } from './seeded';
  * exercises.
  */
 test('deletion needs the acknowledgement, and cancelling deletes nothing', async ({ page }) => {
+  // The seed prints an empty archive channel for an unconfigured guild.
+  test.skip(
+    seeded('E2E_ARCHIVE_CHANNEL_ID') === '',
+    'The seeded guild has no configuration, so its settings page redirects to setup and there is nothing to delete.',
+  );
   const copy = WEB_COPY.deleteData;
   await page.route('**/delete-data', (route) => route.abort());
   const deleteRequests: string[] = [];
