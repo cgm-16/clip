@@ -619,6 +619,91 @@ describe('clip service under concurrency', () => {
       expect(clip?.status).toBe('ACTIVE');
       expect(clip?.archiveProvenanceMessageId).toBe('provenance-1');
     });
+
+    test('a finalizer stalled past the lease never clears or deletes a pair a later lifecycle wrote', async () => {
+      const fixture = await seedConfiguredGuild();
+      const first = fakeSnowflake();
+      await activeClipWith(fixture, [first]);
+      // Inside the first finalizer's delete of pair 1: a taker revives with
+      // pair 2, then unclips, and that delete fails -- DELETING, pair 2 still
+      // up and addressed only by the row.
+      const late = fakeSnowflake();
+      let takerClip: ClipCommandResult | undefined;
+      let takerUnclip: UnclipResult | undefined;
+      gateway.onNextDelete(async () => {
+        await ageClip(fixture, 6);
+        takerClip = await clipAs(fixture, late);
+        gateway.failNextDelete(new Error('discord unavailable'));
+        takerUnclip = await unclipAs(fixture, late);
+      });
+
+      expect(await unclipAs(fixture, first)).toEqual({ kind: 'UNCLIPPED', remaining: 0 });
+
+      expect(takerClip?.kind).toBe('CLIPPER_ADDED');
+      expect(takerUnclip).toEqual({ kind: 'UNCLIPPED', remaining: 0 });
+      expect(gateway.createCalls).toHaveLength(2);
+      expect(gateway.deleteCalls.map((call) => call.ids)).toEqual([PAIR_1, PAIR_1, PAIR_2]);
+      const stuck = await readClip(fixture);
+      expect(stuck?.status).toBe('DELETING');
+      expect(stuck?.archiveProvenanceMessageId).toBe('provenance-2');
+      expect(stuck?.archiveForwardMessageId).toBe('forward-2');
+    });
+
+    test('a creator stalled past the lease never publishes over a DELETING row’s live pair', async () => {
+      const fixture = await seedConfiguredGuild();
+      // The taker's create finishes inside the creator's, so the taker posts
+      // pair 1 and the creator pair 2. Inside the creator's round-trip the
+      // taker publishes, every clipper unclips with the delete failing, and a
+      // fresh clip lands inside the lease: DELETING, pair 1 up, one clipper.
+      const creatorUser = fakeSnowflake();
+      const takerUser = fakeSnowflake();
+      const reviver = fakeSnowflake();
+      let taker: ClipCommandResult | undefined;
+      let revived: ClipCommandResult | undefined;
+      gateway.onNextCreate(async () => {
+        await ageClip(fixture, 6);
+        taker = await clipAs(fixture, takerUser);
+        gateway.failNextDelete(new Error('discord unavailable'));
+        await unclipAs(fixture, creatorUser);
+        await unclipAs(fixture, takerUser);
+        revived = await clipAs(fixture, reviver);
+      });
+
+      const creator = await clipAs(fixture, creatorUser);
+
+      expect(taker?.kind).toBe('CREATED');
+      expect(revived?.kind).toBe('CLIPPER_ADDED');
+      expect(creator.kind).toBe('CLIPPER_ADDED');
+      expect(gateway.createCalls).toHaveLength(2);
+      // Pair 1's failed delete, then the creator taking its own pair 2 down.
+      expect(gateway.deleteCalls.map((call) => call.ids)).toEqual([PAIR_1, PAIR_2]);
+      const clip = await readClip(fixture);
+      expect(clip?.status).toBe('DELETING');
+      expect(clip?.archiveProvenanceMessageId).toBe('provenance-1');
+      expect(clip?.archiveForwardMessageId).toBe('forward-1');
+    });
+
+    test('opening DELETING renews the lease, so a clip inside the finalizer’s delete never takes over', async () => {
+      const fixture = await seedConfiguredGuild();
+      const first = fakeSnowflake();
+      await activeClipWith(fixture, [first]);
+      // Long-lived ACTIVE row: only the DELETING write itself can make the
+      // lease fresh for the finalizer it starts.
+      await ageClip(fixture, 10);
+      let inside: ClipCommandResult | undefined;
+      gateway.onNextDelete(async () => {
+        inside = await clipAs(fixture, fakeSnowflake());
+      });
+
+      expect(await unclipAs(fixture, first)).toEqual({ kind: 'UNCLIPPED', remaining: 0 });
+
+      expect(inside?.kind).toBe('CLIPPER_ADDED');
+      expect(gateway.deleteCalls.map((call) => call.ids)).toEqual([PAIR_1]);
+      expect(gateway.createCalls).toHaveLength(2);
+      const clip = await readClip(fixture);
+      expect(clip?.status).toBe('ACTIVE');
+      expect(clip?.archiveProvenanceMessageId).toBe('provenance-2');
+    });
   });
 });
 

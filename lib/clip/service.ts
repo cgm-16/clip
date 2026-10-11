@@ -397,8 +397,9 @@ export function createClipService(gateway: DiscordArchiveGateway) {
     if (isTerminalStatus(published.clip.status)) {
       return { kind: 'REMOVED_BY_AUTHOR_OR_ADMIN' };
     }
-    // A concurrent retry published its archive first; this request's signal is
-    // still recorded, so report the archive that won.
+    // A concurrent retry published its archive first, or the row still holds a
+    // pair whose deletion is unfinished; this request's signal is still
+    // recorded, so report the archive the row holds.
     const winning = archiveOf(published.clip);
     return joined.added
       ? { kind: 'CLIPPER_ADDED', archive: winning }
@@ -440,6 +441,18 @@ export function createClipService(gateway: DiscordArchiveGateway) {
           // clearing them nor deleting the row is this finalizer's to do --
           // and clearing them would violate `clips_active_requires_archive` and
           // reject the caller's whole unclip.
+          return { revived: false as const };
+        }
+        const held = archiveOf(locked);
+        if (
+          held !== null &&
+          (archive === null ||
+            held.provenanceMessageId !== archive.provenanceMessageId ||
+            held.forwardMessageId !== archive.forwardMessageId)
+        ) {
+          // The row holds a pair this finalizer was never sent: a taker past
+          // the lease revived the Clip and a later deletion of its own now owns
+          // these ids. Clearing them or deleting the row would orphan that pair.
           return { revived: false as const };
         }
         if (archiveRemoved) {

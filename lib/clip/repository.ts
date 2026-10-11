@@ -282,7 +282,8 @@ const TOMBSTONE_STATUSES: ClipStatus[] = ['REMOVED_BY_AUTHOR', 'REMOVED_BY_ADMIN
  * built on Discord needs cleaning up rather than publishing.
  *
  * Called under `lockClip` the row is known to exist, so `applied: false` can
- * only mean "tombstoned", never "no such Clip".
+ * only mean "tombstoned" or "failed the caller's extra `where`", never "no such
+ * Clip".
  *
  * Only the workflow transitions are guarded this way. `clearArchiveMessageIds`
  * and `deleteClippers` must keep working on a tombstoned Clip: recording the
@@ -294,9 +295,10 @@ async function advanceLiveClip(
   guildId: string,
   sourceMessageId: string,
   data: Prisma.ClipUpdateManyMutationInput,
+  where: Prisma.ClipWhereInput = {},
 ): Promise<{ applied: boolean }> {
   const { count } = await tx.clip.updateMany({
-    where: { guildId, sourceMessageId, status: { notIn: TOMBSTONE_STATUSES } },
+    where: { ...where, guildId, sourceMessageId, status: { notIn: TOMBSTONE_STATUSES } },
     data,
   });
   return { applied: count === 1 };
@@ -312,6 +314,11 @@ async function advanceLiveClip(
  * rejects one carrying a removal timestamp. The predicate is what turns the
  * second of those from a raised constraint violation into an outcome the caller
  * can act on.
+ *
+ * It also never replaces ids already on the row. Those address a pair still
+ * up in Discord -- a DELETING Clip whose delete failed keeps them -- and
+ * overwriting them would orphan it. Every legitimate publish lands on null
+ * ids: PENDING and FAILED never had any, and a revival clears them first.
  */
 export function markActive(
   tx: TxClient,
@@ -319,11 +326,17 @@ export function markActive(
   sourceMessageId: string,
   archive: ArchiveMessageIds,
 ): Promise<{ applied: boolean }> {
-  return advanceLiveClip(tx, guildId, sourceMessageId, {
-    status: 'ACTIVE',
-    archiveProvenanceMessageId: archive.provenanceMessageId,
-    archiveForwardMessageId: archive.forwardMessageId,
-  });
+  return advanceLiveClip(
+    tx,
+    guildId,
+    sourceMessageId,
+    {
+      status: 'ACTIVE',
+      archiveProvenanceMessageId: archive.provenanceMessageId,
+      archiveForwardMessageId: archive.forwardMessageId,
+    },
+    { archiveProvenanceMessageId: null, archiveForwardMessageId: null },
+  );
 }
 
 /**
