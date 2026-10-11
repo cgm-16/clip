@@ -7,6 +7,7 @@ import {
 } from '@/lib/clip/types';
 import {
   createDiscordRestClient,
+  describeDiscordFailure,
   DiscordApiError,
   DISCORD_ERROR,
   type DiscordRestClient,
@@ -135,6 +136,8 @@ export function createDiscordArchiveGateway(
       throw new ArchiveCreationFailedError('could not read the source message', {
         retryable: error instanceof DiscordApiError ? error.retryable : true,
         orphanedProvenanceMessageId: null,
+        step: 'source_read',
+        failure: describeDiscordFailure(error),
       });
     }
 
@@ -143,6 +146,8 @@ export function createDiscordArchiveGateway(
       throw new ArchiveCreationFailedError('source message was not in the expected shape', {
         retryable: false,
         orphanedProvenanceMessageId: null,
+        step: 'source_read',
+        failure: null,
       });
     }
     return source;
@@ -179,6 +184,8 @@ export function createDiscordArchiveGateway(
         throw new ArchiveCreationFailedError('could not post the provenance message', {
           retryable: error instanceof DiscordApiError ? error.retryable : true,
           orphanedProvenanceMessageId: null,
+          step: 'provenance_post',
+          failure: describeDiscordFailure(error),
         });
       }
 
@@ -210,6 +217,8 @@ export function createDiscordArchiveGateway(
         throw new ArchiveCreationFailedError('could not post the forward', {
           retryable: error instanceof DiscordApiError ? error.retryable : true,
           orphanedProvenanceMessageId: provenanceMessageId,
+          step: 'forward_post',
+          failure: describeDiscordFailure(error),
         });
       }
     },

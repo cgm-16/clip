@@ -359,6 +359,8 @@ describe('clip service', () => {
       new ArchiveCreationFailedError('discord rejected the forward', {
         retryable: true,
         orphanedProvenanceMessageId: null,
+        step: 'forward_post',
+        failure: { failure: 'http', httpStatus: '500' },
       }),
     );
     await service.clip(clipInput(fixture, clipperUserId));
@@ -586,6 +588,8 @@ describe('clip service', () => {
       new ArchiveCreationFailedError('discord rate limited the post', {
         retryable: true,
         orphanedProvenanceMessageId: null,
+        step: 'provenance_post',
+        failure: { failure: 'http', httpStatus: '429', discordCode: '0' },
       }),
     );
 
@@ -611,6 +615,78 @@ describe('clip service', () => {
     expect(await countClipperRows(fixture)).toBe(1);
   });
 
+  // The raw line for one event. The sentinel is asserted against the string
+  // console.log received, not a parsed copy, so a leak through any key --
+  // allowlisted or not -- is caught.
+  function rawLogLines(event: string): string[] {
+    const spy = vi.mocked(console.log);
+    return spy.mock.calls
+      .map(([line]) => String(line))
+      .filter((line) => (JSON.parse(line) as { event?: string }).event === event);
+  }
+
+  const SENTINEL_MESSAGE = 'SENTINEL-MSG body: SENTINEL-BODY';
+
+  function rateLimitedCreate(): ArchiveCreationFailedError {
+    return new ArchiveCreationFailedError(SENTINEL_MESSAGE, {
+      retryable: true,
+      orphanedProvenanceMessageId: null,
+      step: 'provenance_post',
+      failure: { failure: 'http', httpStatus: '429', discordCode: '0' },
+    });
+  }
+
+  test('a failed archive creation logs the step and failure class, never the message', async () => {
+    const fixture = await seedConfiguredGuild();
+    gateway.failNextCreate(rateLimitedCreate());
+
+    await service.clip(clipInput(fixture, fakeSnowflake()));
+
+    const lines = rawLogLines('clip.archive_failed');
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).not.toContain('SENTINEL');
+    expect(JSON.parse(lines[0])).toEqual({
+      event: 'clip.archive_failed',
+      guildId: fixture.guildId,
+      sourceMessageId: fixture.sourceMessageId,
+      errorCode: 'ARCHIVE_CREATE_RETRYABLE',
+      step: 'provenance_post',
+      failure: 'http',
+      httpStatus: '429',
+      discordCode: '0',
+    });
+  });
+
+  test('a failed revival logs the step and failure class, never the message', async () => {
+    const fixture = await seedConfiguredGuild();
+    const first = fakeSnowflake();
+    await service.clip(clipInput(fixture, first));
+    gateway.onNextDelete(async () => {
+      await service.clip(clipInput(fixture, fakeSnowflake()));
+      gateway.failNextCreate(rateLimitedCreate());
+    });
+
+    await service.unclip({
+      guildId: fixture.guildId,
+      sourceMessageId: fixture.sourceMessageId,
+      clipperUserId: first,
+    });
+
+    const lines = rawLogLines('clip.revival_failed');
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).not.toContain('SENTINEL');
+    expect(JSON.parse(lines[0])).toEqual({
+      event: 'clip.revival_failed',
+      guildId: fixture.guildId,
+      sourceMessageId: fixture.sourceMessageId,
+      errorCode: 'ARCHIVE_CREATE_RETRYABLE',
+      step: 'provenance_post',
+      failure: 'http',
+      httpStatus: '429',
+      discordCode: '0',
+    });
+  });
+
   test('an unforwardable or invisible source message reports SOURCE_UNAVAILABLE', async () => {
     const fixture = await seedConfiguredGuild();
     gateway.failNextCreate(new ArchiveTargetUnavailableError('message 160014'));
@@ -630,6 +706,8 @@ describe('clip service', () => {
       new ArchiveCreationFailedError('forward rejected after provenance posted', {
         retryable: false,
         orphanedProvenanceMessageId: 'orphaned-provenance',
+        step: 'forward_post',
+        failure: { failure: 'http', httpStatus: '400', discordCode: '50035' },
       }),
     );
 
@@ -791,10 +869,10 @@ describe('clip service', () => {
     // The one surviving state that exposes the finalizer's id clear. Every
     // other outcome hides it: a tombstone clears the ids on its own path, a
     // successful revival overwrites them via `markActive`, and a completed
-    // deletion takes the row with it. Here the Clip stays DELETING with a
+    // deletion takes the row with it. Here the Clip ends FAILED with a
     // clipper, so ids pointing at two messages Discord no longer has would be
     // the "already deleted vs. never attempted" ambiguity §9.3 forbids -- and
-    // the state the eventual reconciliation has to read.
+    // FAILED is what lets the next clip rebuild the archive without a lease.
     const fixture = await seedConfiguredGuild();
     const first = fakeSnowflake();
     const reviver = fakeSnowflake();
@@ -815,12 +893,58 @@ describe('clip service', () => {
 
     expect(result).toEqual({ kind: 'UNCLIPPED', remaining: 0 });
     const clip = await readClip(fixture);
-    expect(clip?.status).toBe('DELETING');
+    expect(clip?.status).toBe('FAILED');
     expect(clip?.archiveProvenanceMessageId).toBeNull();
     expect(clip?.archiveForwardMessageId).toBeNull();
     expect(await countClipperRows(fixture)).toBe(1);
     expect(gateway.createCalls).toHaveLength(2);
     expect(gateway.deleteCalls).toHaveLength(1);
+
+    expect(await service.clip(clipInput(fixture, reviver))).toEqual({
+      kind: 'CREATED',
+      archive: { provenanceMessageId: 'provenance-2', forwardMessageId: 'forward-2' },
+    });
+    expect((await readClip(fixture))?.status).toBe('ACTIVE');
+  });
+
+  test('a revival whose reviver withdraws during a failed rebuild leaves no row behind', async () => {
+    // The withdrawal takes the `ALREADY_DELETING` branch and defers to the
+    // finalizer, whose rebuild then fails. A FAILED row with no clipper would
+    // preserve nothing yet still count as a live Clip for the guild.
+    const fixture = await seedConfiguredGuild();
+    const first = fakeSnowflake();
+    const reviver = fakeSnowflake();
+    await service.clip(clipInput(fixture, first));
+
+    gateway.onNextDelete(async () => {
+      const revival = await service.clip(clipInput(fixture, reviver));
+      expect(revival.kind).toBe('CLIPPER_ADDED');
+    });
+    // The fake's own failure fires before its hook, so the spy carries both.
+    const rebuild = vi.spyOn(gateway, 'createArchiveMessage').mockImplementationOnce(async () => {
+      const withdrawal = await service.unclip({
+        guildId: fixture.guildId,
+        sourceMessageId: fixture.sourceMessageId,
+        clipperUserId: reviver,
+      });
+      expect(withdrawal).toEqual({ kind: 'UNCLIPPED', remaining: 0 });
+      throw rateLimitedCreate();
+    });
+
+    const result = await service.unclip({
+      guildId: fixture.guildId,
+      sourceMessageId: fixture.sourceMessageId,
+      clipperUserId: first,
+    });
+
+    expect(result).toEqual({ kind: 'UNCLIPPED', remaining: 0 });
+    expect(rebuild).toHaveBeenCalledTimes(1);
+    expect(await readClip(fixture)).toBeNull();
+    expect(await countClipperRows(fixture)).toBe(0);
+    // Pair 1 came down and no other pair was ever posted.
+    expect(gateway.createCalls).toHaveLength(1);
+    expect(gateway.deleteCalls).toHaveLength(1);
+    expect(await hasLiveClips(fixture.guildId)).toBe(false);
   });
 
   test('a revival whose reviver withdraws during the rebuild publishes nothing', async () => {

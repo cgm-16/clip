@@ -159,10 +159,15 @@ export async function POST(request: NextRequest) {
     // existing channel's permission computation.
     const roles = await lookup.getGuildRoles(guildId);
     const roleNames = new Map(roles.map((role) => [role.id, role.name]));
-    // `@everyone` (id === guild id) is never a clipping role, and an id
-    // missing from this guild's roles -- deleted, or another guild's -- is
-    // refused rather than silently dropped.
-    if (requestedRoleIds.some((roleId) => roleId === guildId || !roleNames.has(roleId))) {
+    const managedRoleIds = new Set(roles.filter((role) => role.managed).map((role) => role.id));
+    // `@everyone` (id === guild id) and managed roles (#60) are never
+    // clipping roles, and an id missing from this guild's roles -- deleted,
+    // or another guild's -- is refused rather than silently dropped.
+    if (
+      requestedRoleIds.some(
+        (roleId) => roleId === guildId || managedRoleIds.has(roleId) || !roleNames.has(roleId),
+      )
+    ) {
       return Response.json({ reason: 'INVALID_ROLE' }, { status: 422 });
     }
     allowedRoles = requestedRoleIds.map((id) => ({ id, name: roleNames.get(id)! }));

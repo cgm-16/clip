@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { PrismaClient } from '@/generated/prisma/client';
 import { loadArchiveContent, snowflakeTime, type ArchiveRowContent } from '@/lib/archive/content';
 import { DiscordApiError } from '@/lib/discord/rest-client';
@@ -70,7 +70,14 @@ describe('loadArchiveContent', () => {
 
   const cleanupGuildIds: string[] = [];
 
+  // A failed Discord read logs one line. Stubbing keeps test output pristine;
+  // the logging tests below assert on the captured lines.
+  beforeEach(() => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
   afterEach(async () => {
+    vi.restoreAllMocks();
     const where = { guildId: { in: cleanupGuildIds } };
     await prisma.clip.deleteMany({ where });
     await prisma.guildConfig.deleteMany({ where });
@@ -197,6 +204,67 @@ describe('loadArchiveContent', () => {
     const row = await seedRow(guildId);
     const item = await loadOne(row, guildId, () => new DOMException('timed out', 'TimeoutError'));
     expect(item).toMatchObject({ state: 'error', reason: 'transient', original: 'unknown' });
+  });
+
+  const SENTINEL_MESSAGE = 'SENTINEL-MSG body: SENTINEL-BODY';
+
+  function rawLogLines(): string[] {
+    return vi.mocked(console.log).mock.calls.map(([line]) => String(line));
+  }
+
+  test('a failed forward read logs its step and HTTP status, never the message', async () => {
+    const guildId = await configuredGuild();
+    const row = await seedRow(guildId);
+    const { forward } = paths(row);
+    await loadOne(row, guildId, (path) =>
+      path === forward ? new DiscordApiError(SENTINEL_MESSAGE, { status: 503, code: null }) : {},
+    );
+
+    const lines = rawLogLines();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).not.toContain('SENTINEL');
+    expect(JSON.parse(lines[0])).toEqual({
+      event: 'archive.content_read_failed',
+      guildId,
+      sourceMessageId: row.sourceMessageId,
+      step: 'forward_read',
+      failure: 'http',
+      httpStatus: '503',
+    });
+  });
+
+  test('timed-out forward and source reads log one line each, never the message', async () => {
+    const guildId = await configuredGuild();
+    const row = await seedRow(guildId);
+    await loadOne(row, guildId, () => new DOMException(SENTINEL_MESSAGE, 'TimeoutError'));
+
+    const lines = rawLogLines();
+    expect(lines.join('\n')).not.toContain('SENTINEL');
+    expect(lines.map((line) => JSON.parse(line))).toEqual([
+      {
+        event: 'archive.content_read_failed',
+        guildId,
+        sourceMessageId: row.sourceMessageId,
+        step: 'forward_read',
+        failure: 'timeout',
+      },
+      {
+        event: 'archive.content_read_failed',
+        guildId,
+        sourceMessageId: row.sourceMessageId,
+        step: 'source_read',
+        failure: 'timeout',
+      },
+    ]);
+  });
+
+  test('successful reads log nothing', async () => {
+    const guildId = await configuredGuild();
+    const row = await seedRow(guildId);
+    const { forward } = paths(row);
+    await loadOne(row, guildId, (path) => (path === forward ? snapshot({ content: 'hi' }) : {}));
+
+    expect(rawLogLines()).toEqual([]);
   });
 
   test.each([[{ id: 'fwd' }], [{ id: 'fwd', message_snapshots: [{}] }], [null]])(

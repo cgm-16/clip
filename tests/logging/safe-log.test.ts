@@ -148,6 +148,30 @@ describe('logClipEvent', () => {
     });
   });
 
+  test('logs the failing step and the failure class, status and Discord code', () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    logClipEvent({
+      event: 'archive.content_read_failed',
+      guildId: 'guild-1',
+      sourceMessageId: 'msg-1',
+      step: 'forward_read',
+      failure: 'http',
+      httpStatus: '429',
+      discordCode: '0',
+    });
+
+    expect(loggedPayload(spy)).toEqual({
+      event: 'archive.content_read_failed',
+      guildId: 'guild-1',
+      sourceMessageId: 'msg-1',
+      step: 'forward_read',
+      failure: 'http',
+      httpStatus: '429',
+      discordCode: '0',
+    });
+  });
+
   test('omits optional fields that were not provided rather than logging them as undefined', () => {
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
 

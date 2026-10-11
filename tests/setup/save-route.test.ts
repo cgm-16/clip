@@ -92,9 +92,9 @@ describe('POST /setup/save', () => {
     finalizeGuildArchiveConfig.mockResolvedValue({ kind: 'SAVED' });
     // Default: a bot whose managed role can use any channel without overwrites.
     getGuildRoles.mockResolvedValue([
-      { id: GUILD_ID, name: '@everyone', permissions: 0n },
-      { id: BOT_ROLE_ID, name: 'Clip', permissions: ARCHIVE_PERMISSIONS },
-      { id: MOD_ROLE_ID, name: 'moderator', permissions: 0n },
+      { id: GUILD_ID, name: '@everyone', permissions: 0n, managed: false },
+      { id: BOT_ROLE_ID, name: 'Clip', permissions: ARCHIVE_PERMISSIONS, managed: true },
+      { id: MOD_ROLE_ID, name: 'moderator', permissions: 0n, managed: false },
     ]);
     getMemberRoleIds.mockResolvedValue([BOT_ROLE_ID]);
     getChannelOverwrites.mockResolvedValue([]);
@@ -589,6 +589,7 @@ describe('POST /setup/save', () => {
     test.each([
       ['@everyone', GUILD_ID],
       ['a role from no guild role list', '1539212298600718000'],
+      ["the bot's managed role (#60)", BOT_ROLE_ID],
     ])('refuses %s as an allowed role without saving', async (_name, roleId) => {
       const response = await POST(
         postJson({ destination: 'existing', channelId: '111', allowedRoleIds: [roleId], guildId: GUILD_ID }),

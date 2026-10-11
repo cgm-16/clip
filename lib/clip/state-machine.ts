@@ -19,6 +19,12 @@ import type { ClipStatus } from '@/generated/prisma/client';
  * archive creation is still in flight or has already failed; the Clip then has
  * no archive to delete but its row still has to go.
  *
+ * `DELETING -> FAILED` records a failed archive attempt on a DELETING Clip
+ * whose ids are already cleared -- typically a revival whose rebuild failed
+ * after the old pair came down, with clippers still asking to keep it. FAILED
+ * lets the next clip rebuild at once rather than wait out a lease, and
+ * `markFailed` refuses any row still holding a pair, so it never hides one.
+ *
  * The terminal states have no outgoing transitions at all. Author/admin
  * removal overrides every preservation signal and its tombstone blocks
  * recreation (§7.4, §9.9); nothing in P0 lifts one except the admin's explicit
@@ -28,7 +34,7 @@ const LEGAL_TRANSITIONS: Record<ClipStatus, readonly ClipStatus[]> = {
   PENDING: ['ACTIVE', 'FAILED', 'DELETING', 'REMOVED_BY_AUTHOR', 'REMOVED_BY_ADMIN'],
   FAILED: ['ACTIVE', 'DELETING', 'REMOVED_BY_AUTHOR', 'REMOVED_BY_ADMIN'],
   ACTIVE: ['DELETING', 'REMOVED_BY_AUTHOR', 'REMOVED_BY_ADMIN'],
-  DELETING: ['ACTIVE', 'REMOVED_BY_AUTHOR', 'REMOVED_BY_ADMIN'],
+  DELETING: ['ACTIVE', 'FAILED', 'REMOVED_BY_AUTHOR', 'REMOVED_BY_ADMIN'],
   REMOVED_BY_AUTHOR: [],
   REMOVED_BY_ADMIN: [],
 };

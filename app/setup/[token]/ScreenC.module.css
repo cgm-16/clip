@@ -1,9 +1,8 @@
 /*
  * Values: design/Clip P0 Screens.dc.html:124-152 (Screen C). Card width
- * (520px) and the gaps below have no matching tokens.css var -- literal
- * on-scale-ish pixel values used directly, the same approach ScreenA.module.css
- * and ScreenB.module.css already take for this screen collection's own
- * off-scale measurements.
+ * (520px), padding and gap have no matching tokens.css var -- literal
+ * on-scale pixel values used directly. The off-scale measurements are named
+ * tokens in tokens.css, cited to their mockup lines (docs/DESIGN_RATIONALE_APPEND.md §10.7).
  */
 .page {
   min-height: 100vh;
@@ -45,7 +44,7 @@
 .usage {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: var(--sp-usage-gap);
 }
 
 .usageHeading {
@@ -57,7 +56,7 @@
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  padding: var(--sp-3) 13px;
+  padding: var(--sp-3) var(--sp-usage-x);
   background: var(--sunken);
   /* Mockup's #23262b is between --divider (#1c1f23) and --border (#26292e);
      --border is the closer defined value. */
@@ -79,7 +78,7 @@
 .actions {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: var(--sp-action-gap);
 }
 
 .primaryLink {

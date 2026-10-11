@@ -1,3 +1,5 @@
+import type { DiscordFailureFacts } from '@/lib/discord/rest-client';
+
 /** Both Discord messages that make up one archive entry. See spec §6.3. */
 export type ArchiveMessageIds = {
   provenanceMessageId: string;
@@ -79,20 +81,34 @@ export interface DiscordArchiveGateway {
 /** The target message cannot be archived: deleted, invisible, or an unforwardable type. */
 export class ArchiveTargetUnavailableError extends Error {}
 
+/** The Discord call within archive creation that failed. */
+export type ArchiveCreationStep = 'source_read' | 'provenance_post' | 'forward_post';
+
 /**
  * The archive could not be created. `orphanedProvenanceMessageId` is set when the
  * provenance message posted but the forward did not, so the caller can delete it.
+ * `step` and `failure` say which call failed and how, for the log line; `failure`
+ * is null when the call succeeded but its response was not in the expected shape.
  */
 export class ArchiveCreationFailedError extends Error {
   readonly retryable: boolean;
   readonly orphanedProvenanceMessageId: string | null;
+  readonly step: ArchiveCreationStep;
+  readonly failure: DiscordFailureFacts | null;
 
   constructor(
     message: string,
-    options: { retryable: boolean; orphanedProvenanceMessageId: string | null }
+    options: {
+      retryable: boolean;
+      orphanedProvenanceMessageId: string | null;
+      step: ArchiveCreationStep;
+      failure: DiscordFailureFacts | null;
+    }
   ) {
     super(message);
     this.retryable = options.retryable;
     this.orphanedProvenanceMessageId = options.orphanedProvenanceMessageId;
+    this.step = options.step;
+    this.failure = options.failure;
   }
 }

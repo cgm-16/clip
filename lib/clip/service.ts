@@ -16,7 +16,9 @@ import {
   markRemovedByAdmin,
   markRemovedByAuthor,
   removeClipper,
+  takeOverStaleClip,
   type ClipRecord,
+  type TxClient,
 } from '@/lib/clip/repository';
 import { assertTransition, canTransition, isTerminalStatus } from '@/lib/clip/state-machine';
 import {
@@ -31,10 +33,56 @@ import {
   type UnclipInput,
   type UnclipResult,
 } from '@/lib/clip/types';
-import { logClipEvent } from '@/lib/logging/safe-log';
+import { logClipEvent, type SafeClipLog } from '@/lib/logging/safe-log';
+
+/**
+ * How long a `PENDING` or `DELETING` Clip may go unwritten before a later clip
+ * or unclip takes over the work its owner left unfinished (§9.8, §9.10).
+ *
+ * The longest live owner is a Discord round-trip: about 2 minutes at worst (3
+ * calls x 3 attempts x 10 s timeout, plus capped 5 s rate-limit waits). A row
+ * untouched for longer than this has no owner left to finish it.
+ *
+ * ponytail: a wall-clock lease, not a heartbeat. An owner stalled past it races
+ * the taker; `publishArchive`'s conditional `markActive` and the loser's
+ * pair cleanup settle that race. Add a heartbeat if owners can outlive it.
+ */
+const STALE_CONTROL_STATE_MS = 5 * 60_000;
+
+function staleBefore(): Date {
+  return new Date(Date.now() - STALE_CONTROL_STATE_MS);
+}
+
+/**
+ * Takes over a `PENDING` or `DELETING` Clip whose owner is past the lease. See
+ * `takeOverStaleClip`; any other status is never taken over.
+ */
+async function takeOverIfStale(tx: TxClient, clip: ClipRecord): Promise<boolean> {
+  if (clip.status !== 'PENDING' && clip.status !== 'DELETING') {
+    return false;
+  }
+  const { taken } = await takeOverStaleClip(
+    tx,
+    clip.guildId,
+    clip.sourceMessageId,
+    clip.status,
+    staleBefore(),
+  );
+  return taken;
+}
 
 /** Identifies the canonical Clip every operation here serializes around. */
 type ClipKey = { guildId: string; sourceMessageId: string };
+
+/**
+ * Where `finalizeDeletion` left the Clip: ACTIVE on the pair it holds --
+ * published by this finalizer or by a concurrent publish that won the row --
+ * a tombstone, or anything else: deleted, FAILED, or still DELETING.
+ */
+type DeletionOutcome =
+  | { kind: 'ACTIVE'; archive: ArchiveMessageIds }
+  | { kind: 'TOMBSTONED' }
+  | { kind: 'UNSETTLED' };
 
 /**
  * The archive as a pair, or null when the Clip has none.
@@ -79,6 +127,20 @@ function errorCodeOf(error: unknown): string {
 }
 
 /**
+ * Which Discord call failed and how, for an archive-creation log line: the
+ * step plus the status and Discord code, or `timeout` / `network`. Built from
+ * the error's typed fields, never its message.
+ */
+function archiveFailureFields(
+  error: unknown,
+): Pick<SafeClipLog, 'step' | 'failure' | 'httpStatus' | 'discordCode'> {
+  if (!(error instanceof ArchiveCreationFailedError)) {
+    return {};
+  }
+  return { step: error.step, ...error.failure };
+}
+
+/**
  * `lockClip`'s configuration check for the lifetime a request started under.
  * A guild with no configuration (§17 case 12) passes null, which still lets
  * Unclip and removal converge -- and refuses if a setup appeared meanwhile.
@@ -119,6 +181,10 @@ export function createClipService(gateway: DiscordArchiveGateway) {
    * Records that archive creation did not succeed, unless the Clip moved
    * somewhere `FAILED` is no longer reachable from while the attempt ran.
    *
+   * A Clip with no clipper and no archive is deleted instead: every signal was
+   * withdrawn during the attempt, so a FAILED row would preserve nothing yet
+   * still count as a live Clip for the guild (`hasLiveClips`).
+   *
    * The status is re-read under a fresh lock because the attempt spanned a
    * Discord round-trip: the author may have removed the Clip meanwhile, and
    * `ACTIVE -> FAILED` (a concurrent retry that won) would blank the §9.3
@@ -127,6 +193,13 @@ export function createClipService(gateway: DiscordArchiveGateway) {
   async function recordArchiveFailure(key: ClipKey, configurationId: string): Promise<void> {
     await lockClip(key.guildId, key.sourceMessageId, async (tx, locked) => {
       if (!canTransition(locked.status, 'FAILED')) {
+        return;
+      }
+      if (
+        archiveOf(locked) === null &&
+        (await countClippers(tx, key.guildId, key.sourceMessageId)) === 0
+      ) {
+        await deleteClipWithClippers(tx, key.guildId, key.sourceMessageId);
         return;
       }
       assertTransition(locked.status, 'FAILED');
@@ -241,10 +314,15 @@ export function createClipService(gateway: DiscordArchiveGateway) {
         sourceMessageId: input.sourceMessageId,
         clipperUserId: input.clipperUserId,
       });
+      // After the signal, in the same transaction: a takeover of a DELETING
+      // Clip decides revive-or-delete by the clipper count, which must already
+      // include this one.
+      const takenOver = await takeOverIfStale(tx, locked);
       return {
         tombstoned: false as const,
         added,
         status: locked.status,
+        takenOver,
         archive: archiveOf(locked),
       };
     }, { configurationId });
@@ -257,13 +335,39 @@ export function createClipService(gateway: DiscordArchiveGateway) {
       return { kind: 'REMOVED_BY_AUTHOR_OR_ADMIN' };
     }
 
+    if (joined.status === 'DELETING' && joined.takenOver) {
+      // The finalizer that owned this deletion is gone. This request finishes
+      // it: retry the Discord delete, then revive on the signal just recorded.
+      // `joined.archive` is the pair being taken down, so the reply reports
+      // only what the finalizer left, and success only for an ACTIVE pair.
+      const deletion = await finalizeDeletion({
+        key,
+        archiveChannelId: config.archiveChannelId,
+        archive: joined.archive,
+        configurationId,
+      });
+      if (deletion.kind === 'TOMBSTONED') {
+        return { kind: 'REMOVED_BY_AUTHOR_OR_ADMIN' };
+      }
+      if (deletion.kind === 'UNSETTLED') {
+        return { kind: 'FAILED', retryable: true };
+      }
+      return joined.added
+        ? { kind: 'CLIPPER_ADDED', archive: deletion.archive }
+        : { kind: 'ALREADY_CLIPPED_BY_USER', archive: deletion.archive };
+    }
+
     // §9.4: only the request that claimed a *new* Clip may create the first
-    // archive. A `FAILED` Clip is the one exception, and not a violation of it:
+    // archive. A `FAILED` Clip is one exception, and not a violation of it:
     // it has no archive at all, so completing it creates a first archive rather
     // than a second one. The decision deliberately ignores `added` -- the user
     // retrying a failed clip is usually the same one whose signal is already
-    // recorded (§17 case 7).
-    const mustCreateArchive = created || joined.status === 'FAILED';
+    // recorded (§17 case 7). A `PENDING` Clip past the lease is the other: its
+    // creator is gone, and the lease claim makes this request the only one
+    // that replaces it. A `PENDING` Clip inside the lease is never taken over,
+    // because its creator may still be mid-round-trip.
+    const mustCreateArchive =
+      created || joined.status === 'FAILED' || (joined.status === 'PENDING' && joined.takenOver);
     if (!mustCreateArchive) {
       return joined.added
         ? { kind: 'CLIPPER_ADDED', archive: joined.archive }
@@ -285,6 +389,7 @@ export function createClipService(gateway: DiscordArchiveGateway) {
         guildId: input.guildId,
         sourceMessageId: input.sourceMessageId,
         errorCode: errorCodeOf(error),
+        ...archiveFailureFields(error),
       });
       if (error instanceof ArchiveCreationFailedError && error.orphanedProvenanceMessageId !== null) {
         // §17 case 19: never leave a provenance line pointing at a snapshot
@@ -324,8 +429,9 @@ export function createClipService(gateway: DiscordArchiveGateway) {
     if (isTerminalStatus(published.clip.status)) {
       return { kind: 'REMOVED_BY_AUTHOR_OR_ADMIN' };
     }
-    // A concurrent retry published its archive first; this request's signal is
-    // still recorded, so report the archive that won.
+    // A concurrent retry published its archive first, or the row still holds a
+    // pair whose deletion is unfinished; this request's signal is still
+    // recorded, so report the archive the row holds.
     const winning = archiveOf(published.clip);
     return joined.added
       ? { kind: 'CLIPPER_ADDED', archive: winning }
@@ -346,7 +452,7 @@ export function createClipService(gateway: DiscordArchiveGateway) {
     archiveChannelId: string | null;
     archive: ArchiveMessageIds | null;
     configurationId: string | null;
-  }): Promise<void> {
+  }): Promise<DeletionOutcome> {
     const { key, archiveChannelId, configurationId } = context;
     let archive = context.archive;
 
@@ -367,6 +473,18 @@ export function createClipService(gateway: DiscordArchiveGateway) {
           // clearing them nor deleting the row is this finalizer's to do --
           // and clearing them would violate `clips_active_requires_archive` and
           // reject the caller's whole unclip.
+          return { revived: false as const, active: archiveOf(locked) };
+        }
+        const held = archiveOf(locked);
+        if (
+          held !== null &&
+          (archive === null ||
+            held.provenanceMessageId !== archive.provenanceMessageId ||
+            held.forwardMessageId !== archive.forwardMessageId)
+        ) {
+          // The row holds a pair this finalizer was never sent: a taker past
+          // the lease revived the Clip and a later deletion of its own now owns
+          // these ids. Clearing them or deleting the row would orphan that pair.
           return { revived: false as const };
         }
         if (archiveRemoved) {
@@ -381,13 +499,13 @@ export function createClipService(gateway: DiscordArchiveGateway) {
           // dropping it would unblock recreation of a message its author
           // explicitly removed. The clipper count cannot decide this -- removal
           // drops every clipper row, so a tombstone always reads as zero.
-          return { revived: false as const };
+          return { revived: false as const, tombstoned: true as const };
         }
         if (!archiveRemoved) {
           // Two messages are still up and the row's ids are the only handle on
-          // them. Leaving the Clip DELETING keeps it visible to reconciliation;
-          // deleting the row would strand published content with nothing left to
-          // match it against.
+          // them. Leaving the Clip DELETING lets the first clip or unclip past
+          // `STALE_CONTROL_STATE_MS` retry the delete; deleting the row would
+          // strand published content with nothing left to match it against.
           return { revived: false as const };
         }
         if ((await countClippers(tx, key.guildId, key.sourceMessageId)) === 0) {
@@ -397,11 +515,15 @@ export function createClipService(gateway: DiscordArchiveGateway) {
         return { revived: true as const, clip: locked };
       }, configurationOptions(configurationId));
       if (outcome === null || !outcome.revived) {
-        return;
+        if (outcome?.active) {
+          return { kind: 'ACTIVE', archive: outcome.active };
+        }
+        return outcome?.tombstoned ? { kind: 'TOMBSTONED' } : { kind: 'UNSETTLED' };
       }
 
-      if (archiveChannelId === null) {
-        return;
+      // Both come from the same guild configuration, so they are null together.
+      if (archiveChannelId === null || configurationId === null) {
+        return { kind: 'UNSETTLED' };
       }
 
       // A preservation signal arrived while the delete was in flight, so the Clip
@@ -422,13 +544,18 @@ export function createClipService(gateway: DiscordArchiveGateway) {
           guildId: key.guildId,
           sourceMessageId: key.sourceMessageId,
           errorCode: errorCodeOf(error),
+          ...archiveFailureFields(error),
         });
-        return;
+        // The old pair is gone and its ids cleared, but clippers remain:
+        // FAILED lets their next clip rebuild at once instead of leaving a
+        // DELETING row that only a lease takeover could pick up again.
+        await recordArchiveFailure(key, configurationId);
+        return { kind: 'UNSETTLED' };
       }
 
       const published = await publishArchive(key, recreated, configurationId);
       if (published.published) {
-        return;
+        return { kind: 'ACTIVE', archive: recreated };
       }
 
       // The publish was declined, so the pair just posted is unreferenced. The
@@ -460,7 +587,15 @@ export function createClipService(gateway: DiscordArchiveGateway) {
         clipperUserId: input.clipperUserId,
       });
       if (!removed) {
-        return { kind: 'NOT_CLIPPED' as const };
+        // A DELETING Clip whose finalizer is gone has no clippers left to
+        // withdraw, so the member retrying their unclip lands here. Past the
+        // lease this unclip finishes the deletion; the reply stays truthful,
+        // since this caller holds no signal. Never for PENDING: an unclip
+        // carries no signal that could justify creating an archive.
+        if (locked.status === 'DELETING' && (await takeOverIfStale(tx, locked))) {
+          return { kind: 'NOT_CLIPPED' as const, takenOver: true as const, archive: archiveOf(locked) };
+        }
+        return { kind: 'NOT_CLIPPED' as const, takenOver: false as const };
       }
       if (remaining > 0) {
         return { kind: 'KEPT' as const, remaining };
@@ -469,7 +604,11 @@ export function createClipService(gateway: DiscordArchiveGateway) {
         // Deletion is already in flight: this Clip was revived inside the
         // window and has now lost that signal again. Its finalizer re-reads the
         // clipper count under the lock, so it converges without a second
-        // finalizer duplicating the Discord delete.
+        // finalizer duplicating the Discord delete. Past the lease that
+        // finalizer is gone, and this unclip takes its place.
+        if (await takeOverIfStale(tx, locked)) {
+          return { kind: 'DELETING' as const, archive: archiveOf(locked) };
+        }
         return { kind: 'ALREADY_DELETING' as const };
       }
       assertTransition(locked.status, 'DELETING');
@@ -487,6 +626,14 @@ export function createClipService(gateway: DiscordArchiveGateway) {
       return { kind: 'NOT_FOUND' };
     }
     if (outcome.kind === 'NOT_CLIPPED') {
+      if (outcome.takenOver) {
+        await finalizeDeletion({
+          key,
+          archiveChannelId: config?.archiveChannelId ?? null,
+          archive: outcome.archive,
+          configurationId: config?.configurationId ?? null,
+        });
+      }
       return { kind: 'NOT_CLIPPED_BY_USER' };
     }
     if (outcome.kind === 'KEPT') {

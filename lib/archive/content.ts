@@ -1,6 +1,12 @@
 import { findGuildArchiveConfig } from '@/lib/clip/repository';
 import { getPrismaClient } from '@/lib/db';
-import { DiscordApiError, DISCORD_ERROR, type DiscordRestClient } from '@/lib/discord/rest-client';
+import {
+  describeDiscordFailure,
+  DiscordApiError,
+  DISCORD_ERROR,
+  type DiscordRestClient,
+} from '@/lib/discord/rest-client';
+import { logClipEvent } from '@/lib/logging/safe-log';
 
 export type BodySegment = { kind: 'text'; text: string } | { kind: 'code'; text: string };
 export type SafeAttachment = { filename: string; url: string; isImage: boolean };
@@ -134,6 +140,22 @@ function isAccessDenied(error: unknown): boolean {
   );
 }
 
+/** One line per failed Discord read: which read, and its failure class -- never the error's message. */
+function logReadFailure(
+  guildId: string,
+  sourceMessageId: string,
+  step: 'forward_read' | 'source_read',
+  error: unknown,
+): void {
+  logClipEvent({
+    event: 'archive.content_read_failed',
+    guildId,
+    sourceMessageId,
+    step,
+    ...describeDiscordFailure(error),
+  });
+}
+
 async function mapWithConcurrency<T, R>(
   items: readonly T[],
   limit: number,
@@ -158,7 +180,8 @@ async function mapWithConcurrency<T, R>(
  * the caller -- so this cannot be used as a general bot-authenticated proxy.
  * INVALID means a structurally bad batch (empty, over 20, duplicated) or an
  * unconfigured guild; an id that simply is not ACTIVE here is left out.
- * Nothing read here is stored or logged.
+ * Nothing read here is stored or logged; a failed read logs only which read
+ * failed and its failure class.
  *
  * Each row costs two reads, run in sequence inside one of at most four
  * concurrent slots: the forward (content) and the source message (reply
@@ -214,6 +237,7 @@ export async function loadArchiveContent(input: {
       );
     } catch (error) {
       forwardError = error;
+      logReadFailure(input.guildId, sourceMessageId, 'forward_read', error);
     }
 
     let original: OriginalStatus = 'unknown';
@@ -228,6 +252,7 @@ export async function loadArchiveContent(input: {
         replyToAuthorName = text(record(record(source?.referenced_message)?.author)?.username);
       }
     } catch (error) {
+      logReadFailure(input.guildId, sourceMessageId, 'source_read', error);
       original = isUnknownTarget(error) ? 'unavailable' : 'unknown';
     }
 

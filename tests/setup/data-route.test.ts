@@ -27,6 +27,7 @@ const BASE_URL = 'https://clipendpoint.cc';
 const GUILD_ID = '1539212298600718416';
 const USER_ID = '1539212298600718417';
 const ROLE_ID = '1539212298600718666';
+const BOT_ROLE_ID = '1539212298600718777';
 
 function stubEnv(): void {
   vi.stubEnv('DATABASE_URL', 'postgresql://clip:pw@localhost:5433/clip_dev');
@@ -49,8 +50,8 @@ describe('GET /setup/data', () => {
     authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
     getGuildSetupChannels.mockResolvedValue([{ id: '111', name: 'general', type: 0 }]);
     getGuildRoles.mockResolvedValue([
-      { id: GUILD_ID, name: '@everyone', permissions: 1024n },
-      { id: ROLE_ID, name: 'moderator', permissions: 0n },
+      { id: GUILD_ID, name: '@everyone', permissions: 1024n, managed: false },
+      { id: ROLE_ID, name: 'moderator', permissions: 0n, managed: false },
     ]);
     getGuildName.mockResolvedValue('Test guild');
     getUserHandle.mockResolvedValue('admin');
@@ -79,6 +80,20 @@ describe('GET /setup/data', () => {
       archiveChannelMissing: false,
     });
     expect(getUserHandle).toHaveBeenCalledWith(USER_ID);
+  });
+
+  test("lists the bot's managed role but does not offer it (#60)", async () => {
+    getGuildRoles.mockResolvedValue([
+      { id: GUILD_ID, name: '@everyone', permissions: 1024n, managed: false },
+      { id: BOT_ROLE_ID, name: 'Clip', permissions: 0n, managed: true },
+      { id: ROLE_ID, name: 'moderator', permissions: 0n, managed: false },
+    ]);
+
+    expect((await (await GET(get())).json()).roles).toEqual([
+      { id: GUILD_ID, name: '@everyone', selectable: false },
+      { id: BOT_ROLE_ID, name: 'Clip', selectable: false },
+      { id: ROLE_ID, name: 'moderator', selectable: true },
+    ]);
   });
 
   test('a configured guild gets its current channel and allowed roles', async () => {
