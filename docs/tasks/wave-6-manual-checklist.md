@@ -35,14 +35,14 @@ Restore everything between rows. For each, clip a new message as A and record wh
 
 | # | Revoked | Where | Expected | Observed | Log line (`clip.archive_failed` step / failure / httpStatus / discordCode) |
 |---|---|---|---|---|---|
-| R1 | `VIEW_CHANNEL` | `#general` (source) | `DISCORD_COPY.invalidTarget` (error `160014` / missing access); no state written | | |
+| R1 | `VIEW_CHANNEL` | `#general` (source) | `DISCORD_COPY.invalidTarget`: the source read fails with Missing Access (`50001`), not `160014`; nothing posted to the archive | | |
 | R2 | `READ_MESSAGE_HISTORY` | `#general` | record | | |
 | R3 | `VIEW_CHANNEL` | archive channel | `DISCORD_COPY.transientFailure` or `invalidTarget`; never ACTIVE without both messages | | |
 | R4 | `SEND_MESSAGES` | archive channel | same as R3 | | |
 | R5 | `ADD_REACTIONS` | `#general` | Clip still succeeds; only the 📎 marker is missing | | |
 | R6 | Message Content Intent (Developer Portal) | application | Forward refused `160014` (README claim) | | |
 
-**Done:** the orchestrator replaces the README permission table with the measured set from these rows, then appends the snapshot.
+**Done:** the orchestrator replaces the README permission table with the measured set from these rows and records the results in the journal and the PR body.
 
 ## 6.3: The 17 scenarios (#37)
 
@@ -80,4 +80,4 @@ Restore everything between rows. For each, clip a new message as A and record wh
 - [ ] For each `clip.archive_failed` line, copy `step`, `failure`, `httpStatus`, `discordCode` here: ______
 - [ ] Open Screen D during the burst; copy any `archive.content_read_failed` lines here: ______
 
-**Done:** every row recorded. A failure that is not fixed becomes a stated known limitation in the snapshot, never dropped.
+**Done:** every row recorded. A failure that is not fixed becomes a stated known limitation in the journal and the PR body, never dropped.

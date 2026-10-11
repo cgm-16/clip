@@ -148,7 +148,7 @@ Push, CI green. Previous deploys ran from a `main` checkout, so Ori chooses: mer
 
 Prep (fresh guild for 6.1, three accounts: admin, role member, plain member), then the 8 permission-matrix checks from #35 and the 17 scenarios plus the poll case from #37, each with: steps, expected result (quoting existing Korean strings verbatim from the string tables, by key), and an evidence slot. Include a burst-clip repeat (5 clips within ~10 s) and the `kubectl logs` command to read the #64 fields. Orchestrator writes this; no code.
 
-After Ori runs it: replace the README permission table with the measured set and append the snapshot (§0 template).
+After Ori runs it: replace the README permission table with the measured set. Record the results in the journal and the PR body (the snapshot is the frozen 2026-08-20 record, CLAUDE.md).
 
 ### Task 6: 7.1 (#39) accessibility and responsive sweep
 
@@ -175,4 +175,4 @@ Commit `feat(clip): repost an archive copy that Discord confirms is gone when it
 
 ### Finish
 
-Journal entry, one snapshot append for the wave, one independent review of the whole branch, PR to `main` (Ori merges).
+Journal entry and PR-body evidence for the wave, one independent review of the whole branch, PR to `main` (Ori merges).

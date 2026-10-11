@@ -184,3 +184,5 @@ Branch `wave/6-verification`. Ori approved splitting the wave. Release images bu
   - The `--faint` rule accepts `:not(:disabled)`.
   - A stranded row recovers only when someone next clips or unclips that message.
 - After an I2 loss, the reply carries the pair pending deletion. Only `kind` is read.
+
+**What the corrections say about the method:** the lease was designed by the same agent that wrote the plan. Its three defects were found by the two parties who had not designed it: the implementer (the zero-clipper DELETING branch) and the independent reviewer (I1, I2). Mutation-proven tests written with a design prove the windows the designer pictured. They say nothing about the rest. A Wave 6 snapshot entry recording this was appended and then reverted in the review round: `docs/04_ASSIGNMENT_CUMULATIVE_SNAPSHOT.md` is the frozen 2026-08-20 record (CLAUDE.md), and the orchestrator had worked from a stale reading of that rule.
