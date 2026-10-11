@@ -348,7 +348,7 @@ describe('clip service under concurrency', () => {
     expect(stuck?.archiveForwardMessageId).toBe('forward-1');
     expect(await countClipperRows(fixture)).toBe(0);
 
-    // The retry path that exists today: removal retries the same delete and
+    // Inside the lease, one retry path: removal retries the same delete and
     // clears the ids once Discord confirms it.
     expect(await removeAsAuthor(fixture)).toEqual({ kind: 'REMOVED' });
     expect(gateway.deleteCalls.map((call) => call.ids)).toEqual([
@@ -382,6 +382,243 @@ describe('clip service under concurrency', () => {
     expect(clip?.archiveProvenanceMessageId).toBe('provenance-2');
     expect(clip?.archiveForwardMessageId).toBe('forward-2');
     expect(await countClipperRows(fixture)).toBe(N);
+  });
+
+  describe('a Clip stranded in PENDING or DELETING (§9.8, §9.10)', () => {
+    const PAIR_1 = { provenanceMessageId: 'provenance-1', forwardMessageId: 'forward-1' };
+    const PAIR_2 = { provenanceMessageId: 'provenance-2', forwardMessageId: 'forward-2' };
+
+    /**
+     * Moves the row's last write `minutes` into the past. Relative to the
+     * stored value, so the session time zone never enters into it.
+     */
+    async function ageClip(fixture: Fixture, minutes: number): Promise<void> {
+      await prisma.$executeRaw`
+        UPDATE clips SET updated_at = updated_at - make_interval(mins => ${minutes})
+        WHERE guild_id = ${fixture.guildId} AND source_message_id = ${fixture.sourceMessageId}
+      `;
+    }
+
+    /**
+     * An ACTIVE Clip whose final unclip's Discord delete failed: DELETING, pair
+     * 1 still up. Resolves to the member whose unclip that was.
+     */
+    async function stuckDeletingClip(fixture: Fixture): Promise<string> {
+      const first = fakeSnowflake();
+      await activeClipWith(fixture, [first]);
+      gateway.failNextDelete(new Error('discord unavailable'));
+      expect(await unclipAs(fixture, first)).toEqual({ kind: 'UNCLIPPED', remaining: 0 });
+      const stuck = await readClip(fixture);
+      expect(stuck?.status).toBe('DELETING');
+      expect(stuck?.archiveProvenanceMessageId).toBe('provenance-1');
+      expect(gateway.deleteCalls).toHaveLength(1);
+      return first;
+    }
+
+    test('a clip after the lease retries the failed delete and converges to a fresh ACTIVE pair', async () => {
+      const fixture = await seedConfiguredGuild();
+      await stuckDeletingClip(fixture);
+      await ageClip(fixture, 6);
+
+      expect((await clipAs(fixture, fakeSnowflake())).kind).toBe('CLIPPER_ADDED');
+
+      expect(gateway.deleteCalls.map((call) => call.ids)).toEqual([PAIR_1, PAIR_1]);
+      expect(gateway.createCalls).toHaveLength(2);
+      const clip = await readClip(fixture);
+      expect(clip?.status).toBe('ACTIVE');
+      expect(clip?.archiveProvenanceMessageId).toBe('provenance-2');
+      expect(clip?.archiveForwardMessageId).toBe('forward-2');
+      expect(await countClipperRows(fixture)).toBe(1);
+    });
+
+    test('an unclip after the lease retries the failed delete and removes the row', async () => {
+      const fixture = await seedConfiguredGuild();
+      await stuckDeletingClip(fixture);
+      // A signal recorded while the lease was still fresh, withdrawn after it:
+      // the unclip reaches the DELETING branch rather than NOT_CLIPPED.
+      const late = fakeSnowflake();
+      expect((await clipAs(fixture, late)).kind).toBe('CLIPPER_ADDED');
+      expect((await readClip(fixture))?.status).toBe('DELETING');
+      await ageClip(fixture, 6);
+
+      expect(await unclipAs(fixture, late)).toEqual({ kind: 'UNCLIPPED', remaining: 0 });
+
+      expect(gateway.deleteCalls.map((call) => call.ids)).toEqual([PAIR_1, PAIR_1]);
+      expect(gateway.createCalls).toHaveLength(1);
+      expect(await readClip(fixture)).toBeNull();
+      expect(await countClipperRows(fixture)).toBe(0);
+    });
+
+    test('the same member unclipping again after the lease retries the delete and removes the row', async () => {
+      const fixture = await seedConfiguredGuild();
+      const first = await stuckDeletingClip(fixture);
+      await ageClip(fixture, 6);
+
+      expect(await unclipAs(fixture, first)).toEqual({ kind: 'NOT_CLIPPED_BY_USER' });
+
+      expect(gateway.deleteCalls.map((call) => call.ids)).toEqual([PAIR_1, PAIR_1]);
+      expect(gateway.createCalls).toHaveLength(1);
+      expect(await readClip(fixture)).toBeNull();
+    });
+
+    test('a retried delete that fails again leaves the row DELETING under a fresh lease', async () => {
+      const fixture = await seedConfiguredGuild();
+      const first = await stuckDeletingClip(fixture);
+      await ageClip(fixture, 6);
+      gateway.failNextDelete(new Error('discord unavailable'));
+
+      expect(await unclipAs(fixture, first)).toEqual({ kind: 'NOT_CLIPPED_BY_USER' });
+      expect(gateway.deleteCalls.map((call) => call.ids)).toEqual([PAIR_1, PAIR_1]);
+      const stuck = await readClip(fixture);
+      expect(stuck?.status).toBe('DELETING');
+      expect(stuck?.archiveProvenanceMessageId).toBe('provenance-1');
+
+      // The takeover refreshed the lease, so an immediate retry waits for it.
+      expect(await unclipAs(fixture, first)).toEqual({ kind: 'NOT_CLIPPED_BY_USER' });
+      expect(gateway.deleteCalls).toHaveLength(2);
+    });
+
+    test('an unclip with no signal inside the lease leaves the DELETING row alone', async () => {
+      const fixture = await seedConfiguredGuild();
+      const first = await stuckDeletingClip(fixture);
+      await ageClip(fixture, 4);
+
+      expect(await unclipAs(fixture, first)).toEqual({ kind: 'NOT_CLIPPED_BY_USER' });
+
+      expect(gateway.deleteCalls).toHaveLength(1);
+      expect((await readClip(fixture))?.status).toBe('DELETING');
+    });
+
+    test('an unclip with no signal never takes over a stale PENDING row', async () => {
+      const fixture = await seedConfiguredGuild();
+      await prisma.clip.create({
+        data: {
+          guildId: fixture.guildId,
+          sourceMessageId: fixture.sourceMessageId,
+          sourceChannelId: fixture.sourceChannelId,
+          authorUserId: fixture.sourceAuthorUserId,
+          clippers: { create: [{ clipperUserId: fakeSnowflake() }] },
+        },
+      });
+      await ageClip(fixture, 6);
+
+      expect(await unclipAs(fixture, fakeSnowflake())).toEqual({ kind: 'NOT_CLIPPED_BY_USER' });
+
+      expect(gateway.createCalls).toHaveLength(0);
+      expect(gateway.deleteCalls).toHaveLength(0);
+      // Still stale: an unclip that claimed the lease would have refreshed it,
+      // and the next clip takes it over.
+      expect((await clipAs(fixture, fakeSnowflake())).kind).toBe('CREATED');
+    });
+
+    test('a DELETING row inside the lease is left to its finalizer', async () => {
+      const fixture = await seedConfiguredGuild();
+      await stuckDeletingClip(fixture);
+      await ageClip(fixture, 4);
+
+      const late = fakeSnowflake();
+      expect((await clipAs(fixture, late)).kind).toBe('CLIPPER_ADDED');
+      expect(await unclipAs(fixture, late)).toEqual({ kind: 'UNCLIPPED', remaining: 0 });
+
+      expect(gateway.deleteCalls).toHaveLength(1);
+      expect(gateway.createCalls).toHaveLength(1);
+      const stuck = await readClip(fixture);
+      expect(stuck?.status).toBe('DELETING');
+      expect(stuck?.archiveProvenanceMessageId).toBe('provenance-1');
+    });
+
+    test('parallel clips on a stale DELETING row take it over exactly once', async () => {
+      const fixture = await seedConfiguredGuild();
+      await stuckDeletingClip(fixture);
+      await ageClip(fixture, 6);
+      // A second wave lands inside the taker's retried delete, before its
+      // finalizer re-reads the row: the window where a second takeover would
+      // still find the old pair to delete.
+      let insideResults: ClipCommandResult[] = [];
+      gateway.onNextDelete(async () => {
+        insideResults = await Promise.all(users(N).map((user) => clipAs(fixture, user)));
+      });
+
+      const results = await Promise.all(users(N).map((user) => clipAs(fixture, user)));
+
+      expect(kinds(results)).toEqual(Array(N).fill('CLIPPER_ADDED'));
+      expect(kinds(insideResults)).toEqual(Array(N).fill('CLIPPER_ADDED'));
+      expect(gateway.deleteCalls.map((call) => call.ids)).toEqual([PAIR_1, PAIR_1]);
+      expect(gateway.createCalls).toHaveLength(2);
+      const clip = await readClip(fixture);
+      expect(clip?.status).toBe('ACTIVE');
+      expect(clip?.archiveProvenanceMessageId).toBe('provenance-2');
+      expect(await countClipperRows(fixture)).toBe(2 * N);
+    });
+
+    test('a stale PENDING row whose creator died is created and published by the next clips', async () => {
+      const fixture = await seedConfiguredGuild();
+      // The claim committed and the process died before any archive attempt
+      // was recorded: PENDING, one clipper, no ids.
+      await prisma.clip.create({
+        data: {
+          guildId: fixture.guildId,
+          sourceMessageId: fixture.sourceMessageId,
+          sourceChannelId: fixture.sourceChannelId,
+          authorUserId: fixture.sourceAuthorUserId,
+          clippers: { create: [{ clipperUserId: fakeSnowflake() }] },
+        },
+      });
+      await ageClip(fixture, 6);
+
+      const results = await Promise.all(users(N).map((user) => clipAs(fixture, user)));
+
+      expect(kinds(results)).toEqual(['CREATED', ...Array(N - 1).fill('CLIPPER_ADDED')].sort());
+      expect(gateway.createCalls).toHaveLength(1);
+      expect(gateway.deleteCalls).toHaveLength(0);
+      const clip = await readClip(fixture);
+      expect(clip?.status).toBe('ACTIVE');
+      expect(clip?.archiveProvenanceMessageId).toBe('provenance-1');
+      expect(clip?.archiveForwardMessageId).toBe('forward-1');
+      expect(await countClipperRows(fixture)).toBe(N + 1);
+    });
+
+    test('a creator alive past the lease loses to the taker and takes its own pair down', async () => {
+      const fixture = await seedConfiguredGuild();
+      // The fake numbers pairs as they return: the taker's create finishes
+      // inside the creator's, so the taker posts pair 1 and the creator pair 2.
+      let taker: ClipCommandResult | undefined;
+      gateway.onNextCreate(async () => {
+        await ageClip(fixture, 6);
+        taker = await clipAs(fixture, fakeSnowflake());
+      });
+
+      const creator = await clipAs(fixture, fakeSnowflake());
+
+      expect(taker?.kind).toBe('CREATED');
+      expect(creator.kind).toBe('CLIPPER_ADDED');
+      expect(gateway.createCalls).toHaveLength(2);
+      expect(gateway.deleteCalls.map((call) => call.ids)).toEqual([PAIR_2]);
+      const clip = await readClip(fixture);
+      expect(clip?.status).toBe('ACTIVE');
+      expect(clip?.archiveProvenanceMessageId).toBe('provenance-1');
+      expect(clip?.archiveForwardMessageId).toBe('forward-1');
+      expect(await countClipperRows(fixture)).toBe(2);
+    });
+
+    test('a second clipper inside a live creator’s round-trip never creates (§9.4)', async () => {
+      const fixture = await seedConfiguredGuild();
+      // Old, but inside the lease: the creator is presumed alive.
+      let second: ClipCommandResult | undefined;
+      gateway.onNextCreate(async () => {
+        await ageClip(fixture, 4);
+        second = await clipAs(fixture, fakeSnowflake());
+      });
+
+      expect((await clipAs(fixture, fakeSnowflake())).kind).toBe('CREATED');
+
+      expect(second?.kind).toBe('CLIPPER_ADDED');
+      expect(gateway.createCalls).toHaveLength(1);
+      expect(gateway.deleteCalls).toHaveLength(0);
+      const clip = await readClip(fixture);
+      expect(clip?.status).toBe('ACTIVE');
+      expect(clip?.archiveProvenanceMessageId).toBe('provenance-1');
+    });
   });
 });
 

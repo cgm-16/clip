@@ -350,6 +350,34 @@ export function markFailed(
   return advanceLiveClip(tx, guildId, sourceMessageId, { status: 'FAILED' });
 }
 
+/**
+ * Claims a Clip whose `status` has gone untouched since before `staleBefore`,
+ * reporting whether this caller got it.
+ *
+ * The claim is the write itself: it refreshes `updatedAt` without changing the
+ * status, so the row reads as fresh to everyone after this caller. Under
+ * `lockClip` that makes the claim exclusive for one lease period -- callers
+ * queued on the same lock re-read a row this one has just refreshed. Not a
+ * transition: the status is the predicate, never the payload, which also keeps
+ * it off tombstones.
+ *
+ * Both sides of the comparison are JS `Date`s, the way Prisma's `@updatedAt`
+ * writes the column, so the database session's time zone never enters into it.
+ */
+export async function takeOverStaleClip(
+  tx: TxClient,
+  guildId: string,
+  sourceMessageId: string,
+  status: ClipStatus,
+  staleBefore: Date,
+): Promise<{ taken: boolean }> {
+  const { count } = await tx.clip.updateMany({
+    where: { guildId, sourceMessageId, status, updatedAt: { lt: staleBefore } },
+    data: { updatedAt: new Date() },
+  });
+  return { taken: count === 1 };
+}
+
 export async function markRemovedByAuthor(
   tx: TxClient,
   guildId: string,
