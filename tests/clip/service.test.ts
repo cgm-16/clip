@@ -359,6 +359,8 @@ describe('clip service', () => {
       new ArchiveCreationFailedError('discord rejected the forward', {
         retryable: true,
         orphanedProvenanceMessageId: null,
+        step: 'forward_post',
+        failure: { failure: 'http', httpStatus: '500' },
       }),
     );
     await service.clip(clipInput(fixture, clipperUserId));
@@ -586,6 +588,8 @@ describe('clip service', () => {
       new ArchiveCreationFailedError('discord rate limited the post', {
         retryable: true,
         orphanedProvenanceMessageId: null,
+        step: 'provenance_post',
+        failure: { failure: 'http', httpStatus: '429', discordCode: '0' },
       }),
     );
 
@@ -611,6 +615,78 @@ describe('clip service', () => {
     expect(await countClipperRows(fixture)).toBe(1);
   });
 
+  // The raw line for one event. The sentinel is asserted against the string
+  // console.log received, not a parsed copy, so a leak through any key --
+  // allowlisted or not -- is caught.
+  function rawLogLines(event: string): string[] {
+    const spy = vi.mocked(console.log);
+    return spy.mock.calls
+      .map(([line]) => String(line))
+      .filter((line) => (JSON.parse(line) as { event?: string }).event === event);
+  }
+
+  const SENTINEL_MESSAGE = 'SENTINEL-MSG body: SENTINEL-BODY';
+
+  function rateLimitedCreate(): ArchiveCreationFailedError {
+    return new ArchiveCreationFailedError(SENTINEL_MESSAGE, {
+      retryable: true,
+      orphanedProvenanceMessageId: null,
+      step: 'provenance_post',
+      failure: { failure: 'http', httpStatus: '429', discordCode: '0' },
+    });
+  }
+
+  test('a failed archive creation logs the step and failure class, never the message', async () => {
+    const fixture = await seedConfiguredGuild();
+    gateway.failNextCreate(rateLimitedCreate());
+
+    await service.clip(clipInput(fixture, fakeSnowflake()));
+
+    const lines = rawLogLines('clip.archive_failed');
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).not.toContain('SENTINEL');
+    expect(JSON.parse(lines[0])).toEqual({
+      event: 'clip.archive_failed',
+      guildId: fixture.guildId,
+      sourceMessageId: fixture.sourceMessageId,
+      errorCode: 'ARCHIVE_CREATE_RETRYABLE',
+      step: 'provenance_post',
+      failure: 'http',
+      httpStatus: '429',
+      discordCode: '0',
+    });
+  });
+
+  test('a failed revival logs the step and failure class, never the message', async () => {
+    const fixture = await seedConfiguredGuild();
+    const first = fakeSnowflake();
+    await service.clip(clipInput(fixture, first));
+    gateway.onNextDelete(async () => {
+      await service.clip(clipInput(fixture, fakeSnowflake()));
+      gateway.failNextCreate(rateLimitedCreate());
+    });
+
+    await service.unclip({
+      guildId: fixture.guildId,
+      sourceMessageId: fixture.sourceMessageId,
+      clipperUserId: first,
+    });
+
+    const lines = rawLogLines('clip.revival_failed');
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).not.toContain('SENTINEL');
+    expect(JSON.parse(lines[0])).toEqual({
+      event: 'clip.revival_failed',
+      guildId: fixture.guildId,
+      sourceMessageId: fixture.sourceMessageId,
+      errorCode: 'ARCHIVE_CREATE_RETRYABLE',
+      step: 'provenance_post',
+      failure: 'http',
+      httpStatus: '429',
+      discordCode: '0',
+    });
+  });
+
   test('an unforwardable or invisible source message reports SOURCE_UNAVAILABLE', async () => {
     const fixture = await seedConfiguredGuild();
     gateway.failNextCreate(new ArchiveTargetUnavailableError('message 160014'));
@@ -630,6 +706,8 @@ describe('clip service', () => {
       new ArchiveCreationFailedError('forward rejected after provenance posted', {
         retryable: false,
         orphanedProvenanceMessageId: 'orphaned-provenance',
+        step: 'forward_post',
+        failure: { failure: 'http', httpStatus: '400', discordCode: '50035' },
       }),
     );
 

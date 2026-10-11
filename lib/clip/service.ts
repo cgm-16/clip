@@ -31,7 +31,7 @@ import {
   type UnclipInput,
   type UnclipResult,
 } from '@/lib/clip/types';
-import { logClipEvent } from '@/lib/logging/safe-log';
+import { logClipEvent, type SafeClipLog } from '@/lib/logging/safe-log';
 
 /** Identifies the canonical Clip every operation here serializes around. */
 type ClipKey = { guildId: string; sourceMessageId: string };
@@ -76,6 +76,20 @@ function errorCodeOf(error: unknown): string {
     return error.retryable ? 'ARCHIVE_CREATE_RETRYABLE' : 'ARCHIVE_CREATE_PERMANENT';
   }
   return 'ARCHIVE_UNEXPECTED_ERROR';
+}
+
+/**
+ * Which Discord call failed and how, for an archive-creation log line: the
+ * step plus the status and Discord code, or `timeout` / `network`. Built from
+ * the error's typed fields, never its message.
+ */
+function archiveFailureFields(
+  error: unknown,
+): Pick<SafeClipLog, 'step' | 'failure' | 'httpStatus' | 'discordCode'> {
+  if (!(error instanceof ArchiveCreationFailedError)) {
+    return {};
+  }
+  return { step: error.step, ...error.failure };
 }
 
 /**
@@ -285,6 +299,7 @@ export function createClipService(gateway: DiscordArchiveGateway) {
         guildId: input.guildId,
         sourceMessageId: input.sourceMessageId,
         errorCode: errorCodeOf(error),
+        ...archiveFailureFields(error),
       });
       if (error instanceof ArchiveCreationFailedError && error.orphanedProvenanceMessageId !== null) {
         // §17 case 19: never leave a provenance line pointing at a snapshot
@@ -422,6 +437,7 @@ export function createClipService(gateway: DiscordArchiveGateway) {
           guildId: key.guildId,
           sourceMessageId: key.sourceMessageId,
           errorCode: errorCodeOf(error),
+          ...archiveFailureFields(error),
         });
         return;
       }

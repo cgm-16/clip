@@ -51,6 +51,36 @@ export class DiscordApiError extends Error {
   }
 }
 
+/**
+ * What a failed Discord call can safely say about itself: the class of
+ * failure and, for an HTTP failure, the status and Discord's JSON code as
+ * decimal strings. Never the message -- a `DiscordApiError`'s message names
+ * the path, and any other error's message is free text (§12).
+ */
+export type DiscordFailureFacts = {
+  failure: 'http' | 'timeout' | 'network';
+  httpStatus?: string;
+  discordCode?: string;
+};
+
+/**
+ * Classes a failed Discord call by its type and name alone. `TimeoutError` is
+ * what `AbortSignal.timeout` raises; `AbortError` is the same abort reported
+ * by a runtime that does not distinguish the two.
+ */
+export function describeDiscordFailure(error: unknown): DiscordFailureFacts {
+  if (error instanceof DiscordApiError) {
+    return error.code === null
+      ? { failure: 'http', httpStatus: String(error.status) }
+      : { failure: 'http', httpStatus: String(error.status), discordCode: String(error.code) };
+  }
+  const name = typeof error === 'object' && error !== null ? (error as { name?: unknown }).name : undefined;
+  if (name === 'TimeoutError' || name === 'AbortError') {
+    return { failure: 'timeout' };
+  }
+  return { failure: 'network' };
+}
+
 export type DiscordRestClient = {
   /** Returns the parsed JSON body, or null for a 204. Throws `DiscordApiError`. */
   request(method: string, path: string, body?: unknown): Promise<unknown>;

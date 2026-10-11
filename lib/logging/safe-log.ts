@@ -17,6 +17,16 @@ export type SafeClipLog = {
   stateFrom?: string;
   stateTo?: string;
   errorCode?: string;
+  /**
+   * The Discord call that failed: `source_read`, `provenance_post` or
+   * `forward_post` while archiving; `forward_read` or `source_read` on the
+   * archive page.
+   */
+  step?: string;
+  /** `http`, `timeout` or `network`; see `describeDiscordFailure`. */
+  failure?: string;
+  httpStatus?: string;
+  discordCode?: string;
 };
 
 // The single source of truth for what may be logged. Built as an allowlist,
@@ -33,6 +43,10 @@ const SAFE_KEYS = [
   'stateFrom',
   'stateTo',
   'errorCode',
+  'step',
+  'failure',
+  'httpStatus',
+  'discordCode',
 ] as const satisfies readonly (keyof SafeClipLog)[];
 
 /**

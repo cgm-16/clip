@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createDiscordRestClient, DiscordApiError } from '@/lib/discord/rest-client';
+import { createDiscordRestClient, describeDiscordFailure, DiscordApiError } from '@/lib/discord/rest-client';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -57,5 +57,47 @@ describe('createDiscordRestClient', () => {
     await expect(request).rejects.toBeInstanceOf(DiscordApiError);
     await expect(request).rejects.toMatchObject({ status: 502, code: null });
     expect(fetchCalls).toBe(1);
+  });
+});
+
+describe('describeDiscordFailure', () => {
+  it('classes an exhausted rate limit as http with its status and Discord code', () => {
+    const error = new DiscordApiError('x', { status: 429, code: 0 });
+    expect(describeDiscordFailure(error)).toEqual({ failure: 'http', httpStatus: '429', discordCode: '0' });
+  });
+
+  it('omits the Discord code when the response carried none', () => {
+    const error = new DiscordApiError('x', { status: 503, code: null });
+    expect(describeDiscordFailure(error)).toEqual({ failure: 'http', httpStatus: '503' });
+  });
+
+  it('classes the fetch timeout as timeout', () => {
+    const error = new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+    expect(describeDiscordFailure(error)).toEqual({ failure: 'timeout' });
+  });
+
+  it('classes an abort as timeout', () => {
+    const error = new DOMException('This operation was aborted', 'AbortError');
+    expect(describeDiscordFailure(error)).toEqual({ failure: 'timeout' });
+  });
+
+  it('classes anything else as network', () => {
+    expect(describeDiscordFailure(new TypeError('fetch failed'))).toEqual({ failure: 'network' });
+    expect(describeDiscordFailure('not an error')).toEqual({ failure: 'network' });
+  });
+
+  it('never reads the error message, which can echo a response body', () => {
+    for (const error of [
+      new DiscordApiError('x', { status: 500, code: null }),
+      new DOMException('x', 'TimeoutError'),
+      new TypeError('x'),
+    ]) {
+      Object.defineProperty(error, 'message', {
+        get() {
+          throw new Error('message was read');
+        },
+      });
+      expect(() => describeDiscordFailure(error)).not.toThrow();
+    }
   });
 });

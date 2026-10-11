@@ -64,7 +64,7 @@ type Call = { url: string; method: string; body: Record<string, unknown> | null;
  * forward -- and a router keyed on URL would answer both from the same entry
  * and hide a gateway that posted them the wrong way round.
  */
-function stubFetch(responses: readonly StubResponse[]) {
+function stubFetch(responses: readonly (StubResponse | Error)[]) {
   const calls: Call[] = [];
   let index = 0;
 
@@ -73,6 +73,9 @@ function stubFetch(responses: readonly StubResponse[]) {
     index += 1;
     if (next === undefined) {
       throw new Error(`unexpected fetch call ${index}: ${String(url)}`);
+    }
+    if (next instanceof Error) {
+      throw next;
     }
     calls.push({
       url: String(url),
@@ -310,6 +313,62 @@ describe('createArchiveMessage', () => {
 
     expect(error).toBeInstanceOf(ArchiveCreationFailedError);
     expect((error as ArchiveCreationFailedError).orphanedProvenanceMessageId).toBeNull();
+  });
+
+  // The failing step and its class, never the message: a sentinel in every
+  // error body proves the facts are lifted from status and code alone.
+  const SENTINEL = 'SENTINEL-BODY';
+
+  test('a failed source read names its step and HTTP status', async () => {
+    const { fetchImpl } = stubFetch([json({ message: SENTINEL }, 503)]);
+    const gateway = createDiscordArchiveGateway({ botToken: BOT_TOKEN, fetchImpl });
+
+    const error = await gateway.createArchiveMessage(input).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ArchiveCreationFailedError);
+    expect(error).toMatchObject({ step: 'source_read', failure: { failure: 'http', httpStatus: '503' } });
+  });
+
+  test('a source message in an unexpected shape names its step with no failure facts', async () => {
+    const { fetchImpl } = stubFetch([json({ id: SOURCE_MESSAGE_ID })]);
+    const gateway = createDiscordArchiveGateway({ botToken: BOT_TOKEN, fetchImpl });
+
+    const error = await gateway.createArchiveMessage(input).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ArchiveCreationFailedError);
+    expect(error).toMatchObject({ step: 'source_read', failure: null });
+  });
+
+  test('an exhausted rate limit on the provenance post names its step, status and Discord code', async () => {
+    const rateLimited = json({ message: SENTINEL, retry_after: 0.001, global: false, code: 0 }, 429);
+    const { fetchImpl } = stubFetch([sourceMessage(DEFAULT), rateLimited, rateLimited, rateLimited]);
+    const gateway = createDiscordArchiveGateway({ botToken: BOT_TOKEN, fetchImpl });
+
+    const error = await gateway.createArchiveMessage(input).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ArchiveCreationFailedError);
+    expect(error).toMatchObject({
+      step: 'provenance_post',
+      failure: { failure: 'http', httpStatus: '429', discordCode: '0' },
+    });
+  });
+
+  test('a timed-out forward post names its step and the timeout', async () => {
+    const { fetchImpl } = stubFetch([
+      sourceMessage(DEFAULT),
+      json({ id: PROVENANCE_ID }),
+      new DOMException(SENTINEL, 'TimeoutError'),
+    ]);
+    const gateway = createDiscordArchiveGateway({ botToken: BOT_TOKEN, fetchImpl });
+
+    const error = await gateway.createArchiveMessage(input).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ArchiveCreationFailedError);
+    expect(error).toMatchObject({
+      step: 'forward_post',
+      failure: { failure: 'timeout' },
+      orphanedProvenanceMessageId: PROVENANCE_ID,
+    });
   });
 
   test('retries after a 429 and succeeds', async () => {
