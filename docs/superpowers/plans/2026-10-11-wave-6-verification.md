@@ -91,6 +91,32 @@ The repository-level races already exist (`tests/clip/repository.test.ts:128,166
 - [ ] **Step 2:** Run each test 20× (`pnpm vitest run tests/integration --repeat 20` or a loop). Any failure is a locking bug → systematic-debugging, never a retry.
 - [ ] **Step 3: Commit** `test(clip): race the service end to end against real Postgres` with `Closes #36`.
 
+### Task 3b: #78 — a stale PENDING or DELETING Clip is taken over by the next clip or unclip
+
+Ori chose to fix this in the wave (2026-10-11). Spec §9.8, §9.10.
+
+**Design (orchestrator's decision):** a time-based lease on `Clip.updatedAt`.
+- `STALE_CONTROL_STATE_MS = 5 * 60_000` in `lib/clip/service.ts`. The worst case for live Discord work is about 2 minutes: 3 calls × 3 attempts × 10 s timeout, plus capped 5 s rate-limit waits. A row untouched for 5 minutes in PENDING or DELETING has no live owner. Mark it `ponytail:` with the ceiling: a creator stalled past the lease races the taker, and `publishArchive`'s conditional `markActive` plus the loser-pair cleanup already settle that.
+- Repository: `takeOverStaleClip(tx, guildId, sourceMessageId, status, staleBefore: Date): Promise<{ taken: boolean }>`. One conditional `updateMany` sets `updatedAt = new Date()` where `status = status AND updatedAt < staleBefore`. This is the lease claim. It runs inside `lockClip`, so at most one caller takes a stale row per lease period. Use JS `Date` on both sides, the way Prisma's `@updatedAt` does.
+- `clip()`, inside the `joined` lock:
+  - If the row is `PENDING` and the lease is taken, this request becomes the creator: the same path a `FAILED` retry takes.
+  - If the row is `DELETING` and the lease is taken, run `finalizeDeletion` after the lock with the row's archive and the current config. It retries the Discord delete, then deletes the row or revives it.
+  - Otherwise behaviour is unchanged. The reply kind is unchanged (`CLIPPER_ADDED` / `ALREADY_CLIPPED_BY_USER`, which already read as success).
+- `unclip()`'s `ALREADY_DELETING` branch: if the lease is taken, run `finalizeDeletion` the same way. Otherwise unchanged.
+- A takeover whose Discord delete fails again leaves the row DELETING with a fresh lease. The next attempt waits for the next lease period.
+- Revival with no config (journal item 3): check whether it is reachable now that guild-data deletion removes Clip rows in the same transaction. Report the finding; no code unless reachable.
+
+**Tests** (`tests/integration/clip-concurrency.test.ts`, real Postgres). Make a row stale by moving `updated_at` back with raw SQL; no clock injection.
+1. A failed final delete is followed by a clip after the lease → converges to ACTIVE with a fresh pair, old pair delete retried. If it's followed by an unclip after the lease instead → row gone.
+2. The same while the lease is fresh → unchanged (no takeover).
+3. N parallel callers on one stale DELETING row → exactly one takeover: one retried delete.
+4. A stale PENDING row (claim committed, creator "died": `onNextCreate` hook throws an unrelated error before publish, or seed the row directly) → the next clip creates and publishes. Exactly one ACTIVE, never ACTIVE without both ids.
+5. A creator that is alive but past the lease: inside its `onNextCreate`, age the row and run a second clip that takes over → exactly one ACTIVE pair, the losing pair deleted.
+6. A fresh PENDING with a second clipper mid-round-trip → no takeover (§9.4; guards the M1 trap).
+Prove at least three with temporary mutations (drop the stale condition; drop the lease claim; take over a fresh row), then restore.
+
+Commit `fix(clip): let a later clip or unclip take over a Clip stranded in PENDING or DELETING` with `Closes #78`.
+
 ### Task 4: F.6 (#43) — `pnpm lint:design` guard in CI
 
 **Rulings against the brief (it predates the CSS-modules switch):** Tailwind is gone (`postcss.config.mjs` deleted), so the Tailwind arbitrary-value checks are dropped. The string tables are `lib/ui/copy.ts` and `lib/discord/copy.ts`, not `lib/i18n/`.
