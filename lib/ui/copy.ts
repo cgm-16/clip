@@ -252,4 +252,10 @@ export const WEB_COPY_AUTHORED = {
    * Ori on 2026-10-09; see docs/DESIGN_RATIONALE_APPEND.md §15.
    */
   archiveChannelMissing: '설정된 아카이브 채널이 Discord에 없습니다. 다른 채널을 선택하거나 새로 만들어 주세요.',
+  /**
+   * The site's metadata `description` (`app/layout.tsx`). Written by Claude in
+   * the scaffold commit 7644d96; approved verbatim by Ori on 2026-10-11
+   * (Wave 6 design guard, F.6 #43).
+   */
+  siteDescription: '서버가 소유하는 아카이브에 메시지를 보존합니다.',
 } as const;

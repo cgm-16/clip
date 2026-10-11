@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
+import { WEB_COPY_AUTHORED } from "@/lib/ui/copy";
 
 // Mono carries machine values only — channels, roles, timestamps, permission
 // constants, slash commands. `--font-mono` in globals.css composes this
@@ -23,7 +24,7 @@ const jetBrainsMono = localFont({
 
 export const metadata: Metadata = {
   title: "Clip",
-  description: "서버가 소유하는 아카이브에 메시지를 보존합니다.",
+  description: WEB_COPY_AUTHORED.siteDescription,
   // Every surface is admin-only behind a short-lived session. Nothing here
   // should be indexed.
   robots: { index: false, follow: false },

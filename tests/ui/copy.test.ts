@@ -184,6 +184,10 @@ describe('web UI copy', () => {
     );
   });
 
+  it('pins the site description Ori approved exactly', () => {
+    expect(WEB_COPY_AUTHORED.siteDescription).toBe('서버가 소유하는 아카이브에 메시지를 보존합니다.');
+  });
+
   it('the clip card action reuses the handoff label', () => {
     expect(WEB_COPY.clipCard.viewOriginal).toBe('원본 보기');
   });
