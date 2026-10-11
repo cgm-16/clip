@@ -1,7 +1,7 @@
 import type { ComponentProps } from 'react';
 import styles from './Button.module.css';
 
-export type ButtonVariant = 'primary' | 'secondary' | 'danger';
+export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'dangerSolid';
 
 export interface ButtonProps extends ComponentProps<'button'> {
   variant?: ButtonVariant;

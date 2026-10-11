@@ -65,6 +65,17 @@ test('deletion is two steps with consequence copy, and the second step needs the
   expect(confirm).toBeEnabled();
 });
 
+test('삭제 실행 is the solid danger variant; the first step stays outlined danger', async () => {
+  render(<SettingsScreen {...props} />);
+  const start = screen.getByRole('button', { name: 'Clip 데이터 삭제' });
+  expect(start.className).toMatch(/(^|\s)_danger_/);
+  expect(start.className).not.toMatch(/dangerSolid/);
+  await openAndAcknowledge();
+  const confirm = within(confirmPanel()).getByRole('button', { name: '삭제 실행' });
+  expect(confirm.className).toMatch(/(^|\s)_dangerSolid_/);
+  expect(confirm.className).not.toMatch(/(^|\s)_danger_/);
+});
+
 test('a confirmed deletion posts the acknowledgement and shows completion with /setup recovery', async () => {
   fetchMock.mockResolvedValue(new Response(JSON.stringify({ deleted: true }), { status: 200 }));
   render(<SettingsScreen {...props} />);

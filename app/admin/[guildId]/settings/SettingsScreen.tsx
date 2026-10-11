@@ -162,7 +162,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
                 {flow === 'failed' && <Callout variant="error">{WEB_COPY_AUTHORED.deletionFailed}</Callout>}
               </div>
               <div className={styles.actions}>
-                <Button variant="danger" onClick={confirmDeletion} disabled={!acknowledged || flow === 'deleting'}>
+                <Button variant="dangerSolid" onClick={confirmDeletion} disabled={!acknowledged || flow === 'deleting'}>
                   {copy.confirmDeletion}
                 </Button>
                 <Button variant="secondary" onClick={cancel} disabled={flow === 'deleting'}>

@@ -59,7 +59,22 @@
   border-color: var(--error-border);
   color: var(--error-text);
 }
-.danger:disabled {
+/*
+ * The handoff's "danger (confirm step)" row: bg #7d3a3a, fg #fff, no hover.
+ * tokens.css has no white text token; --btn-primary-bg-hover is the token
+ * holding the handoff's #fff (primary hover bg).
+ */
+.dangerSolid {
+  background: var(--danger-solid);
+  border-color: var(--danger-solid);
+  color: var(--btn-primary-bg-hover);
+}
+
+/* Disabled, the solid variant falls back to the outlined danger look. */
+.danger:disabled,
+.dangerSolid:disabled {
+  background: var(--error-surface);
+  border-color: var(--error-border);
   color: var(--faint);
   cursor: not-allowed;
 }
