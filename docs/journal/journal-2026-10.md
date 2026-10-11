@@ -158,3 +158,29 @@ PR #76 merged as `fee7cff` and is deployed as `sha-fee7cff`, with no pending mig
 **Live check, run by Ori on production:** with A's settings edit page open in one tab and B's fresh `/setup` link opened in another, saving in A shows the expired screen. B's settings are unchanged and no channel was created in B.
 
 **Issues:** #74 closed by the merge.
+
+## 2026-10-11 — Wave 6 part 1: verification found a P0 gap, and the fix for it had two of its own
+
+Branch `wave/6-verification`. Ori approved splitting the wave. Release images build only from `main`, so this part ships first and the manual runs test it. 7.1, 6.4, the 6.1/6.3 results and #63 follow on a second branch.
+
+**Shipped on the branch:** #64 failure-class logging, #60 managed roles, 6.2 service-level races (#36), the F.6 design guard (#43) with the token refactor it forced, and #78.
+
+**6.2 found #78.** A Clip left DELETING after a failed final delete, or PENDING after a dead creator, had no member action that converged it. Clip and unclip both answered success forever. The August entry carried both to "reconciliation", which was never built. Spec §9.10 requires recovery, so Ori chose to fix it in the wave.
+
+**The fix:** a 5-minute wall-clock lease on `Clip.updatedAt`. A later clip or unclip claims a stale PENDING/DELETING row with one conditional update under `lockClip`, then finishes the creation or deletion.
+- The implementer found my first design missed DELETING with zero clippers. The member retrying their unclip landed on `NOT_CLIPPED` before any takeover could run. Ruling: take over there too, still replying `NOT_CLIPPED_BY_USER`, and never for PENDING.
+- The independent review found two Important defects in the lease. A stalled finalizer could clear and delete a pair written by a later lifecycle (I1). `markActive` from DELETING could overwrite ids that still addressed an undeleted pair (I2). Both orphan a live pair in Discord. Fixed in `5df94c5`: the finalizer touches nothing when the row holds a pair it was not sent, and `markActive` applies only over null ids.
+- The lease assumes every status write refreshes `updatedAt`. Prisma applies `@updatedAt` on `updateMany`, and a test now pins this.
+
+**F.6 rulings:** Tailwind is gone, so the brief's Tailwind checks were dropped. The string tables are `lib/ui/copy.ts` and `lib/discord/copy.ts`. Comments are exempt from the Hangul check.
+- The guard found 17 measured px values. Under DESIGN_RATIONALE §10.7 they became cited tokens, pixel-identical.
+- It found two Korean literals. The `채널 관리` label moved to `WEB_COPY`, since it is a substring of the handoff. The site description moved to `WEB_COPY_AUTHORED`: Claude wrote it in the scaffold, and Ori approved it verbatim today.
+
+**Not fixed, deliberately:**
+- Screen D logs one `source_read` line, code 10008, per deleted original on every page load. That is noise, not a failure.
+- A stale or managed role in a save shows the generic save-failed callout. A specific message needs new Korean copy.
+- Review minors:
+  - `lint-design.ts`'s `tokens.css` path check is dead, since the file is outside the scanned roots.
+  - The `--faint` rule accepts `:not(:disabled)`.
+  - A stranded row recovers only when someone next clips or unclips that message.
+- After an I2 loss, the reply carries the pair pending deletion. Only `kind` is read.
