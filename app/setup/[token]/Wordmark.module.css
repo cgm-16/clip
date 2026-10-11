@@ -15,15 +15,15 @@
  * reduces contrast versus the mockup.
  */
 .mark {
-  width: 9px;
-  height: 9px;
+  width: var(--wordmark-mark-size);
+  height: var(--wordmark-mark-size);
   background: var(--muted);
   border-radius: var(--radius-chip);
   flex: none;
 }
 
 .name {
-  font: 600 14px / 1 var(--font-ui);
+  font: 600 var(--fs-wordmark) / 1 var(--font-ui);
   color: var(--text);
   letter-spacing: -0.01em;
 }

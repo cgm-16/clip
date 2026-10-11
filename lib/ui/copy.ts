@@ -91,6 +91,11 @@ export const WEB_COPY = {
     /** OK callout, shown only when Clip created the channel itself. */
     manageChannelNoLongerNeeded:
       '채널을 자동 생성했으므로 일상 운영에는 채널 관리 권한이 더 이상 필요하지 않습니다.',
+    /**
+     * The Discord permission named inside `manageChannelNoLongerNeeded`,
+     * rendered in mono there (design/Clip P0 Screens.dc.html:156).
+     */
+    manageChannelsPermission: '채널 관리',
 
     openArchive: '아카이브 열기',
     reviewSettings: '설정 다시 보기',

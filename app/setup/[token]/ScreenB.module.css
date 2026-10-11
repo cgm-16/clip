@@ -2,19 +2,16 @@
  * Values: design/Clip P0 Screens.dc.html:40-95 (Screen B). Form width is
  * --w-form (560px, tokens.css). A few gaps in the mockup (22px between
  * groups, 14px identity-bar-to-card, 13px identity-bar vertical padding) are
- * not multiples of 4 and tokens.css defines no off-scale var for them.
- * docs/DESIGN_RATIONALE_APPEND.md §10.7 already settled this exact tension
- * for the F.3 primitives: the component's literal measured value wins over
- * the summary 4px rule, and the value belongs in tokens.css as a named
- * token. This task's scope excludes tokens.css, so the literal pixel values
- * are used directly here rather than snapped to the nearest on-scale token —
- * consistent with §10.7's resolution, short the token it also calls for.
+ * not multiples of 4. docs/DESIGN_RATIONALE_APPEND.md §10.7 settled this
+ * exact tension for the F.3 primitives: the component's literal measured
+ * value wins over the summary 4px rule, and the value belongs in tokens.css
+ * as a named token — which is where these live, with their mockup lines cited.
  */
 .page {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
+  gap: var(--sp-setup-stack);
   padding: var(--sp-12) var(--sp-6);
 }
 
@@ -24,7 +21,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 13px var(--sp-4);
+  padding: var(--sp-identity-y) var(--sp-4);
   background: var(--surface);
   border: var(--hairline) solid var(--border);
   border-radius: var(--radius);
@@ -38,7 +35,7 @@
 
 .divider {
   width: var(--hairline);
-  height: 13px;
+  height: var(--identity-divider-height);
   background: var(--border);
 }
 
@@ -58,7 +55,7 @@
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: var(--sp-form-group-gap);
   background: var(--surface);
   border: var(--hairline) solid var(--border);
   border-radius: var(--radius);
@@ -69,7 +66,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
-  padding-left: 34px;
+  padding-left: var(--sp-option-indent);
 }
 
 .roles {
@@ -132,7 +129,7 @@
  * and the usual 22px gaps on both sides apply.
  */
 .saveError:empty {
-  margin-top: -22px;
+  margin-top: calc(-1 * var(--sp-form-group-gap));
 }
 
 .actions {

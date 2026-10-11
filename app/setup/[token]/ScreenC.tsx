@@ -10,7 +10,7 @@ import styles from './ScreenC.module.css';
 // renders in mono, matching design/Clip P0 Screens.dc.html:156's inline
 // `font-family:'JetBrains Mono'` span -- the same split-around-a-literal-token
 // pattern ScreenA uses for its `/setup` command.
-const MANAGE_CHANNELS_LABEL = '채널 관리';
+const MANAGE_CHANNELS_LABEL = WEB_COPY.setupComplete.manageChannelsPermission;
 
 // `usageSteps` (`메시지 우클릭 → 앱 → Clip`) is a fixed three-part string, not
 // a general list -- only the last part ever renders as the mono chip

@@ -93,6 +93,21 @@
   --pager-disabled-border: #23262b;
   --w-settings-main: 460px;
   --w-settings-confirm: 400px;
+  /* Setup screens A–C and their shared pieces. design/Clip P0 Screens.dc.html */
+  --wordmark-mark-size: 9px;    /* wordmark square. design/Clip P0 Screens.dc.html:31, :56; docs/06_DESIGN_HANDOFF.md "Assets" */
+  --fs-wordmark: 14px;          /* wordmark "Clip", 600. design/Clip P0 Screens.dc.html:32, :57 */
+  --fs-status-title: 19px;      /* Screen A title, 600. design/Clip P0 Screens.dc.html:35 */
+  --fs-status-body: 13px;       /* Screen A explanation, 400. design/Clip P0 Screens.dc.html:36 */
+  --sp-setup-stack: 14px;       /* Screen B identity bar to form card. design/Clip P0 Screens.dc.html:53 */
+  --sp-identity-y: 13px;        /* Screen B identity bar vertical padding (horizontal reuses --sp-4). design/Clip P0 Screens.dc.html:54 */
+  --identity-divider-height: 13px; /* Screen B identity bar divider. design/Clip P0 Screens.dc.html:58 */
+  --sp-form-group-gap: 22px;    /* Screen B form card gap between groups. design/Clip P0 Screens.dc.html:64; docs/06_DESIGN_HANDOFF.md "Screen B" */
+  --sp-option-indent: 34px;     /* existing-channel select indent under its radio. design/Clip P0 Screens.dc.html:85; docs/06_DESIGN_HANDOFF.md "Radio group (archive destination)" */
+  --radio-dot-size: 5px;        /* selected radio fill. design/Clip P0 Screens.dc.html:74; docs/06_DESIGN_HANDOFF.md "Radio group (archive destination)" */
+  --sp-summary-x: 14px;         /* summary table row horizontal padding (vertical reuses --sp-3). design/Clip P0 Screens.dc.html:138; docs/06_DESIGN_HANDOFF.md "Screen C" */
+  --sp-usage-gap: 7px;          /* Screen C usage heading to row. design/Clip P0 Screens.dc.html:144 */
+  --sp-usage-x: 13px;           /* Screen C usage row horizontal padding (vertical reuses --sp-3). design/Clip P0 Screens.dc.html:146 */
+  --sp-action-gap: 9px;         /* Screen C action row, between buttons. design/Clip P0 Screens.dc.html:158 */
 
   --radius: 2px;
   --radius-chip: 1px;

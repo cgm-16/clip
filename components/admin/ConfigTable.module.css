@@ -15,7 +15,7 @@
   align-items: baseline;
   justify-content: space-between;
   gap: var(--sp-4);
-  padding: var(--sp-3) 14px;
+  padding: var(--sp-3) var(--sp-summary-x);
   border-bottom: var(--hairline) solid var(--divider);
 }
 
