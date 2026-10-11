@@ -75,6 +75,16 @@ async function takeOverIfStale(tx: TxClient, clip: ClipRecord): Promise<boolean>
 type ClipKey = { guildId: string; sourceMessageId: string };
 
 /**
+ * Where `finalizeDeletion` left the Clip: ACTIVE on the pair it holds --
+ * published by this finalizer or by a concurrent publish that won the row --
+ * a tombstone, or anything else: deleted, FAILED, or still DELETING.
+ */
+type DeletionOutcome =
+  | { kind: 'ACTIVE'; archive: ArchiveMessageIds }
+  | { kind: 'TOMBSTONED' }
+  | { kind: 'UNSETTLED' };
+
+/**
  * The archive as a pair, or null when the Clip has none.
  *
  * Half a pair is not an archive: `clips_active_requires_archive` makes a
@@ -171,6 +181,10 @@ export function createClipService(gateway: DiscordArchiveGateway) {
    * Records that archive creation did not succeed, unless the Clip moved
    * somewhere `FAILED` is no longer reachable from while the attempt ran.
    *
+   * A Clip with no clipper and no archive is deleted instead: every signal was
+   * withdrawn during the attempt, so a FAILED row would preserve nothing yet
+   * still count as a live Clip for the guild (`hasLiveClips`).
+   *
    * The status is re-read under a fresh lock because the attempt spanned a
    * Discord round-trip: the author may have removed the Clip meanwhile, and
    * `ACTIVE -> FAILED` (a concurrent retry that won) would blank the §9.3
@@ -179,6 +193,13 @@ export function createClipService(gateway: DiscordArchiveGateway) {
   async function recordArchiveFailure(key: ClipKey, configurationId: string): Promise<void> {
     await lockClip(key.guildId, key.sourceMessageId, async (tx, locked) => {
       if (!canTransition(locked.status, 'FAILED')) {
+        return;
+      }
+      if (
+        archiveOf(locked) === null &&
+        (await countClippers(tx, key.guildId, key.sourceMessageId)) === 0
+      ) {
+        await deleteClipWithClippers(tx, key.guildId, key.sourceMessageId);
         return;
       }
       assertTransition(locked.status, 'FAILED');
@@ -317,12 +338,23 @@ export function createClipService(gateway: DiscordArchiveGateway) {
     if (joined.status === 'DELETING' && joined.takenOver) {
       // The finalizer that owned this deletion is gone. This request finishes
       // it: retry the Discord delete, then revive on the signal just recorded.
-      await finalizeDeletion({
+      // `joined.archive` is the pair being taken down, so the reply reports
+      // only what the finalizer left, and success only for an ACTIVE pair.
+      const deletion = await finalizeDeletion({
         key,
         archiveChannelId: config.archiveChannelId,
         archive: joined.archive,
         configurationId,
       });
+      if (deletion.kind === 'TOMBSTONED') {
+        return { kind: 'REMOVED_BY_AUTHOR_OR_ADMIN' };
+      }
+      if (deletion.kind === 'UNSETTLED') {
+        return { kind: 'FAILED', retryable: true };
+      }
+      return joined.added
+        ? { kind: 'CLIPPER_ADDED', archive: deletion.archive }
+        : { kind: 'ALREADY_CLIPPED_BY_USER', archive: deletion.archive };
     }
 
     // §9.4: only the request that claimed a *new* Clip may create the first
@@ -420,7 +452,7 @@ export function createClipService(gateway: DiscordArchiveGateway) {
     archiveChannelId: string | null;
     archive: ArchiveMessageIds | null;
     configurationId: string | null;
-  }): Promise<void> {
+  }): Promise<DeletionOutcome> {
     const { key, archiveChannelId, configurationId } = context;
     let archive = context.archive;
 
@@ -441,7 +473,7 @@ export function createClipService(gateway: DiscordArchiveGateway) {
           // clearing them nor deleting the row is this finalizer's to do --
           // and clearing them would violate `clips_active_requires_archive` and
           // reject the caller's whole unclip.
-          return { revived: false as const };
+          return { revived: false as const, active: archiveOf(locked) };
         }
         const held = archiveOf(locked);
         if (
@@ -467,7 +499,7 @@ export function createClipService(gateway: DiscordArchiveGateway) {
           // dropping it would unblock recreation of a message its author
           // explicitly removed. The clipper count cannot decide this -- removal
           // drops every clipper row, so a tombstone always reads as zero.
-          return { revived: false as const };
+          return { revived: false as const, tombstoned: true as const };
         }
         if (!archiveRemoved) {
           // Two messages are still up and the row's ids are the only handle on
@@ -483,11 +515,15 @@ export function createClipService(gateway: DiscordArchiveGateway) {
         return { revived: true as const, clip: locked };
       }, configurationOptions(configurationId));
       if (outcome === null || !outcome.revived) {
-        return;
+        if (outcome?.active) {
+          return { kind: 'ACTIVE', archive: outcome.active };
+        }
+        return outcome?.tombstoned ? { kind: 'TOMBSTONED' } : { kind: 'UNSETTLED' };
       }
 
-      if (archiveChannelId === null) {
-        return;
+      // Both come from the same guild configuration, so they are null together.
+      if (archiveChannelId === null || configurationId === null) {
+        return { kind: 'UNSETTLED' };
       }
 
       // A preservation signal arrived while the delete was in flight, so the Clip
@@ -510,12 +546,16 @@ export function createClipService(gateway: DiscordArchiveGateway) {
           errorCode: errorCodeOf(error),
           ...archiveFailureFields(error),
         });
-        return;
+        // The old pair is gone and its ids cleared, but clippers remain:
+        // FAILED lets their next clip rebuild at once instead of leaving a
+        // DELETING row that only a lease takeover could pick up again.
+        await recordArchiveFailure(key, configurationId);
+        return { kind: 'UNSETTLED' };
       }
 
       const published = await publishArchive(key, recreated, configurationId);
       if (published.published) {
-        return;
+        return { kind: 'ACTIVE', archive: recreated };
       }
 
       // The publish was declined, so the pair just posted is unreferenced. The

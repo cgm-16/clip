@@ -493,6 +493,28 @@ describe('clip repository', () => {
     ).toBe(1);
   });
 
+  test('markFailed refuses a Clip that still holds an archive pair', async () => {
+    const input = newClipInput();
+    await claimClip(input);
+    // A DELETING Clip whose Discord delete failed: both messages still up.
+    await prisma.clip.update({
+      where: clipKey(input),
+      data: { status: 'DELETING', archiveProvenanceMessageId: 'p-1', archiveForwardMessageId: 'f-1' },
+    });
+
+    expect(
+      await lockClip(input.guildId, input.sourceMessageId, (tx) =>
+        markFailed(tx, input.guildId, input.sourceMessageId),
+      ),
+    ).toEqual({ applied: false });
+
+    expect(await prisma.clip.findUniqueOrThrow({ where: clipKey(input) })).toMatchObject({
+      status: 'DELETING',
+      archiveProvenanceMessageId: 'p-1',
+      archiveForwardMessageId: 'f-1',
+    });
+  });
+
   test('a FAILED Clip keeps its row so the caller can see why', async () => {
     const input = newClipInput();
     await claimClip(input);

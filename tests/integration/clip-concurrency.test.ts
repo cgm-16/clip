@@ -420,7 +420,8 @@ describe('clip service under concurrency', () => {
       await stuckDeletingClip(fixture);
       await ageClip(fixture, 6);
 
-      expect((await clipAs(fixture, fakeSnowflake())).kind).toBe('CLIPPER_ADDED');
+      // The reply names the pair the row now holds, never the one just deleted.
+      expect(await clipAs(fixture, fakeSnowflake())).toEqual({ kind: 'CLIPPER_ADDED', archive: PAIR_2 });
 
       expect(gateway.deleteCalls.map((call) => call.ids)).toEqual([PAIR_1, PAIR_1]);
       expect(gateway.createCalls).toHaveLength(2);
@@ -428,6 +429,82 @@ describe('clip service under concurrency', () => {
       expect(clip?.status).toBe('ACTIVE');
       expect(clip?.archiveProvenanceMessageId).toBe('provenance-2');
       expect(clip?.archiveForwardMessageId).toBe('forward-2');
+      expect(await countClipperRows(fixture)).toBe(1);
+    });
+
+    test('a takeover whose revival cannot be rebuilt reports failure and leaves a retryable FAILED row', async () => {
+      const fixture = await seedConfiguredGuild();
+      await stuckDeletingClip(fixture);
+      await ageClip(fixture, 6);
+      const taker = fakeSnowflake();
+      gateway.failNextCreate(
+        new ArchiveCreationFailedError('rate limited', {
+          retryable: true,
+          orphanedProvenanceMessageId: null,
+          step: 'provenance_post',
+          failure: { failure: 'http', httpStatus: '429', discordCode: '0' },
+        }),
+      );
+
+      // Pair 1 is gone and no pair replaced it, so success copy would be a lie.
+      expect(await clipAs(fixture, taker)).toEqual({ kind: 'FAILED', retryable: true });
+
+      expect(gateway.deleteCalls.map((call) => call.ids)).toEqual([PAIR_1, PAIR_1]);
+      const failed = await readClip(fixture);
+      expect(failed?.status).toBe('FAILED');
+      expect(failed?.archiveProvenanceMessageId).toBeNull();
+      expect(failed?.archiveForwardMessageId).toBeNull();
+      expect(await countClipperRows(fixture)).toBe(1);
+
+      // FAILED needs no lease: the very next clip rebuilds the archive.
+      expect(await clipAs(fixture, taker)).toEqual({ kind: 'CREATED', archive: PAIR_2 });
+      const clip = await readClip(fixture);
+      expect(clip?.status).toBe('ACTIVE');
+      expect(clip?.archiveProvenanceMessageId).toBe('provenance-2');
+      expect(await countClipperRows(fixture)).toBe(1);
+    });
+
+    test('a takeover that loses its rebuild to a concurrent publish reports the pair the row holds', async () => {
+      const fixture = await seedConfiguredGuild();
+      await stuckDeletingClip(fixture);
+      await ageClip(fixture, 6);
+      // Inside the taker's rebuild the lease lapses again and a second taker
+      // revives first. The fake numbers pairs as they return, so the second
+      // taker publishes pair 2 and the first taker's own rebuild is pair 3.
+      const PAIR_3 = { provenanceMessageId: 'provenance-3', forwardMessageId: 'forward-3' };
+      let second: ClipCommandResult | undefined;
+      gateway.onNextCreate(async () => {
+        await ageClip(fixture, 6);
+        second = await clipAs(fixture, fakeSnowflake());
+      });
+
+      const first = await clipAs(fixture, fakeSnowflake());
+
+      expect(second).toEqual({ kind: 'CLIPPER_ADDED', archive: PAIR_2 });
+      // The row is ACTIVE on pair 2; failure copy would misreport a kept Clip.
+      expect(first).toEqual({ kind: 'CLIPPER_ADDED', archive: PAIR_2 });
+      expect(gateway.deleteCalls.map((call) => call.ids)).toEqual([PAIR_1, PAIR_1, PAIR_3]);
+      const clip = await readClip(fixture);
+      expect(clip?.status).toBe('ACTIVE');
+      expect(clip?.archiveProvenanceMessageId).toBe('provenance-2');
+      expect(clip?.archiveForwardMessageId).toBe('forward-2');
+      expect(await countClipperRows(fixture)).toBe(2);
+    });
+
+    test('a takeover whose retried delete fails again reports failure and keeps the pair', async () => {
+      const fixture = await seedConfiguredGuild();
+      await stuckDeletingClip(fixture);
+      await ageClip(fixture, 6);
+      gateway.failNextDelete(new Error('discord unavailable'));
+
+      expect(await clipAs(fixture, fakeSnowflake())).toEqual({ kind: 'FAILED', retryable: true });
+
+      expect(gateway.deleteCalls.map((call) => call.ids)).toEqual([PAIR_1, PAIR_1]);
+      expect(gateway.createCalls).toHaveLength(1);
+      const stuck = await readClip(fixture);
+      expect(stuck?.status).toBe('DELETING');
+      expect(stuck?.archiveProvenanceMessageId).toBe('provenance-1');
+      expect(stuck?.archiveForwardMessageId).toBe('forward-1');
       expect(await countClipperRows(fixture)).toBe(1);
     });
 

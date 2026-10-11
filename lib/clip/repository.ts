@@ -354,13 +354,25 @@ export function markDeleting(
   return advanceLiveClip(tx, guildId, sourceMessageId, { status: 'DELETING' });
 }
 
-/** Records a failed archive attempt. Guarded for the same reason as `markDeleting`. */
+/**
+ * Records a failed archive attempt. Guarded for the same reason as
+ * `markDeleting`, and, like `markActive`, only onto null ids: FAILED means no
+ * archive exists, so a row still addressing a live pair -- a DELETING Clip
+ * whose delete failed -- must keep saying so. PENDING and FAILED never carry
+ * ids, and a revival clears them before rebuilding.
+ */
 export function markFailed(
   tx: TxClient,
   guildId: string,
   sourceMessageId: string,
 ): Promise<{ applied: boolean }> {
-  return advanceLiveClip(tx, guildId, sourceMessageId, { status: 'FAILED' });
+  return advanceLiveClip(
+    tx,
+    guildId,
+    sourceMessageId,
+    { status: 'FAILED' },
+    { archiveProvenanceMessageId: null, archiveForwardMessageId: null },
+  );
 }
 
 /**
