@@ -154,6 +154,33 @@ describe('ScreenB — archive destination configuration', () => {
     expect(screen.queryByText(WEB_COPY.setup.destinationChannelRequired)).not.toBeInTheDocument();
   });
 
+  it('disables save while the channel 확인 error shows, until a channel is chosen', async () => {
+    const user = userEvent.setup();
+    render(<ScreenB channels={CHANNELS} onSubmit={vi.fn()} />);
+    const saveButton = screen.getByRole('button', { name: WEB_COPY.setup.save });
+
+    await user.click(screen.getByRole('radio', { name: WEB_COPY.setup.destinationExistingLabel }));
+    await user.click(saveButton);
+    expect(screen.getByRole('alert')).toHaveTextContent(WEB_COPY.setup.destinationChannelRequired);
+    expect(saveButton).toBeDisabled();
+
+    await user.selectOptions(screen.getByRole('combobox'), '#clip-archive');
+    expect(saveButton).toBeEnabled();
+  });
+
+  it('re-enables save when the destination switches back to create', async () => {
+    const user = userEvent.setup();
+    render(<ScreenB channels={CHANNELS} onSubmit={vi.fn()} />);
+    const saveButton = screen.getByRole('button', { name: WEB_COPY.setup.save });
+
+    await user.click(screen.getByRole('radio', { name: WEB_COPY.setup.destinationExistingLabel }));
+    await user.click(saveButton);
+    expect(saveButton).toBeDisabled();
+
+    await user.click(screen.getByRole('radio', { name: new RegExp(WEB_COPY.setup.destinationCreateLabel.split(' —')[0]) }));
+    expect(saveButton).toBeEnabled();
+  });
+
   it('does not require a channel when the recommended "create new" destination is kept', async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue({ kind: 'saved' });
@@ -289,6 +316,11 @@ describe('ScreenC — setup complete', () => {
     render(<ScreenC {...BASE_PROPS} />);
     expect(screen.getByText(WEB_COPY.setupComplete.readyTag)).toBeInTheDocument();
     expect(screen.getByText(WEB_COPY.setupComplete.title)).toBeInTheDocument();
+  });
+
+  it('moves focus to its heading on mount, so a completed save does not leave focus on body', () => {
+    render(<ScreenC {...BASE_PROPS} />);
+    expect(screen.getByRole('heading', { level: 1, name: WEB_COPY.setupComplete.title })).toHaveFocus();
   });
 
   it('renders the three key/value rows: archive channel, admin-only, clip count', () => {

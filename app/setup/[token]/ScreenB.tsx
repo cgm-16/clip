@@ -281,7 +281,10 @@ export function ScreenB({
         </div>
 
         <div className={styles.actions}>
-          <Button type="submit" variant="primary" disabled={pending}>
+          {/* Disabled while the channel 확인 error shows (handoff Screen B
+              "save disabled until resolved"); choosing a channel or the
+              create destination clears that error and re-enables it. */}
+          <Button type="submit" variant="primary" disabled={pending || channelError !== null}>
             {WEB_COPY.setup.save}
           </Button>
           <Button type="button" variant="secondary" onClick={onCancel}>

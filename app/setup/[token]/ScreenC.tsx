@@ -1,4 +1,7 @@
+'use client';
+
 import Link from 'next/link';
+import { useEffect, useRef } from 'react';
 import { Callout } from '@/components/ui/Callout';
 import { MonoChip } from '@/components/ui/MonoChip';
 import { TextTag } from '@/components/ui/TextTag';
@@ -48,13 +51,21 @@ export function ScreenC({
   const copy = WEB_COPY.setupComplete;
   const [rightClickStep, appStep, clipStep] = copy.usageSteps.split(USAGE_STEP_SEPARATOR);
   const [beforeManage, afterManage] = copy.manageChannelNoLongerNeeded.split(MANAGE_CHANNELS_LABEL);
+  // Screen C replaces the submitted form, whose save button unmounts with
+  // it; focusing the title keeps focus off `body` and announces the result.
+  const title = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    title.current?.focus();
+  }, []);
 
   return (
     <div className={styles.page}>
       <div className={styles.card}>
         <div className={styles.heading}>
           <TextTag color="var(--success-text)">{copy.readyTag}</TextTag>
-          <h1 className={styles.title}>{copy.title}</h1>
+          <h1 ref={title} tabIndex={-1} className={styles.title}>
+            {copy.title}
+          </h1>
         </div>
 
         <ConfigTable
