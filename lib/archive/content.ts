@@ -4,6 +4,7 @@ import {
   describeDiscordFailure,
   DiscordApiError,
   DISCORD_ERROR,
+  isUnknownTarget,
   type DiscordRestClient,
 } from '@/lib/discord/rest-client';
 import { logClipEvent } from '@/lib/logging/safe-log';
@@ -121,14 +122,6 @@ function parseSnapshot(body: unknown): Snapshot | null {
     embeds,
     timestamp: text(message.timestamp),
   };
-}
-
-/** Only Discord's own "unknown message/channel" codes confirm a copy is gone. */
-function isUnknownTarget(error: unknown): boolean {
-  return (
-    error instanceof DiscordApiError &&
-    (error.code === DISCORD_ERROR.UNKNOWN_MESSAGE || error.code === DISCORD_ERROR.UNKNOWN_CHANNEL)
-  );
 }
 
 function isAccessDenied(error: unknown): boolean {
