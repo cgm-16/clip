@@ -340,6 +340,41 @@ export function markActive(
 }
 
 /**
+ * Points an ACTIVE Clip at a reposted archive pair, but only while it still
+ * holds `old`. One conditional UPDATE, so the row never passes through ACTIVE
+ * without both ids (`clips_active_requires_archive`).
+ *
+ * Deliberately not `markActive`, which only ever writes over null ids, and not
+ * `advanceLiveClip`, whose tombstone predicate would replace the ACTIVE one.
+ * Requiring both the status and the exact old pair means a Clip that left
+ * ACTIVE, or whose ids a concurrent repost already replaced, reports
+ * `applied: false` -- the caller's pair is then unreferenced and must come
+ * back down.
+ */
+export async function replaceArchiveMessageIds(
+  tx: TxClient,
+  guildId: string,
+  sourceMessageId: string,
+  old: ArchiveMessageIds,
+  next: ArchiveMessageIds,
+): Promise<{ applied: boolean }> {
+  const { count } = await tx.clip.updateMany({
+    where: {
+      guildId,
+      sourceMessageId,
+      status: 'ACTIVE',
+      archiveProvenanceMessageId: old.provenanceMessageId,
+      archiveForwardMessageId: old.forwardMessageId,
+    },
+    data: {
+      archiveProvenanceMessageId: next.provenanceMessageId,
+      archiveForwardMessageId: next.forwardMessageId,
+    },
+  });
+  return { applied: count === 1 };
+}
+
+/**
  * Opens the teardown window, unless the Clip was tombstoned meanwhile.
  *
  * No CHECK can stand behind this one: overwriting a tombstone's status with a
