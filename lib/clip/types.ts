@@ -76,6 +76,14 @@ export interface DiscordArchiveGateway {
 
   /** Deletes both messages. Deleting an already-deleted message is not an error. */
   deleteArchiveMessage(archiveChannelId: string, ids: ArchiveMessageIds): Promise<void>;
+
+  /**
+   * Whether Discord confirms the archive copy is gone: true only on Unknown
+   * Message or Unknown Channel when reading the forward. Any other failure --
+   * an access error, a 5xx, a timeout -- is not proof of absence and reads as
+   * false, because reposting a copy that still exists would duplicate it.
+   */
+  isArchiveCopyMissing(archiveChannelId: string, ids: ArchiveMessageIds): Promise<boolean>;
 }
 
 /** The target message cannot be archived: deleted, invisible, or an unforwardable type. */
