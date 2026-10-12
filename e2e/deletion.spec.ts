@@ -5,13 +5,16 @@ import { seeded, signIn } from './seeded';
 /*
  * The two-step deletion, stopped at its last step. `삭제 실행` is never
  * clicked: the spec only proves it stays disabled until the acknowledgement
- * is ticked, then cancels. A request to the delete endpoint fails the test.
+ * is ticked, then cancels. A browser request to the delete endpoint fails the
+ * test.
  *
  * The suite runs against production, so the delete endpoint is also blocked
- * outright (Ori, 2026-10-12): a future edit that clicks `삭제 실행` by mistake
- * aborts in the browser instead of deleting the test guild's data. This is a
- * safety interlock, not a stand-in for the endpoint, which this spec never
- * exercises.
+ * in the browser (Ori, 2026-10-12): a future edit that clicks `삭제 실행` by
+ * mistake aborts in the browser instead of deleting the test guild's data.
+ * This is a safety interlock, not a stand-in for the endpoint, which this spec
+ * never exercises. The block and the request check see only what this page's
+ * browser sends: `page.request` and `context.request` bypass both and the
+ * endpoint accepts them, so no spec may call delete-data through them.
  */
 test('deletion needs the acknowledgement, and cancelling deletes nothing', async ({ page }) => {
   // The seed prints an empty archive channel for an unconfigured guild.

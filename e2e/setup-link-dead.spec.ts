@@ -12,7 +12,11 @@ const DEAD_LINKS = [
 
 for (const link of DEAD_LINKS) {
   test(`${link.name} opens Screen A`, async ({ page }) => {
+    // Screen A follows any refused exchange, so the refusal itself is checked:
+    // a 401 for the token, not a 403 from an Origin the deployment rejects.
+    const exchange = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/setup/exchange');
     await page.goto(`/setup/${link.token()}`);
+    expect((await exchange).status()).toBe(401);
     await expect(page.getByRole('heading', { name: WEB_COPY.expiredSetupLink.title })).toBeVisible();
   });
 }

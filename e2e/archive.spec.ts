@@ -19,6 +19,15 @@ async function readRange(): Promise<{ start: number; end: number; total: number 
   return { start: Number(start), end: Number(end), total: Number(total) };
 }
 
+/**
+ * A 이전/다음 link inside the pager, matched exactly. Clip cards render embed
+ * titles and file names as links too, so an unscoped substring match on
+ * `다음` or `이전` can resolve to a card's link as well.
+ */
+function pagerLink(name: string) {
+  return page.getByText(RANGE).locator('..').getByRole('link', { name, exact: true });
+}
+
 test.beforeAll(async ({ browser }, testInfo) => {
   page = await browser.newPage({ baseURL: testInfo.project.use.baseURL });
   await signIn(page, 'E2E_ARCHIVE_TOKEN');
@@ -32,7 +41,9 @@ test.afterAll(async () => {
 test('the archive list renders', async () => {
   await page.goto(archiveUrl);
   const count = new RegExp(`^${WEB_COPY_TEMPLATES.clipCount.replace('{count}', '(\\d+)')}$`);
-  const total = Number(count.exec((await page.getByText(count).textContent()) ?? '')?.[1]);
+  // Read from the filter bar: a clip body that says `3개` matches the pattern too.
+  const filterBar = page.getByLabel(WEB_COPY.archive.channelFilterLabel, { exact: true }).locator('..');
+  const total = Number(count.exec((await filterBar.getByText(count).textContent()) ?? '')?.[1]);
   if (total === 0) {
     await expect(page.getByText(WEB_COPY_AUTHORED.archiveEmpty)).toBeVisible();
     return;
@@ -42,6 +53,11 @@ test('the archive list renders', async () => {
   // One card per clip in the range. Cards are counted, not original-message
   // links: a card whose original is unavailable shows a label instead.
   await expect(page.getByRole('article')).toHaveCount(end - start + 1);
+  // A card is an article while it loads and when its read fails too, so the
+  // count alone passes with no body loaded. Wait for the read from Discord to
+  // settle and require that no card failed it; a missing copy is a valid row.
+  await expect(page.locator('[aria-busy="true"]')).toHaveCount(0, { timeout: 30_000 });
+  await expect(page.getByRole('button', { name: WEB_COPY_AUTHORED.retry, exact: true })).toHaveCount(0);
 });
 
 test('pagination moves by page and keeps the page in the URL', async () => {
@@ -49,11 +65,11 @@ test('pagination moves by page and keeps the page in the URL', async () => {
   const first = await page.getByText(RANGE).count() === 0 ? null : await readRange();
   test.skip(first === null || first.end >= first.total, 'The guild has one page of clips or fewer; pagination needs more.');
 
-  await page.getByRole('link', { name: WEB_COPY.archive.nextPage }).click();
+  await pagerLink(WEB_COPY.archive.nextPage).click();
   await expect(page).toHaveURL(/[?&]before=/);
   await expect.poll(readRange).toMatchObject({ start: first!.end + 1, total: first!.total });
 
-  await page.getByRole('link', { name: WEB_COPY.archive.previousPage }).click();
+  await pagerLink(WEB_COPY.archive.previousPage).click();
   await expect(page).toHaveURL(/[?&]after=/);
   await expect.poll(readRange).toEqual(first);
 });

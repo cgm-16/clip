@@ -89,7 +89,9 @@ async function main(): Promise<void> {
       E2E_SETUP_TOKEN: await issue(),
       E2E_ARCHIVE_TOKEN: await issue(),
       E2E_DELETION_TOKEN: await issue(),
-      E2E_EXPIRED_TOKEN: await issue(new Date(now.getTime() - SETUP_TOKEN_TTL_MS - 60_000)),
+      // Expired a day ago by this machine's clock, which the pod's may not match:
+      // no plausible skew between the two can make it live again.
+      E2E_EXPIRED_TOKEN: await issue(new Date(now.getTime() - SETUP_TOKEN_TTL_MS - 24 * 60 * 60 * 1000)),
       E2E_USED_TOKEN: used,
     };
     // Every line is `eval`ed, so refuse the lot unless each value needs no quoting.
