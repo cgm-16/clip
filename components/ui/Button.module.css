@@ -39,10 +39,11 @@
 .secondary:hover:not(:disabled) {
   /*
    * The handoff's hover border (#3a3f46) has no token and tokens.css is not
-   * ours to extend with new colours beyond the two the design ruling
-   * authorized (--accent-text-2, --success-text-2). --border-strong is the
-   * same border already used at rest; the background and text-colour shift
-   * still carry the 120ms hover transition.
+   * ours to extend with new colours beyond those a design ruling authorized
+   * (--accent-text-2, --success-text-2, --control-border,
+   * --error-control-border, --danger-solid-text). --border-strong is the same
+   * border already used at rest; the background and text-colour shift still
+   * carry the 120ms hover transition.
    */
   background: var(--btn-disabled-bg);
   border-color: var(--border-strong);
@@ -59,7 +60,20 @@
   border-color: var(--error-border);
   color: var(--error-text);
 }
-.danger:disabled {
+/*
+ * The handoff's "danger (confirm step)" row: bg #7d3a3a, fg #fff, no hover.
+ */
+.dangerSolid {
+  background: var(--danger-solid);
+  border-color: var(--danger-solid);
+  color: var(--danger-solid-text);
+}
+
+/* Disabled, the solid variant falls back to the outlined danger look. */
+.danger:disabled,
+.dangerSolid:disabled {
+  background: var(--error-surface);
+  border-color: var(--error-border);
   color: var(--faint);
   cursor: not-allowed;
 }

@@ -36,7 +36,7 @@
   max-width: 100%;
   padding: var(--sp-1) var(--sp-2);
   background: var(--sunken);
-  border: var(--hairline) solid var(--border);
+  border: var(--hairline) solid var(--control-border);
   border-radius: var(--radius);
   font: var(--fs-small) var(--font-mono);
   color: var(--text);

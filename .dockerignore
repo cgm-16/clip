@@ -15,3 +15,8 @@ playwright-report
 # code would fail the image build for a reason the image does not care about.
 tests
 vitest.config.mts
+# The Playwright suite and its seed run against a deployment, never in the
+# image, for the same reason.
+e2e
+playwright.config.ts
+scripts/e2e-seed.ts

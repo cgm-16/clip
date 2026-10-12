@@ -1,4 +1,4 @@
-import type { SelectHTMLAttributes } from 'react';
+import type { ComponentProps } from 'react';
 import fieldStyles from './Field.module.css';
 import styles from './Select.module.css';
 
@@ -7,7 +7,7 @@ export interface SelectOption {
   label: string;
 }
 
-export interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, 'children'> {
+export interface SelectProps extends Omit<ComponentProps<'select'>, 'children'> {
   /** Visible label text — always supplied by the caller, never invented here. */
   label: string;
   id: string;

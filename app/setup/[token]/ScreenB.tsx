@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FocusEvent, type FormEvent } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Callout } from '@/components/ui/Callout';
 import { MonoChip } from '@/components/ui/MonoChip';
@@ -16,6 +16,8 @@ import styles from './ScreenB.module.css';
 type Destination = 'create' | 'existing';
 
 const RETRY_COMMAND = '/setup';
+const CHANNEL_ERROR_ID = 'archive-channel-error';
+const SAVE_OUTCOME_ID = 'setup-save-outcome';
 // The save-failed copy wraps a mono "/setup" token; split on the literal
 // command and render the halves around a MonoChip, the same technique
 // ScreenA's recovery callout uses for `WEB_COPY.expiredSetupLink.recovery`.
@@ -105,6 +107,22 @@ export function ScreenB({
   const [channelError, setChannelError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [saveOutcome, setSaveOutcome] = useState<SaveOutcome | null>(null);
+  // A refused submit disables 설정 저장, so focus moves to the select it names.
+  const channelSelect = useRef<HTMLSelectElement>(null);
+  const saveButton = useRef<HTMLButtonElement>(null);
+  // WebKit does not focus a pressed button, so pressing 설정 저장 blurs the
+  // select with no relatedTarget; this marks the press for that blur.
+  const pressingSave = useRef(false);
+
+  // 설정 저장 disables itself while a save runs, which drops its focus in a
+  // browser. A refused save hands focus back to it, described by the refusal
+  // above it, unless the admin has moved focus elsewhere meanwhile.
+  useEffect(() => {
+    const active = document.activeElement;
+    if (!pending && saveOutcome !== null && (active === null || active === document.body)) {
+      saveButton.current?.focus();
+    }
+  }, [pending, saveOutcome]);
 
   function handleDestinationChange(value: string) {
     const next = value as Destination;
@@ -132,13 +150,29 @@ export function ScreenB({
     }
   }
 
-  function handleChannelBlur() {
-    validateChannelSelection(channelId);
+  function handleChannelBlur(event: FocusEvent<HTMLSelectElement>) {
+    // The error disables 설정 저장, so focus heading there would be dropped
+    // before its click runs; it returns to the select the error names. The
+    // return waits a task, since focusing during blur loses to the focus
+    // change already under way.
+    const towardSave = event.relatedTarget === saveButton.current || pressingSave.current;
+    if (!validateChannelSelection(channelId) && towardSave) {
+      setTimeout(() => channelSelect.current?.focus());
+    }
+  }
+
+  function markSavePress() {
+    // The blur this press causes runs in the same task, before the reset.
+    pressingSave.current = true;
+    setTimeout(() => {
+      pressingSave.current = false;
+    });
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!validateChannelSelection(channelId)) {
+      channelSelect.current?.focus();
       return;
     }
 
@@ -192,6 +226,7 @@ export function ScreenB({
               <Callout variant="missing">{WEB_COPY_AUTHORED.archiveChannelMissing}</Callout>
             )}
             <Select
+              ref={channelSelect}
               id="archive-channel"
               label={WEB_COPY.archive.channelFilterLabel}
               mono
@@ -199,6 +234,7 @@ export function ScreenB({
               onChange={(event) => handleChannelChange(event.target.value)}
               onBlur={handleChannelBlur}
               aria-invalid={channelError ? true : undefined}
+              aria-describedby={channelError ? CHANNEL_ERROR_ID : undefined}
               options={[
                 { value: '', label: WEB_COPY_AUTHORED.setupExistingChannelPlaceholder },
                 ...channels.map((channel) => ({
@@ -207,7 +243,12 @@ export function ScreenB({
                 })),
               ]}
             />
-            {channelError && <Callout variant="confirm">{channelError}</Callout>}
+            {channelError && (
+              // Announced on arrival (it appears on submit or blur) and read again with the select.
+              <div id={CHANNEL_ERROR_ID} role="alert">
+                <Callout variant="confirm">{channelError}</Callout>
+              </div>
+            )}
             <p className={styles.warning}>{WEB_COPY.setup.destinationExistingWarning}</p>
           </div>
         )}
@@ -243,7 +284,7 @@ export function ScreenB({
             content changes — the same reasoning the handoff's toast spec
             (line 121) applies to `aria-live="polite"`. `Callout` itself
             supplies no `aria-live`, so it is added here at the call site. */}
-        <div className={styles.saveError} aria-live="polite">
+        <div id={SAVE_OUTCOME_ID} className={styles.saveError} aria-live="polite">
           {saveOutcome?.kind === 'failed' && (
             <Callout variant="error">
               {SAVE_FAILED_BEFORE}
@@ -274,7 +315,17 @@ export function ScreenB({
         </div>
 
         <div className={styles.actions}>
-          <Button type="submit" variant="primary" disabled={pending}>
+          {/* Disabled while the channel 확인 error shows (handoff Screen B
+              "save disabled until resolved"); choosing a channel or the
+              create destination clears that error and re-enables it. */}
+          <Button
+            ref={saveButton}
+            type="submit"
+            variant="primary"
+            disabled={pending || channelError !== null}
+            aria-describedby={saveOutcome ? SAVE_OUTCOME_ID : undefined}
+            onPointerDown={markSavePress}
+          >
             {WEB_COPY.setup.save}
           </Button>
           <Button type="button" variant="secondary" onClick={onCancel}>

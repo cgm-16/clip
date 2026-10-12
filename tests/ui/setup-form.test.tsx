@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 
@@ -60,6 +60,11 @@ describe('ScreenA — expired setup link', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
     expect(screen.queryByRole('radio')).not.toBeInTheDocument();
   });
+
+  it('moves focus to its heading on mount, so a 401 that replaces Screen B does not leave focus on body', () => {
+    render(<ScreenA />);
+    expect(screen.getByRole('heading', { level: 1, name: WEB_COPY.expiredSetupLink.title })).toHaveFocus();
+  });
 });
 
 describe('ScreenB — archive destination configuration', () => {
@@ -117,6 +122,29 @@ describe('ScreenB — archive destination configuration', () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
+  it('announces the channel validation error and ties it to the select', async () => {
+    const user = userEvent.setup();
+    render(<ScreenB channels={CHANNELS} onSubmit={vi.fn()} />);
+
+    await user.click(screen.getByRole('radio', { name: WEB_COPY.setup.destinationExistingLabel }));
+    await user.click(screen.getByRole('button', { name: WEB_COPY.setup.save }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent(WEB_COPY.setup.destinationChannelRequired);
+    expect(screen.getByRole('combobox')).toHaveAccessibleDescription(
+      expect.stringContaining(WEB_COPY.setup.destinationChannelRequired),
+    );
+  });
+
+  it('moves focus to the channel select when a submit is refused, since 설정 저장 disables', async () => {
+    const user = userEvent.setup();
+    render(<ScreenB channels={CHANNELS} onSubmit={vi.fn()} />);
+
+    await user.click(screen.getByRole('radio', { name: WEB_COPY.setup.destinationExistingLabel }));
+    await user.click(screen.getByRole('button', { name: WEB_COPY.setup.save }));
+
+    expect(screen.getByRole('combobox')).toHaveFocus();
+  });
+
   it('validates on blur, before any submit attempt', async () => {
     const user = userEvent.setup();
     render(<ScreenB channels={CHANNELS} onSubmit={vi.fn()} />);
@@ -129,6 +157,77 @@ describe('ScreenB — archive destination configuration', () => {
     expect(screen.getByText(WEB_COPY.setup.destinationChannelRequired)).toBeInTheDocument();
   });
 
+  it('keeps focus on the channel select when blurring it toward 설정 저장, which the error disables', async () => {
+    const user = userEvent.setup();
+    render(<ScreenB channels={CHANNELS} onSubmit={vi.fn()} />);
+
+    await user.click(screen.getByRole('radio', { name: WEB_COPY.setup.destinationExistingLabel }));
+    const select = screen.getByRole('combobox');
+    const save = screen.getByRole('button', { name: WEB_COPY.setup.save });
+    select.focus();
+    act(() => save.focus());
+
+    expect(screen.getByText(WEB_COPY.setup.destinationChannelRequired)).toBeInTheDocument();
+    expect(save).toBeDisabled();
+    await waitFor(() => expect(select).toHaveFocus());
+  });
+
+  it('keeps focus on the channel select when a press on 설정 저장 blurs it to nothing, as in WebKit', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(<ScreenB channels={CHANNELS} onSubmit={onSubmit} />);
+
+    await user.click(screen.getByRole('radio', { name: WEB_COPY.setup.destinationExistingLabel }));
+    const select = screen.getByRole('combobox');
+    const save = screen.getByRole('button', { name: WEB_COPY.setup.save });
+    select.focus();
+    // WebKit does not focus a pressed button, so the press blurs the select with no relatedTarget.
+    fireEvent.pointerDown(save);
+    act(() => select.blur());
+
+    expect(save).toBeDisabled();
+    await waitFor(() => expect(select).toHaveFocus());
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('leaves focus alone when the select blurs to nothing without a press on 설정 저장', async () => {
+    const user = userEvent.setup();
+    render(<ScreenB channels={CHANNELS} onSubmit={vi.fn()} />);
+    const nextTask = () =>
+      act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+    await user.click(screen.getByRole('radio', { name: WEB_COPY.setup.destinationExistingLabel }));
+    const select = screen.getByRole('combobox');
+    // An earlier press on 설정 저장 that blurred nothing does not count for a later blur.
+    fireEvent.pointerDown(screen.getByRole('button', { name: WEB_COPY.setup.save }));
+    await nextTask();
+    select.focus();
+    act(() => select.blur());
+    await nextTask();
+
+    expect(screen.getByRole('alert')).toHaveTextContent(WEB_COPY.setup.destinationChannelRequired);
+    expect(select).not.toHaveFocus();
+  });
+
+  it('hands focus back to 설정 저장 after a refused save, described by the refusal', async () => {
+    const user = userEvent.setup();
+    let settle: (outcome: SaveOutcome) => void = () => {};
+    const onSubmit = vi.fn(() => new Promise<SaveOutcome>((resolve) => (settle = resolve)));
+    render(<ScreenB channels={CHANNELS} onSubmit={onSubmit} />);
+    const save = screen.getByRole('button', { name: WEB_COPY.setup.save });
+
+    await user.click(save);
+    await waitFor(() => expect(save).toBeDisabled());
+    // A browser drops focus from a button that disables itself; jsdom keeps it there.
+    act(() => save.blur());
+    await act(async () => settle({ kind: 'live-clips' }));
+
+    await waitFor(() => expect(save).toHaveFocus());
+    expect(save).toHaveAccessibleDescription(expect.stringContaining(WEB_COPY_AUTHORED.destinationChangeBlocked));
+  });
+
   it('clears the validation error once a channel is chosen', async () => {
     const user = userEvent.setup();
     render(<ScreenB channels={CHANNELS} onSubmit={vi.fn()} />);
@@ -139,6 +238,33 @@ describe('ScreenB — archive destination configuration', () => {
 
     await user.selectOptions(screen.getByRole('combobox'), '#clip-archive');
     expect(screen.queryByText(WEB_COPY.setup.destinationChannelRequired)).not.toBeInTheDocument();
+  });
+
+  it('disables save while the channel 확인 error shows, until a channel is chosen', async () => {
+    const user = userEvent.setup();
+    render(<ScreenB channels={CHANNELS} onSubmit={vi.fn()} />);
+    const saveButton = screen.getByRole('button', { name: WEB_COPY.setup.save });
+
+    await user.click(screen.getByRole('radio', { name: WEB_COPY.setup.destinationExistingLabel }));
+    await user.click(saveButton);
+    expect(screen.getByRole('alert')).toHaveTextContent(WEB_COPY.setup.destinationChannelRequired);
+    expect(saveButton).toBeDisabled();
+
+    await user.selectOptions(screen.getByRole('combobox'), '#clip-archive');
+    expect(saveButton).toBeEnabled();
+  });
+
+  it('re-enables save when the destination switches back to create', async () => {
+    const user = userEvent.setup();
+    render(<ScreenB channels={CHANNELS} onSubmit={vi.fn()} />);
+    const saveButton = screen.getByRole('button', { name: WEB_COPY.setup.save });
+
+    await user.click(screen.getByRole('radio', { name: WEB_COPY.setup.destinationExistingLabel }));
+    await user.click(saveButton);
+    expect(saveButton).toBeDisabled();
+
+    await user.click(screen.getByRole('radio', { name: new RegExp(WEB_COPY.setup.destinationCreateLabel.split(' —')[0]) }));
+    expect(saveButton).toBeEnabled();
   });
 
   it('does not require a channel when the recommended "create new" destination is kept', async () => {
@@ -278,6 +404,11 @@ describe('ScreenC — setup complete', () => {
     expect(screen.getByText(WEB_COPY.setupComplete.title)).toBeInTheDocument();
   });
 
+  it('moves focus to its heading on mount, so a completed save does not leave focus on body', () => {
+    render(<ScreenC {...BASE_PROPS} />);
+    expect(screen.getByRole('heading', { level: 1, name: WEB_COPY.setupComplete.title })).toHaveFocus();
+  });
+
   it('renders the three key/value rows: archive channel, admin-only, clip count', () => {
     render(<ScreenC {...BASE_PROPS} />);
     expect(screen.getByText(WEB_COPY.setupComplete.archiveChannelKey)).toBeInTheDocument();
@@ -378,6 +509,17 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
     expect(
       fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/api/setup/exchange')),
     ).toHaveLength(0);
+  });
+
+  it('announces the load error as an alert', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(null, { status: 502 })),
+    );
+
+    render(<SetupFlow token="fresh-token" />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(WEB_COPY_AUTHORED.setupDataLoadFailed);
   });
 
   it('retries setup data after a load error, then exchanges the still-unspent token exactly once (#62)', async () => {

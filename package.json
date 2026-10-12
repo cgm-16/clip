@@ -9,7 +9,8 @@
     "lint": "next typegen && eslint && tsc --noEmit",
     "lint:design": "tsx scripts/lint-design.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "e2e": "playwright test"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.9.1",
@@ -21,6 +22,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.0",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.5",

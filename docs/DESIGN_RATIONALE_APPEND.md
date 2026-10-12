@@ -317,3 +317,14 @@ When the saved archive channel had been deleted in Discord, the settings flow pr
 The handoff's clip card specifies the reply-provenance line with a `2px` left border (`docs/06_DESIGN_HANDOFF.md` "Clip card", item 2), which conflicts with the general "borders are 1px" rule (CLAUDE.md design rule 5). The component-specific value wins, the same resolution §10.7 applied to other measured component values: the 2px rule is the quote mark that separates provenance from body. The card's embed preview reuses that same left rule.
 
 The handoff's fixed hierarchy has no embed slot, but the restoration design requires "safe embed previews" from the forward's snapshot. Embeds render after the body and code and before attachments, as a title (a link only for `https:` URLs) and a description in body text — no images, colours or interactive components. Recorded during the PR #61 review.
+
+## 17. 2026-10-12 — Form-control boundaries meet WCAG 1.4.11
+
+The 7.1 sweep (#39) measured every text pairing at AA or better. The boundaries of form controls measured only 1.26–1.55:1, below the 3:1 that WCAG 1.4.11 requires for component boundaries. Those were text inputs, selects (including the archive channel filter), the unselected radio ring and the role multi-select's box. Ori chose to change the visuals rather than record a limitation.
+
+- `--control-border`: dark `#62676d`, light `#82878d`. These are the first values in the `--faint`/`--muted` grey family to reach 3.2:1 on every background a control sits on: `--surface`, `--raised` and `--sunken`. The ratios are in the token comments. Cards, dividers, chips, callouts, buttons and disabled borders are unchanged.
+- **Focus border:** inputs and selects use `--focus` (`#8f9fd6`, 7.4:1) for their focus border, not the handoff's `#4A5A8C` (`docs/06_DESIGN_HANDOFF.md`:96). `#4A5A8C` is darker than the new rest border, so focusing a control would have dimmed it. Ori chose `--focus`, the colour of the focus ring and the checked radio.
+- `--error-control-border`: dark `#9f4a4a` (3.24:1 on `--surface`), light `#c76c6c`. This replaces the handoff's `#7d3a3a` (2.3:1) for invalid control outlines, which would otherwise read weaker than a valid control's border. It keeps the hue of `--danger-solid`, which stays on the confirm-step button. Ori approved it. The select had never drawn handoff line 158's invalid border, although it already set `aria-invalid`. It now does.
+- `--danger-solid-text: #ffffff` names the handoff's white text on `--danger-solid` (`docs/06_DESIGN_HANDOFF.md`:90, 8.27:1). Without it, the confirm-step button borrowed a background token.
+
+The light theme has no `--focus` override, so in light a focused control's border (`#8f9fd6`, 2.59:1 on light `--sunken` `#ffffff`) is dimmer than its rest border; P0 ships dark only, and a light `--focus` needs a ruling before a light theme ships.

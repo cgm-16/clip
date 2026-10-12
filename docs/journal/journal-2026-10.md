@@ -186,3 +186,31 @@ Branch `wave/6-verification`. Ori approved splitting the wave. Release images bu
 - After an I2 loss, the reply carries the pair pending deletion. Only `kind` is read.
 
 **What the corrections say about the method:** the lease was designed by the same agent that wrote the plan. Its three defects were found by the two parties who had not designed it: the implementer (the zero-clipper DELETING branch) and the independent reviewer (I1, I2). Mutation-proven tests written with a design prove the windows the designer pictured. They say nothing about the rest. A Wave 6 snapshot entry recording this was appended and then reverted in the review round: `docs/04_ASSIGNMENT_CUMULATIVE_SNAPSHOT.md` is the frozen 2026-08-20 record (CLAUDE.md), and the orchestrator had worked from a stale reading of that rule.
+
+## 2026-10-12 — Wave 6 part 2: the 7.1 sweep and the Playwright suite
+
+Branch `wave/6-verification-2`. It opens before Ori's 6.1/6.3 runs, so those runs and the e2e run measure the final UI. #63 and the run results follow in a last PR.
+
+**7.1 (#39) sweep:** a static audit, a WCAG contrast computation from `tokens.css`, and a live Playwright pass at 1280/960/375 against a seeded local dev server. Discord calls failed locally, so Screens B, C and the edit page ran on browser-stubbed client data.
+- Passed as built: visible focus, labels, keyboard use including the role multi-select, text tags, consequence copy, `--faint` only on disabled controls, no horizontal page scroll, the ≤640/≤960 rules, and long code staying inside `overflow-x: auto`.
+- Fixed:
+  - Focus is kept through the deletion flow (open, cancel, failure).
+  - Screen B's channel error and the load-error screen are alerts.
+  - Save stays disabled while the channel error shows (handoff line 158).
+  - Screen C's heading takes focus after setup.
+  - A refused save focuses the channel select.
+  - `삭제 실행` is the handoff's solid danger button.
+- **Contrast:** every text pair passes AA. Control boundaries measured 1.26–1.55:1 against the 3:1 that WCAG 1.4.11 requires. Ori chose to change the visuals, recorded in DESIGN_RATIONALE §17: `--control-border`, a `--focus` focus border, and `--error-control-border`.
+- **Instrument note:** the before and after screenshots of Screen B looked identical to the eye at review scale. Sampling the border pixels (47,51,57 → 98,103,109) confirmed the change; the screenshots alone did not.
+
+**6.4 (#38):** `@playwright/test`, with four flows against `E2E_BASE_URL`. It is not in the merge gate.
+- Sign-in spends real setup tokens issued by `scripts/e2e-seed.ts` through the app's own service.
+- The configured-guild setup flow re-saves the current values. The seed refuses a `--user` other than the configurer, so `configuredByUserId` is never rewritten.
+- The deletion spec aborts `/delete-data` in the browser, an interlock Ori approved, and never clicks `삭제 실행`.
+- Locally 7 of 8 pass. The setup spec needs a real bot token for `/setup/data`.
+
+**Deferred:**
+- Safari does not make scrollable `<pre>` focusable.
+- At 375px the identity bar wraps a long guild name into a narrow column.
+- The light theme has no `--focus` override (§17).
+- The seed header's local recipe assumes `.env` points at the dev database.
