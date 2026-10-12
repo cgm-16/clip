@@ -15,6 +15,11 @@ import styles from './SettingsScreen.module.css';
 const RETRY_COMMAND = '/setup';
 const [RECOVERY_BEFORE, RECOVERY_AFTER] = WEB_COPY.expiredSetupLink.recovery.split(RETRY_COMMAND);
 
+// The confirm panel's copy, which describes the acknowledgement that confirms it.
+const CONSEQUENCES_ID = 'delete-confirm-consequences';
+const LOSES_CONTROL_ID = 'delete-confirm-loses-control';
+const FAILED_ID = 'delete-confirm-failed';
+
 type DeleteFlow = 'idle' | 'confirming' | 'deleting' | 'failed' | 'deleted' | 'expired';
 
 export type SettingsScreenProps = {
@@ -39,6 +44,9 @@ export function SettingsScreen(props: SettingsScreenProps) {
   const copy = WEB_COPY.deleteData;
   const [flow, setFlow] = useState<DeleteFlow>('idle');
   const [acknowledged, setAcknowledged] = useState(false);
+  // The saved toast greets the arrival from an edit. Opening the deletion
+  // panel hides it for good, so 취소 does not announce a save that never ran.
+  const [savedToast, setSavedToast] = useState(props.saved);
   // The start button is disabled while the panel is open, so 취소 hands focus
   // back to it once it is enabled again rather than leaving it on the page body.
   const startButton = useRef<HTMLButtonElement>(null);
@@ -50,16 +58,22 @@ export function SettingsScreen(props: SettingsScreenProps) {
 
   // Success unmounts the confirm panel that held focus, so focus moves to the result.
   const deletionResult = useRef<HTMLDivElement>(null);
+  const confirmPanel = useRef<HTMLElement>(null);
 
   useEffect(() => {
     if (flow === 'idle' && returnFocusToStart.current) {
       returnFocusToStart.current = false;
       startButton.current?.focus();
     }
-    if (flow === 'failed') {
+    // Both rescues are for focus the request dropped (on body, or still in the
+    // panel). An admin who moved on while it ran, e.g. to 설정 변경, keeps theirs.
+    const active = document.activeElement;
+    const focusDropped =
+      active === null || active === document.body || confirmPanel.current?.contains(active) === true;
+    if (flow === 'failed' && focusDropped) {
       acknowledgement.current?.focus();
     }
-    if (flow === 'deleted') {
+    if (flow === 'deleted' && focusDropped) {
       deletionResult.current?.focus();
     }
   }, [flow]);
@@ -104,7 +118,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
       <AdminHeader guildId={props.guildId} guildLabel={props.guildLabel} active="settings" />
       {/* Always mounted, so both the saved toast and the deletion result are announced. */}
       <div aria-live="polite" className={styles.toast}>
-        {props.saved && flow === 'idle' && <Callout variant="ok">{WEB_COPY.setup.saved}</Callout>}
+        {savedToast && flow === 'idle' && <Callout variant="ok">{WEB_COPY.setup.saved}</Callout>}
         {flow === 'deleted' && (
           <div ref={deletionResult} tabIndex={-1} className={styles.done}>
             <Callout variant="ok">{WEB_COPY_AUTHORED.deletionCompleted}</Callout>
@@ -138,7 +152,15 @@ export function SettingsScreen(props: SettingsScreenProps) {
               <legend className={styles.dangerLegend}>{copy.dangerZoneLegend}</legend>
               <p className={styles.dangerText}>{copy.dangerZoneExplanation}</p>
               <div>
-                <Button ref={startButton} variant="danger" onClick={() => setFlow('confirming')} disabled={panelOpen}>
+                <Button
+                  ref={startButton}
+                  variant="danger"
+                  onClick={() => {
+                    setSavedToast(false);
+                    setFlow('confirming');
+                  }}
+                  disabled={panelOpen}
+                >
                   {copy.startDeletion}
                 </Button>
               </div>
@@ -146,11 +168,11 @@ export function SettingsScreen(props: SettingsScreenProps) {
           </section>
 
           {panelOpen && (
-            <section className={styles.confirm} aria-labelledby="delete-confirm-title">
+            <section ref={confirmPanel} className={styles.confirm} aria-labelledby="delete-confirm-title">
               <h2 id="delete-confirm-title" className={styles.confirmTitle}>
                 {copy.confirmTitle}
               </h2>
-              <ul className={styles.consequences}>
+              <ul id={CONSEQUENCES_ID} className={styles.consequences}>
                 {consequences.map(({ mark, text }) => (
                   <li key={text} className={styles.consequence}>
                     <TextTag color={mark === copy.removedMark ? 'var(--error-text)' : 'var(--success-text)'}>
@@ -160,19 +182,25 @@ export function SettingsScreen(props: SettingsScreenProps) {
                   </li>
                 ))}
               </ul>
-              <p className={styles.dangerText}>{WEB_COPY_AUTHORED.deletionLosesControlState}</p>
+              <p id={LOSES_CONTROL_ID} className={styles.dangerText}>
+                {WEB_COPY_AUTHORED.deletionLosesControlState}
+              </p>
               <label className={styles.acknowledge}>
-                {/* Opening disables the focused start button; focus moves to the panel's first control. */}
+                {/* Opening disables the focused start button; focus moves to the panel's first control.
+                    That skips the copy above, so the box is described by it, and by a failure once there is one. */}
                 <input
                   ref={acknowledgement}
                   type="checkbox"
                   autoFocus
+                  aria-describedby={[flow === 'failed' ? FAILED_ID : null, CONSEQUENCES_ID, LOSES_CONTROL_ID]
+                    .filter(Boolean)
+                    .join(' ')}
                   checked={acknowledged}
                   onChange={(event) => setAcknowledged(event.target.checked)}
                 />
                 {copy.acknowledgement}
               </label>
-              <div aria-live="polite">
+              <div id={FAILED_ID} aria-live="polite">
                 {flow === 'failed' && <Callout variant="error">{WEB_COPY_AUTHORED.deletionFailed}</Callout>}
               </div>
               <div className={styles.actions}>

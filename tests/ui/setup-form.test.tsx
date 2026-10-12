@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 
@@ -59,6 +59,11 @@ describe('ScreenA — expired setup link', () => {
     render(<ScreenA />);
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
     expect(screen.queryByRole('radio')).not.toBeInTheDocument();
+  });
+
+  it('moves focus to its heading on mount, so a 401 that replaces Screen B does not leave focus on body', () => {
+    render(<ScreenA />);
+    expect(screen.getByRole('heading', { level: 1, name: WEB_COPY.expiredSetupLink.title })).toHaveFocus();
   });
 });
 
@@ -165,6 +170,62 @@ describe('ScreenB — archive destination configuration', () => {
     expect(screen.getByText(WEB_COPY.setup.destinationChannelRequired)).toBeInTheDocument();
     expect(save).toBeDisabled();
     await waitFor(() => expect(select).toHaveFocus());
+  });
+
+  it('keeps focus on the channel select when a press on 설정 저장 blurs it to nothing, as in WebKit', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(<ScreenB channels={CHANNELS} onSubmit={onSubmit} />);
+
+    await user.click(screen.getByRole('radio', { name: WEB_COPY.setup.destinationExistingLabel }));
+    const select = screen.getByRole('combobox');
+    const save = screen.getByRole('button', { name: WEB_COPY.setup.save });
+    select.focus();
+    // WebKit does not focus a pressed button, so the press blurs the select with no relatedTarget.
+    fireEvent.pointerDown(save);
+    act(() => select.blur());
+
+    expect(save).toBeDisabled();
+    await waitFor(() => expect(select).toHaveFocus());
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('leaves focus alone when the select blurs to nothing without a press on 설정 저장', async () => {
+    const user = userEvent.setup();
+    render(<ScreenB channels={CHANNELS} onSubmit={vi.fn()} />);
+    const nextTask = () =>
+      act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+    await user.click(screen.getByRole('radio', { name: WEB_COPY.setup.destinationExistingLabel }));
+    const select = screen.getByRole('combobox');
+    // An earlier press on 설정 저장 that blurred nothing does not count for a later blur.
+    fireEvent.pointerDown(screen.getByRole('button', { name: WEB_COPY.setup.save }));
+    await nextTask();
+    select.focus();
+    act(() => select.blur());
+    await nextTask();
+
+    expect(screen.getByRole('alert')).toHaveTextContent(WEB_COPY.setup.destinationChannelRequired);
+    expect(select).not.toHaveFocus();
+  });
+
+  it('hands focus back to 설정 저장 after a refused save, described by the refusal', async () => {
+    const user = userEvent.setup();
+    let settle: (outcome: SaveOutcome) => void = () => {};
+    const onSubmit = vi.fn(() => new Promise<SaveOutcome>((resolve) => (settle = resolve)));
+    render(<ScreenB channels={CHANNELS} onSubmit={onSubmit} />);
+    const save = screen.getByRole('button', { name: WEB_COPY.setup.save });
+
+    await user.click(save);
+    await waitFor(() => expect(save).toBeDisabled());
+    // A browser drops focus from a button that disables itself; jsdom keeps it there.
+    act(() => save.blur());
+    await act(async () => settle({ kind: 'live-clips' }));
+
+    await waitFor(() => expect(save).toHaveFocus());
+    expect(save).toHaveAccessibleDescription(expect.stringContaining(WEB_COPY_AUTHORED.destinationChangeBlocked));
   });
 
   it('clears the validation error once a channel is chosen', async () => {

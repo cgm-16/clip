@@ -1,3 +1,6 @@
+'use client';
+
+import { useEffect, useRef } from 'react';
 import { Callout } from '@/components/ui/Callout';
 import { MonoChip } from '@/components/ui/MonoChip';
 import { WEB_COPY } from '@/lib/ui/copy';
@@ -24,13 +27,21 @@ export function ScreenA() {
   // callout's rendered text identical to the copy string character for
   // character, rather than hand-writing the sentence around the chip.
   const [beforeCommand, afterCommand] = copy.recovery.split(RECOVERY_COMMAND);
+  // A 401 on save swaps this in for Screen B, whose 설정 저장 held focus;
+  // focusing the title keeps focus off `body` and announces it, as Screen C does.
+  const title = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    title.current?.focus();
+  }, []);
 
   return (
     <div className={styles.container}>
       <div className={styles.card}>
         <Wordmark />
         <div className={styles.body}>
-          <h1 className={styles.title}>{copy.title}</h1>
+          <h1 ref={title} tabIndex={-1} className={styles.title}>
+            {copy.title}
+          </h1>
           <p className={styles.explanation}>{copy.explanation}</p>
         </div>
         <Callout variant="note">
