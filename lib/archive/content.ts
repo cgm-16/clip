@@ -137,7 +137,7 @@ function isAccessDenied(error: unknown): boolean {
 function logReadFailure(
   guildId: string,
   sourceMessageId: string | undefined,
-  step: 'forward_history_read' | 'forward_read' | 'source_read',
+  step: 'forward_history_read' | 'forward_read',
   error: unknown,
 ): void {
   logClipEvent({
@@ -217,12 +217,14 @@ async function mapWithConcurrency<T, R>(
  * Every forward lives in the one archive channel, so all rows share one
  * Discord rate-limit bucket. One history read of that channel, starting just
  * before the lowest wanted forward, serves every forward it lists. Each row
- * then costs one or two reads, run in sequence inside one of at most four
- * concurrent slots: the forward (content), only when the history did not list
- * it, and the source message (reply author and whether the original still
- * exists). Only a per-row forward read can prove a copy is missing. A history
- * read still rate-limited after retries skips every per-row forward read:
- * each unlisted row fails with that error instead, logged once.
+ * then costs at most one read, inside one of at most four concurrent slots:
+ * the forward (content), only when the history did not list it. Only a
+ * per-row forward read can prove a copy is missing. There is no read of the
+ * source message, so `original` is always `unknown` and `replyToAuthorName`
+ * always null: those reads share one source channel's rate-limit bucket
+ * (spec amendment 2026-10-14, #95). A history read still rate-limited after
+ * retries skips every per-row forward read: each unlisted row fails with
+ * that error instead, logged once.
  */
 export async function loadArchiveContent(input: {
   guildId: string;
@@ -238,7 +240,7 @@ export async function loadArchiveContent(input: {
     findGuildArchiveConfig(input.guildId),
     getPrismaClient().clip.findMany({
       where: { guildId: input.guildId, status: 'ACTIVE', sourceMessageId: { in: [...ids] } },
-      select: { sourceMessageId: true, sourceChannelId: true, authorUserId: true, archiveForwardMessageId: true },
+      select: { sourceMessageId: true, authorUserId: true, archiveForwardMessageId: true },
     }),
   ]);
   if (config === null) {
@@ -290,27 +292,11 @@ export async function loadArchiveContent(input: {
       }
     }
 
-    let original: OriginalStatus = 'unknown';
-    let replyToAuthorName: string | null = null;
-    try {
-      const source = record(
-        await input.client.request('GET', `/channels/${row.sourceChannelId}/messages/${sourceMessageId}`),
-      );
-      original = 'available';
-      // Only the parent's author is read; its body is never touched.
-      if (record(source?.message_reference)?.message_id) {
-        replyToAuthorName = text(record(record(source?.referenced_message)?.author)?.username);
-      }
-    } catch (error) {
-      logReadFailure(input.guildId, sourceMessageId, 'source_read', error);
-      original = isUnknownTarget(error) ? 'unavailable' : 'unknown';
-    }
-
     const base: RowBase = {
       sourceMessageId,
       authorName: await authorName(row.authorUserId),
       originalAt: snowflakeTime(sourceMessageId),
-      original,
+      original: 'unknown',
     };
     if (forwardError !== null) {
       if (isUnknownTarget(forwardError)) {
@@ -328,7 +314,7 @@ export async function loadArchiveContent(input: {
       body: parsed.body,
       attachments: parsed.attachments,
       embeds: parsed.embeds,
-      replyToAuthorName,
+      replyToAuthorName: null,
     };
   });
   return { kind: 'OK', items };

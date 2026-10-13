@@ -129,7 +129,6 @@ describe('loadArchiveContent', () => {
   function paths(row: Seeded) {
     return {
       forward: `/channels/${ARCHIVE_CHANNEL}/messages/${row.forwardId}`,
-      source: `/channels/${row.sourceChannelId}/messages/${row.sourceMessageId}`,
     };
   }
 
@@ -147,10 +146,10 @@ describe('loadArchiveContent', () => {
     return result.items[0];
   }
 
-  test('a ready row splits code, keeps safe attachments and embeds, and reads only the reply author', async () => {
+  test('a ready row splits code, keeps safe attachments and embeds', async () => {
     const guildId = await configuredGuild();
     const row = await seedRow(guildId);
-    const { forward, source } = paths(row);
+    const { forward } = paths(row);
     const item = await loadOne(row, guildId, (path) => {
       if (path === forward) {
         return snapshot({
@@ -162,12 +161,6 @@ describe('loadArchiveContent', () => {
           embeds: [{ title: 'T', description: 'D', url: 'https://example.com' }],
         });
       }
-      if (path === source) {
-        return {
-          message_reference: { message_id: 'p1' },
-          referenced_message: { author: { username: 'parent' }, content: 'PARENT-SECRET-BODY' },
-        };
-      }
       throw new Error(`unexpected ${path}`);
     });
 
@@ -176,7 +169,7 @@ describe('loadArchiveContent', () => {
       state: 'ready',
       authorName: 'ori',
       originalAt: '2026-10-01T09:00:00.000Z',
-      original: 'available',
+      original: 'unknown',
       body: [
         { kind: 'text', text: 'hello\n' },
         { kind: 'code', text: 'const a = 1;\n' },
@@ -187,16 +180,31 @@ describe('loadArchiveContent', () => {
         { filename: 'b.txt', url: 'https://cdn.discordapp.com/b.txt', isImage: false },
       ],
       embeds: [{ title: 'T', description: 'D', url: 'https://example.com' }],
-      replyToAuthorName: 'parent',
+      replyToAuthorName: null,
     });
-    expect(JSON.stringify(item)).not.toContain('PARENT-SECRET-BODY');
   });
 
-  test('a confirmed unknown forward is missing, dated from the snowflake; an unknown source is unavailable', async () => {
+  test('makes no read of the source message; original and reply author stay unknown', async () => {
+    const guildId = await configuredGuild();
+    const row = await seedRow(guildId);
+    const { forward } = paths(row);
+    const stub = stubClient((path) => (path === forward ? snapshot({ content: 'hi' }) : {}));
+    const result = await loadArchiveContent({
+      guildId,
+      sourceMessageIds: [row.sourceMessageId],
+      client: stub.client,
+      lookupUserName: async () => 'ori',
+    });
+
+    expect(stub.request.mock.calls.filter(([, path]) => path.startsWith(`/channels/${row.sourceChannelId}/messages/`))).toEqual([]);
+    expect(result).toMatchObject({ kind: 'OK', items: [{ state: 'ready', original: 'unknown', replyToAuthorName: null }] });
+  });
+
+  test('a confirmed unknown forward is missing, dated from the snowflake', async () => {
     const guildId = await configuredGuild();
     const row = await seedRow(guildId);
     const item = await loadOne(row, guildId, () => unknownMessage());
-    expect(item).toMatchObject({ state: 'missing', original: 'unavailable', originalAt: snowflakeTime(row.sourceMessageId) });
+    expect(item).toMatchObject({ state: 'missing', original: 'unknown', originalAt: snowflakeTime(row.sourceMessageId) });
   });
 
   test('missing access is an access error, never missing', async () => {
@@ -204,7 +212,7 @@ describe('loadArchiveContent', () => {
     const row = await seedRow(guildId);
     const { forward } = paths(row);
     const item = await loadOne(row, guildId, (path) => (path === forward ? missingAccess() : {}));
-    expect(item).toMatchObject({ state: 'error', reason: 'access', original: 'available' });
+    expect(item).toMatchObject({ state: 'error', reason: 'access', original: 'unknown' });
   });
 
   test('a timeout is transient', async () => {
@@ -241,7 +249,7 @@ describe('loadArchiveContent', () => {
     });
   });
 
-  test('timed-out forward and source reads log one line each, never the message', async () => {
+  test('a timed-out forward read logs one line, never the message', async () => {
     const guildId = await configuredGuild();
     const row = await seedRow(guildId);
     await loadOne(row, guildId, () => new DOMException(SENTINEL_MESSAGE, 'TimeoutError'));
@@ -254,13 +262,6 @@ describe('loadArchiveContent', () => {
         guildId,
         sourceMessageId: row.sourceMessageId,
         step: 'forward_read',
-        failure: 'timeout',
-      },
-      {
-        event: 'archive.content_read_failed',
-        guildId,
-        sourceMessageId: row.sourceMessageId,
-        step: 'source_read',
         failure: 'timeout',
       },
     ]);
@@ -329,7 +330,7 @@ describe('loadArchiveContent', () => {
     expect(result.items.map((item) => item.authorName)).toEqual(['samename', 'samename', 'samename', null]);
   });
 
-  test('twenty rows absent from the history make one history read and forty row reads, never more than four at once', async () => {
+  test('twenty rows absent from the history make one history read and twenty row reads, never more than four at once', async () => {
     const guildId = await configuredGuild();
     const rows: Seeded[] = [];
     for (let i = 0; i < 20; i++) rows.push(await seedRow(guildId));
@@ -341,7 +342,7 @@ describe('loadArchiveContent', () => {
       lookupUserName: async () => null,
     });
     expect(result.kind).toBe('OK');
-    expect(stub.request).toHaveBeenCalledTimes(41);
+    expect(stub.request).toHaveBeenCalledTimes(21);
     expect(stub.maxInFlight()).toBeLessThanOrEqual(4);
     expect(stub.maxInFlight()).toBeGreaterThan(1);
   });
@@ -365,9 +366,9 @@ describe('loadArchiveContent', () => {
     expect(result.kind).toBe('OK');
     if (result.kind !== 'OK') throw new Error('expected OK');
     expect(result.items.map((item) => item.sourceMessageId)).toEqual([mine.sourceMessageId]);
-    // The history read plus two reads for the one ACTIVE row of this guild,
-    // none for the others.
-    expect(stub.request).toHaveBeenCalledTimes(3);
+    // The history read plus one forward read for the one ACTIVE row of this
+    // guild, none for the others.
+    expect(stub.request).toHaveBeenCalledTimes(2);
     expect(stub.request.mock.calls.every(([, path]) => !path.includes(foreign.forwardId))).toBe(true);
   });
 
@@ -518,10 +519,9 @@ describe('loadArchiveContent', () => {
       const items = await load(guildId, rows, stub);
 
       expect(calledPaths(stub).filter((path) => path.startsWith(`/channels/${ARCHIVE_CHANNEL}/messages/`))).toEqual([]);
-      expect(calledPaths(stub)).toEqual(expect.arrayContaining(rows.map((row) => paths(row).source)));
       expect(items).toMatchObject([
-        { state: 'error', reason: 'transient', original: 'available' },
-        { state: 'error', reason: 'transient', original: 'available' },
+        { state: 'error', reason: 'transient', original: 'unknown' },
+        { state: 'error', reason: 'transient', original: 'unknown' },
       ]);
       const lines = rawLogLines();
       expect(lines.join('\n')).not.toContain('SENTINEL');
