@@ -22,6 +22,7 @@ import {
 import {
   createDiscordRestClient,
   describeDiscordFailure,
+  DISCORD_ERROR,
   DiscordApiError,
 } from '@/lib/discord/rest-client';
 import { parseEnv } from '@/lib/env';
@@ -57,6 +58,10 @@ const ROLE_OVERWRITE_TYPE = 0;
 const MEMBER_OVERWRITE_TYPE = 1;
 
 const ARCHIVE_CHANNEL_NAME = 'clip-archive';
+
+// Stands in for the created channel when Discord refuses the create for a
+// missing permission, so the refusal is answered from that request alone.
+const CREATE_CHANNEL_MISSING_PERMISSIONS = Symbol('CREATE_CHANNEL_MISSING_PERMISSIONS');
 
 function parseCreatedChannel(body: unknown): { id: string; name: string } | null {
   if (typeof body !== 'object' || body === null) {
@@ -255,8 +260,20 @@ export async function POST(request: NextRequest) {
           guildId,
           ...describeDiscordFailure(error),
         });
+        // Only Discord's own Missing Permissions code names the cause: a
+        // bare 403 can come from an edge proxy, and Missing Access (50001)
+        // means the bot cannot reach the guild at all.
+        if (error instanceof DiscordApiError && error.code === DISCORD_ERROR.MISSING_PERMISSIONS) {
+          return CREATE_CHANNEL_MISSING_PERMISSIONS;
+        }
         throw error;
       });
+      if (created === CREATE_CHANNEL_MISSING_PERMISSIONS) {
+        return Response.json(
+          { reason: 'CREATE_CHANNEL_MISSING_PERMISSIONS', missingPermissions: ['MANAGE_CHANNELS'] },
+          { status: 422 },
+        );
+      }
       const parsedChannel = parseCreatedChannel(created);
       if (!parsedChannel) {
         return new Response(null, { status: 502 });
@@ -268,7 +285,7 @@ export async function POST(request: NextRequest) {
     // GuildUnavailableError: the bot can no longer see this guild (kicked,
     // guild deleted) -- same distinction `app/setup/data/route.ts` draws.
     // Anything else (a lookup failure, a DiscordApiError creating the
-    // channel -- e.g. MANAGE_CHANNELS was revoked) is a Discord-side failure,
+    // channel other than Missing Permissions) is a Discord-side failure,
     // not the session's.
     if (error instanceof GuildUnavailableError) {
       return new Response(null, { status: 404 });

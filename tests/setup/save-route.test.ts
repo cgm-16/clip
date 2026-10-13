@@ -391,7 +391,7 @@ describe('POST /setup/save', () => {
     expect(response.status).toBe(200);
   });
 
-  test('logs the Discord status and code when channel creation is refused, and returns 502', async () => {
+  test('names MANAGE_CHANNELS when Discord refuses channel creation with Missing Permissions, and logs it', async () => {
     stubEnv();
     authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
     const createError = new DiscordApiError('Missing Permissions', { status: 403, code: 50013 });
@@ -405,8 +405,11 @@ describe('POST /setup/save', () => {
 
     const response = await POST(postJson({ destination: 'create', channelId: null, allowedRoleIds: [], guildId: GUILD_ID }));
 
-    expect(response.status).toBe(502);
-    expect(await response.text()).toBe('');
+    expect(response.status).toBe(422);
+    expect(await response.json()).toEqual({
+      reason: 'CREATE_CHANNEL_MISSING_PERMISSIONS',
+      missingPermissions: ['MANAGE_CHANNELS'],
+    });
     const lines = logged.mock.calls.map(([line]) => JSON.parse(line as string));
     expect(lines).toEqual([
       {
@@ -419,6 +422,44 @@ describe('POST /setup/save', () => {
     ]);
     expect(JSON.stringify(lines)).not.toContain(createError.message);
     expect(finalizeGuildArchiveConfig).not.toHaveBeenCalled();
+  });
+
+  // A bare 403 can come from an edge proxy, and 50001 means the bot cannot
+  // reach the guild at all; neither says which permission is missing.
+  test.each([
+    { status: 500, code: null },
+    { status: 403, code: null },
+    { status: 403, code: 50001 },
+  ])('any other channel creation refusal ($status/$code) is a bare 502, still logged', async ({ status, code }) => {
+    stubEnv();
+    authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
+    discordRequest.mockImplementation(async (method: string) => {
+      if (method === 'GET') {
+        return { id: BOT_USER_ID };
+      }
+      throw new DiscordApiError('refused', { status, code });
+    });
+    const logged = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const response = await POST(postJson({ destination: 'create', channelId: null, allowedRoleIds: [], guildId: GUILD_ID }));
+
+    expect(response.status).toBe(502);
+    expect(await response.text()).toBe('');
+    expect(logged.mock.calls.map(([line]) => JSON.parse(line as string).event)).toEqual([
+      'setup.archive_channel_create_failed',
+    ]);
+    expect(finalizeGuildArchiveConfig).not.toHaveBeenCalled();
+  });
+
+  test('a Missing Permissions refusal of the bot identity lookup is a bare 502, not the create refusal', async () => {
+    stubEnv();
+    authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
+    discordRequest.mockRejectedValue(new DiscordApiError('Missing Permissions', { status: 403, code: 50013 }));
+
+    const response = await POST(postJson({ destination: 'create', channelId: null, allowedRoleIds: [], guildId: GUILD_ID }));
+
+    expect(response.status).toBe(502);
+    expect(await response.text()).toBe('');
   });
 
   test('a failed bot identity lookup is not logged as a channel creation failure', async () => {

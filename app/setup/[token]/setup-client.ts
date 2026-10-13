@@ -145,6 +145,9 @@ export async function saveOutcomeOf(response: Response): Promise<SaveOutcome> {
     if (body?.reason === 'MISSING_PERMISSIONS' && isStringArray(body.missingPermissions)) {
       return { kind: 'missing-permissions', missingPermissions: body.missingPermissions };
     }
+    if (body?.reason === 'CREATE_CHANNEL_MISSING_PERMISSIONS' && isStringArray(body.missingPermissions)) {
+      return { kind: 'create-channel-missing-permissions', missingPermissions: body.missingPermissions };
+    }
   }
   return { kind: 'failed' };
 }
