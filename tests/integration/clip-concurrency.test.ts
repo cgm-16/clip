@@ -423,6 +423,8 @@ describe('clip service under concurrency', () => {
       // The reply names the pair the row now holds, never the one just deleted.
       expect(await clipAs(fixture, fakeSnowflake())).toEqual({ kind: 'CLIPPER_ADDED', archive: PAIR_2 });
 
+      // A takeover rebuilds the archive itself; it never asks whether a copy is gone.
+      expect(gateway.missingChecks).toEqual([]);
       expect(gateway.deleteCalls.map((call) => call.ids)).toEqual([PAIR_1, PAIR_1]);
       expect(gateway.createCalls).toHaveLength(2);
       const clip = await readClip(fixture);
@@ -690,6 +692,8 @@ describe('clip service under concurrency', () => {
       expect((await clipAs(fixture, fakeSnowflake())).kind).toBe('CREATED');
 
       expect(second?.kind).toBe('CLIPPER_ADDED');
+      // A PENDING Clip has no copy to have lost yet.
+      expect(gateway.missingChecks).toEqual([]);
       expect(gateway.createCalls).toHaveLength(1);
       expect(gateway.deleteCalls).toHaveLength(0);
       const clip = await readClip(fixture);

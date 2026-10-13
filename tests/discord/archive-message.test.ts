@@ -466,3 +466,82 @@ describe('deleteArchiveMessage', () => {
     ).rejects.toBeDefined();
   });
 });
+
+describe('isArchiveCopyMissing', () => {
+  const PAIR = { provenanceMessageId: PROVENANCE_ID, forwardMessageId: FORWARD_ID };
+
+  function loggedLines(log: { mock: { calls: unknown[][] } }): string[] {
+    return log.mock.calls.map(([line]) => String(line));
+  }
+
+  test('reads the forward in the archive channel and finds it present', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    // A forward's response carries the source body in its snapshot; it must
+    // be discarded unread, never logged.
+    const { fetchImpl, calls } = stubFetch([
+      json({ id: FORWARD_ID, message_snapshots: [{ message: { content: SECRET_BODY } }] }),
+    ]);
+    const gateway = createDiscordArchiveGateway({ botToken: BOT_TOKEN, fetchImpl });
+
+    expect(await gateway.isArchiveCopyMissing(ARCHIVE_CHANNEL_ID, PAIR)).toBe(false);
+
+    expect(calls.map((c) => c.method)).toEqual(['GET']);
+    expect(calls[0].url).toContain(`/channels/${ARCHIVE_CHANNEL_ID}/messages/${FORWARD_ID}`);
+    expect(loggedLines(log).join('\n')).not.toContain(SECRET_BODY);
+  });
+
+  test.each([
+    ['Unknown Message', 10008],
+    ['Unknown Channel', 10003],
+  ])('%s confirms the copy is gone', async (_name, code) => {
+    const { fetchImpl } = stubFetch([json({ code, message: SECRET_BODY }, 404)]);
+    const gateway = createDiscordArchiveGateway({ botToken: BOT_TOKEN, fetchImpl });
+
+    expect(await gateway.isArchiveCopyMissing(ARCHIVE_CHANNEL_ID, PAIR)).toBe(true);
+  });
+
+  test.each([
+    ['Missing Access', json({ code: 50001, message: 'Missing Access' }, 403), { httpStatus: '403', discordCode: '50001' }],
+    ['Missing Permissions', json({ code: 50013, message: 'Missing Permissions' }, 403), { httpStatus: '403', discordCode: '50013' }],
+    ['a bare 403', json(null, 403), { httpStatus: '403' }],
+    ['a 5xx', json({ code: 0, message: 'Internal Server Error' }, 500), { httpStatus: '500', discordCode: '0' }],
+  ])('%s is not proof the copy is gone', async (_name, response, facts) => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const { fetchImpl } = stubFetch([response]);
+    const gateway = createDiscordArchiveGateway({ botToken: BOT_TOKEN, fetchImpl });
+
+    expect(await gateway.isArchiveCopyMissing(ARCHIVE_CHANNEL_ID, PAIR)).toBe(false);
+
+    expect(loggedLines(log).map((line) => JSON.parse(line))).toEqual([
+      {
+        event: 'clip.archive_check_failed',
+        archiveForwardMessageId: FORWARD_ID,
+        step: 'forward_read',
+        failure: 'http',
+        ...facts,
+      },
+    ]);
+  });
+
+  test.each([
+    ['a timeout', new DOMException(SECRET_BODY, 'TimeoutError'), 'timeout'],
+    ['a network failure', new TypeError(SECRET_BODY), 'network'],
+  ])('%s is not proof the copy is gone', async (_name, thrown, failure) => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const { fetchImpl } = stubFetch([thrown]);
+    const gateway = createDiscordArchiveGateway({ botToken: BOT_TOKEN, fetchImpl });
+
+    expect(await gateway.isArchiveCopyMissing(ARCHIVE_CHANNEL_ID, PAIR)).toBe(false);
+
+    const lines = loggedLines(log);
+    expect(lines.join('\n')).not.toContain(SECRET_BODY);
+    expect(lines.map((line) => JSON.parse(line))).toEqual([
+      {
+        event: 'clip.archive_check_failed',
+        archiveForwardMessageId: FORWARD_ID,
+        step: 'forward_read',
+        failure,
+      },
+    ]);
+  });
+});

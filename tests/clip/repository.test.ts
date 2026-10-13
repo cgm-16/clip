@@ -22,6 +22,7 @@ import {
   markRemovedByAdmin,
   markRemovedByAuthor,
   removeClipper,
+  replaceArchiveMessageIds,
   upsertGuildArchiveConfig,
 } from '@/lib/clip/repository';
 import { withGuildLock } from '@/lib/guild-lock';
@@ -512,6 +513,74 @@ describe('clip repository', () => {
       status: 'DELETING',
       archiveProvenanceMessageId: 'p-1',
       archiveForwardMessageId: 'f-1',
+    });
+  });
+
+  describe('replaceArchiveMessageIds', () => {
+    const OLD = { provenanceMessageId: 'p-old', forwardMessageId: 'f-old' };
+    const NEW = { provenanceMessageId: 'p-new', forwardMessageId: 'f-new' };
+
+    async function seedClip(data: { status: ClipStatus; removedAt?: Date }) {
+      const input = newClipInput();
+      await claimClip(input);
+      await prisma.clip.update({
+        where: clipKey(input),
+        data: {
+          ...data,
+          archiveProvenanceMessageId: OLD.provenanceMessageId,
+          archiveForwardMessageId: OLD.forwardMessageId,
+        },
+      });
+      return input;
+    }
+
+    function replace(input: { guildId: string; sourceMessageId: string }, old: typeof OLD) {
+      return lockClip(input.guildId, input.sourceMessageId, (tx) =>
+        replaceArchiveMessageIds(tx, input.guildId, input.sourceMessageId, old, NEW),
+      );
+    }
+
+    test('swaps the pair of an ACTIVE Clip that still holds the old one', async () => {
+      const input = await seedClip({ status: 'ACTIVE' });
+
+      expect(await replace(input, OLD)).toEqual({ applied: true });
+
+      expect(await prisma.clip.findUniqueOrThrow({ where: clipKey(input) })).toMatchObject({
+        status: 'ACTIVE',
+        archiveProvenanceMessageId: NEW.provenanceMessageId,
+        archiveForwardMessageId: NEW.forwardMessageId,
+      });
+    });
+
+    test.each([
+      ['provenance', { ...OLD, provenanceMessageId: 'p-other' }],
+      ['forward', { ...OLD, forwardMessageId: 'f-other' }],
+    ])('refuses when the row no longer holds the old %s id', async (_which, old) => {
+      const input = await seedClip({ status: 'ACTIVE' });
+
+      expect(await replace(input, old)).toEqual({ applied: false });
+
+      expect(await prisma.clip.findUniqueOrThrow({ where: clipKey(input) })).toMatchObject({
+        archiveProvenanceMessageId: OLD.provenanceMessageId,
+        archiveForwardMessageId: OLD.forwardMessageId,
+      });
+    });
+
+    // The row holds exactly the old pair, so only the status predicate can
+    // refuse: a DELETING pair is being taken down, a tombstone's is removed.
+    test.each([
+      ['DELETING', { status: 'DELETING' as const }],
+      ['REMOVED_BY_AUTHOR', { status: 'REMOVED_BY_AUTHOR' as const, removedAt: new Date() }],
+    ])('refuses a %s Clip even with matching ids', async (_status, data) => {
+      const input = await seedClip(data);
+
+      expect(await replace(input, OLD)).toEqual({ applied: false });
+
+      expect(await prisma.clip.findUniqueOrThrow({ where: clipKey(input) })).toMatchObject({
+        status: data.status,
+        archiveProvenanceMessageId: OLD.provenanceMessageId,
+        archiveForwardMessageId: OLD.forwardMessageId,
+      });
     });
   });
 

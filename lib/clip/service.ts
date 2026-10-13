@@ -16,6 +16,7 @@ import {
   markRemovedByAdmin,
   markRemovedByAuthor,
   removeClipper,
+  replaceArchiveMessageIds,
   takeOverStaleClip,
   type ClipRecord,
   type TxClient,
@@ -140,6 +141,31 @@ function archiveFailureFields(
   return { step: error.step, ...error.failure };
 }
 
+/** The reply to a clip whose signal is recorded on a Clip holding `archive`. */
+function signalReply(added: boolean, archive: ArchiveMessageIds | null): ClipCommandResult {
+  return added
+    ? { kind: 'CLIPPER_ADDED', archive }
+    : { kind: 'ALREADY_CLIPPED_BY_USER', archive };
+}
+
+/**
+ * The reply when an archive this request posted lost the row to someone else
+ * and has been taken back down. `clip` is the row as the losing write found
+ * it, or null when it was gone or its configuration replaced.
+ */
+function lostPublishReply(clip: ClipRecord | null, added: boolean): ClipCommandResult {
+  if (clip === null) {
+    return { kind: 'FAILED', retryable: true };
+  }
+  if (isTerminalStatus(clip.status)) {
+    return { kind: 'REMOVED_BY_AUTHOR_OR_ADMIN' };
+  }
+  // A concurrent retry published its archive first, or the row still holds a
+  // pair whose deletion is unfinished; this request's signal is still
+  // recorded, so report the archive the row holds.
+  return signalReply(added, archiveOf(clip));
+}
+
 /**
  * `lockClip`'s configuration check for the lifetime a request started under.
  * A guild with no configuration (§17 case 12) passes null, which still lets
@@ -175,6 +201,96 @@ export function createClipService(gateway: DiscordArchiveGateway) {
       });
       return false;
     }
+  }
+
+  /**
+   * §17 case 19: never leave a provenance line pointing at a snapshot that
+   * does not exist. The pair repeats the orphan's id because the forward it
+   * described was never posted and has no id of its own; the gateway contract
+   * already requires deleting an absent message to be a no-op.
+   */
+  async function deleteOrphanedProvenance(
+    key: ClipKey,
+    archiveChannelId: string,
+    error: unknown,
+  ): Promise<void> {
+    if (error instanceof ArchiveCreationFailedError && error.orphanedProvenanceMessageId !== null) {
+      await deleteArchiveQuietly(key, archiveChannelId, {
+        provenanceMessageId: error.orphanedProvenanceMessageId,
+        forwardMessageId: error.orphanedProvenanceMessageId,
+      });
+    }
+  }
+
+  /**
+   * Reposts an ACTIVE Clip's archive when Discord confirms its copy is gone,
+   * then replies to the clip that found it.
+   *
+   * The repost goes to the guild's current archive channel: setup refuses to
+   * repoint the channel while live Clips exist unless Discord confirms the old
+   * one is gone, so every ACTIVE pair lives in the current channel.
+   *
+   * Runs outside any lock, like every other Discord round-trip here. The swap
+   * applies only if the row is still ACTIVE on exactly `archive`, so an
+   * unclip, a removal, a re-setup or a concurrent repost that landed in the
+   * window wins, and this request's pair comes back down instead. The old
+   * pair is deleted only once the swap applied: before that it is still the
+   * row's, and its provenance line may be all that survives of it.
+   *
+   * A failed repost leaves the row as it was -- still ACTIVE on the old ids,
+   * still shown as missing -- rather than FAILED, which would blank a Clip
+   * whose members are still asking to keep it.
+   */
+  async function repostIfMissing(context: {
+    input: ClipInput;
+    archiveChannelId: string;
+    configurationId: string;
+    archive: ArchiveMessageIds;
+    added: boolean;
+  }): Promise<ClipCommandResult> {
+    const { input, archiveChannelId, configurationId, archive, added } = context;
+    const key = { guildId: input.guildId, sourceMessageId: input.sourceMessageId };
+    if (!(await gateway.isArchiveCopyMissing(archiveChannelId, archive))) {
+      return signalReply(added, archive);
+    }
+
+    let reposted: ArchiveMessageIds;
+    try {
+      reposted = await gateway.createArchiveMessage({
+        guildId: input.guildId,
+        archiveChannelId,
+        sourceChannelId: input.sourceChannelId,
+        sourceMessageId: input.sourceMessageId,
+        sourceAuthorUserId: input.sourceAuthorUserId,
+      });
+    } catch (error) {
+      logClipEvent({
+        event: 'clip.repost_failed',
+        guildId: key.guildId,
+        sourceMessageId: key.sourceMessageId,
+        errorCode: errorCodeOf(error),
+        ...archiveFailureFields(error),
+      });
+      await deleteOrphanedProvenance(key, archiveChannelId, error);
+      return signalReply(added, archive);
+    }
+
+    const swap = await lockClip(key.guildId, key.sourceMessageId, async (tx, locked) => {
+      const { applied } = await replaceArchiveMessageIds(
+        tx,
+        key.guildId,
+        key.sourceMessageId,
+        archive,
+        reposted,
+      );
+      return { applied, clip: locked };
+    }, { configurationId });
+    if (swap?.applied) {
+      await deleteArchiveQuietly(key, archiveChannelId, archive);
+      return signalReply(added, reposted);
+    }
+    await deleteArchiveQuietly(key, archiveChannelId, reposted);
+    return lostPublishReply(swap?.clip ?? null, added);
   }
 
   /**
@@ -352,9 +468,7 @@ export function createClipService(gateway: DiscordArchiveGateway) {
       if (deletion.kind === 'UNSETTLED') {
         return { kind: 'FAILED', retryable: true };
       }
-      return joined.added
-        ? { kind: 'CLIPPER_ADDED', archive: deletion.archive }
-        : { kind: 'ALREADY_CLIPPED_BY_USER', archive: deletion.archive };
+      return signalReply(joined.added, deletion.archive);
     }
 
     // §9.4: only the request that claimed a *new* Clip may create the first
@@ -369,9 +483,18 @@ export function createClipService(gateway: DiscordArchiveGateway) {
     const mustCreateArchive =
       created || joined.status === 'FAILED' || (joined.status === 'PENDING' && joined.takenOver);
     if (!mustCreateArchive) {
-      return joined.added
-        ? { kind: 'CLIPPER_ADDED', archive: joined.archive }
-        : { kind: 'ALREADY_CLIPPED_BY_USER', archive: joined.archive };
+      // Only an ACTIVE Clip: a PENDING one inside the lease has a creator
+      // still mid-round-trip, and its missing copy is not missing yet.
+      if (joined.status === 'ACTIVE' && joined.archive !== null) {
+        return repostIfMissing({
+          input,
+          archiveChannelId: config.archiveChannelId,
+          configurationId,
+          archive: joined.archive,
+          added: joined.added,
+        });
+      }
+      return signalReply(joined.added, joined.archive);
     }
 
     let archive: ArchiveMessageIds;
@@ -391,17 +514,7 @@ export function createClipService(gateway: DiscordArchiveGateway) {
         errorCode: errorCodeOf(error),
         ...archiveFailureFields(error),
       });
-      if (error instanceof ArchiveCreationFailedError && error.orphanedProvenanceMessageId !== null) {
-        // §17 case 19: never leave a provenance line pointing at a snapshot
-        // that does not exist. The pair repeats the orphan's id because the
-        // forward it described was never posted and has no id of its own; the
-        // gateway contract already requires deleting an absent message to be a
-        // no-op.
-        await deleteArchiveQuietly(key, config.archiveChannelId, {
-          provenanceMessageId: error.orphanedProvenanceMessageId,
-          forwardMessageId: error.orphanedProvenanceMessageId,
-        });
-      }
+      await deleteOrphanedProvenance(key, config.archiveChannelId, error);
       await recordArchiveFailure(key, configurationId);
       if (error instanceof ArchiveTargetUnavailableError) {
         return { kind: 'SOURCE_UNAVAILABLE' };
@@ -423,19 +536,7 @@ export function createClipService(gateway: DiscordArchiveGateway) {
     // The Clip moved out of reach while the archive was being built, so the two
     // messages just posted are unreferenced and have to come back down.
     await deleteArchiveQuietly(key, config.archiveChannelId, archive);
-    if (published.clip === null) {
-      return { kind: 'FAILED', retryable: true };
-    }
-    if (isTerminalStatus(published.clip.status)) {
-      return { kind: 'REMOVED_BY_AUTHOR_OR_ADMIN' };
-    }
-    // A concurrent retry published its archive first, or the row still holds a
-    // pair whose deletion is unfinished; this request's signal is still
-    // recorded, so report the archive the row holds.
-    const winning = archiveOf(published.clip);
-    return joined.added
-      ? { kind: 'CLIPPER_ADDED', archive: winning }
-      : { kind: 'ALREADY_CLIPPED_BY_USER', archive: winning };
+    return lostPublishReply(published.clip, joined.added);
   }
 
   /**

@@ -729,6 +729,214 @@ describe('clip service', () => {
     expect(clip?.archiveForwardMessageId).toBeNull();
   });
 
+  describe('an ACTIVE Clip whose archive copy Discord confirms is gone', () => {
+    const PAIR_1 = { provenanceMessageId: 'provenance-1', forwardMessageId: 'forward-1' };
+    const PAIR_2 = { provenanceMessageId: 'provenance-2', forwardMessageId: 'forward-2' };
+    const PAIR_3 = { provenanceMessageId: 'provenance-3', forwardMessageId: 'forward-3' };
+
+    /** An ACTIVE Clip on pair 1 whose forward Discord reports gone. Resolves to its clipper. */
+    async function clipWithLostCopy(fixture: Fixture): Promise<string> {
+      const first = fakeSnowflake();
+      expect((await service.clip(clipInput(fixture, first))).kind).toBe('CREATED');
+      gateway.loseArchiveCopy(PAIR_1.forwardMessageId);
+      return first;
+    }
+
+    function deletedPairs() {
+      return gateway.deleteCalls.map((call) => call.ids);
+    }
+
+    test('is reposted into the archive channel when clipped again, keeping every clipper', async () => {
+      const fixture = await seedConfiguredGuild();
+      await clipWithLostCopy(fixture);
+
+      const result = await service.clip(clipInput(fixture, fakeSnowflake()));
+
+      expect(result).toEqual({ kind: 'CLIPPER_ADDED', archive: PAIR_2 });
+      expect(gateway.missingChecks).toEqual([
+        { archiveChannelId: fixture.archiveChannelId, ids: PAIR_1 },
+      ]);
+      expect(gateway.createCalls).toHaveLength(2);
+      expect(gateway.createCalls[1]).toEqual(gateway.createCalls[0]);
+      // The old pair's surviving provenance line comes down with it.
+      expect(gateway.deleteCalls).toEqual([
+        { archiveChannelId: fixture.archiveChannelId, ids: PAIR_1 },
+      ]);
+      const clip = await readClip(fixture);
+      expect(clip?.status).toBe('ACTIVE');
+      expect(clip?.archiveProvenanceMessageId).toBe('provenance-2');
+      expect(clip?.archiveForwardMessageId).toBe('forward-2');
+      expect(await countClipperRows(fixture)).toBe(2);
+    });
+
+    test('is reposted when the same member clips again, who is told it is already clipped', async () => {
+      const fixture = await seedConfiguredGuild();
+      const first = await clipWithLostCopy(fixture);
+
+      const result = await service.clip(clipInput(fixture, first));
+
+      expect(result).toEqual({ kind: 'ALREADY_CLIPPED_BY_USER', archive: PAIR_2 });
+      expect(deletedPairs()).toEqual([PAIR_1]);
+      expect((await readClip(fixture))?.archiveForwardMessageId).toBe('forward-2');
+      expect(await countClipperRows(fixture)).toBe(1);
+    });
+
+    test('is not reposted while Discord does not confirm the copy gone', async () => {
+      // The fake reports false for a present copy and, like the REST gateway,
+      // for an access error, 5xx or timeout (tests/discord/archive-message.test.ts).
+      const fixture = await seedConfiguredGuild();
+      await service.clip(clipInput(fixture, fakeSnowflake()));
+
+      const result = await service.clip(clipInput(fixture, fakeSnowflake()));
+
+      expect(result).toEqual({ kind: 'CLIPPER_ADDED', archive: PAIR_1 });
+      expect(gateway.missingChecks).toHaveLength(1);
+      expect(gateway.createCalls).toHaveLength(1);
+      expect(gateway.deleteCalls).toHaveLength(0);
+      expect((await readClip(fixture))?.archiveForwardMessageId).toBe('forward-1');
+    });
+
+    test.each([
+      [
+        'the provenance post',
+        new ArchiveCreationFailedError(SENTINEL_MESSAGE, {
+          retryable: true,
+          orphanedProvenanceMessageId: null,
+          step: 'provenance_post',
+          failure: { failure: 'http', httpStatus: '429', discordCode: '0' },
+        }),
+        [],
+        { step: 'provenance_post', httpStatus: '429', discordCode: '0', errorCode: 'ARCHIVE_CREATE_RETRYABLE' },
+      ],
+      [
+        'the forward after its provenance posted',
+        new ArchiveCreationFailedError(SENTINEL_MESSAGE, {
+          retryable: false,
+          orphanedProvenanceMessageId: 'orphaned-provenance',
+          step: 'forward_post',
+          failure: { failure: 'http', httpStatus: '400', discordCode: '50035' },
+        }),
+        [{ provenanceMessageId: 'orphaned-provenance', forwardMessageId: 'orphaned-provenance' }],
+        { step: 'forward_post', httpStatus: '400', discordCode: '50035', errorCode: 'ARCHIVE_CREATE_PERMANENT' },
+      ],
+    ])('a repost failing at %s leaves the row as it was', async (_step, error, orphans, facts) => {
+      const fixture = await seedConfiguredGuild();
+      await clipWithLostCopy(fixture);
+      gateway.failNextCreate(error);
+
+      const result = await service.clip(clipInput(fixture, fakeSnowflake()));
+
+      expect(result).toEqual({ kind: 'CLIPPER_ADDED', archive: PAIR_1 });
+      // §17 case 19 for a repost too; the old pair is never touched.
+      expect(deletedPairs()).toEqual(orphans);
+      const clip = await readClip(fixture);
+      expect(clip?.status).toBe('ACTIVE');
+      expect(clip?.archiveProvenanceMessageId).toBe('provenance-1');
+      expect(clip?.archiveForwardMessageId).toBe('forward-1');
+      expect(await countClipperRows(fixture)).toBe(2);
+      const lines = rawLogLines('clip.repost_failed');
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).not.toContain('SENTINEL');
+      expect(JSON.parse(lines[0])).toEqual({
+        event: 'clip.repost_failed',
+        guildId: fixture.guildId,
+        sourceMessageId: fixture.sourceMessageId,
+        failure: 'http',
+        ...facts,
+      });
+      expect(rawLogLines('clip.archive_failed')).toHaveLength(0);
+    });
+
+    test('a repost the last unclip overtakes is taken down and never published', async () => {
+      const fixture = await seedConfiguredGuild();
+      const first = await clipWithLostCopy(fixture);
+      const second = fakeSnowflake();
+      gateway.onNextCreate(async () => {
+        await service.unclip({ guildId: fixture.guildId, sourceMessageId: fixture.sourceMessageId, clipperUserId: first });
+        await service.unclip({ guildId: fixture.guildId, sourceMessageId: fixture.sourceMessageId, clipperUserId: second });
+      });
+
+      const result = await service.clip(clipInput(fixture, second));
+
+      expect(result).toEqual({ kind: 'FAILED', retryable: true });
+      // Pair 1 by the unclip's finalizer, pair 2 by the repost it overtook.
+      expect(deletedPairs()).toEqual([PAIR_1, PAIR_2]);
+      expect(await readClip(fixture)).toBeNull();
+    });
+
+    test('a repost an author removal overtakes is taken down and the tombstone stands', async () => {
+      const fixture = await seedConfiguredGuild();
+      await clipWithLostCopy(fixture);
+      gateway.onNextCreate(async () => {
+        await service.removeByAuthorOrAdmin({
+          guildId: fixture.guildId,
+          sourceMessageId: fixture.sourceMessageId,
+          invokerUserId: fixture.sourceAuthorUserId,
+          invokerHasManageGuild: false,
+        });
+      });
+
+      const result = await service.clip(clipInput(fixture, fakeSnowflake()));
+
+      expect(result).toEqual({ kind: 'REMOVED_BY_AUTHOR_OR_ADMIN' });
+      // Pair 1 by the removal, pair 2 by the repost it overtook.
+      expect(deletedPairs()).toEqual([PAIR_1, PAIR_2]);
+      const tombstone = await readClip(fixture);
+      expect(tombstone?.status).toBe('REMOVED_BY_AUTHOR');
+      expect(tombstone?.archiveProvenanceMessageId).toBeNull();
+      expect(tombstone?.archiveForwardMessageId).toBeNull();
+      expect(await countClipperRows(fixture)).toBe(0);
+    });
+
+    test('a repost that straddles deletion and re-setup is taken down, not applied', async () => {
+      const fixture = await seedConfiguredGuild();
+      await clipWithLostCopy(fixture);
+      gateway.onNextCreate(async () => {
+        const { guildId } = fixture;
+        await prisma.clipper.deleteMany({ where: { guildId } });
+        await prisma.clip.deleteMany({ where: { guildId } });
+        await prisma.guildAllowedRole.deleteMany({ where: { guildId } });
+        await prisma.guildConfig.deleteMany({ where: { guildId } });
+        await prisma.guildConfig.create({
+          data: { guildId, archiveChannelId: fakeSnowflake(), configuredByUserId: fakeSnowflake() },
+        });
+      });
+
+      const result = await service.clip(clipInput(fixture, fakeSnowflake()));
+
+      expect(result).toEqual({ kind: 'FAILED', retryable: true });
+      expect(gateway.deleteCalls).toEqual([
+        { archiveChannelId: fixture.archiveChannelId, ids: PAIR_2 },
+      ]);
+      expect(await readClip(fixture)).toBeNull();
+    });
+
+    test('two re-clips that both find the copy gone swap it exactly once', async () => {
+      const fixture = await seedConfiguredGuild();
+      await clipWithLostCopy(fixture);
+      // The inner re-clip runs inside the outer one's repost, after both read
+      // the copy as gone. The fake numbers pairs as they return: the inner
+      // repost is pair 2, the outer one's pair 3.
+      let inner: Awaited<ReturnType<typeof service.clip>> | undefined;
+      gateway.onNextCreate(async () => {
+        inner = await service.clip(clipInput(fixture, fakeSnowflake()));
+      });
+
+      const outer = await service.clip(clipInput(fixture, fakeSnowflake()));
+
+      expect(inner).toEqual({ kind: 'CLIPPER_ADDED', archive: PAIR_2 });
+      expect(outer).toEqual({ kind: 'CLIPPER_ADDED', archive: PAIR_2 });
+      expect(gateway.missingChecks.map((call) => call.ids)).toEqual([PAIR_1, PAIR_1]);
+      // The winner's pair is never deleted; the loser deletes only its own.
+      expect(deletedPairs()).toEqual([PAIR_1, PAIR_3]);
+      const clip = await readClip(fixture);
+      expect(clip?.status).toBe('ACTIVE');
+      expect(clip?.archiveProvenanceMessageId).toBe('provenance-2');
+      expect(clip?.archiveForwardMessageId).toBe('forward-2');
+      expect(await countClipperRows(fixture)).toBe(3);
+    });
+  });
+
   test('a clip arriving during deletion converges to a new archive', async () => {
     // §9.3 / §9.8, driven deterministically: the hook runs inside the Discord
     // delete, which is exactly the window between "the archive is gone" and
