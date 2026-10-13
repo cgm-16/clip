@@ -32,9 +32,10 @@ export type SafeClipLog = {
   httpStatus?: string;
   discordCode?: string;
   /**
-   * A retried Discord 429 (`discord.rate_limited`). `route` is a path
-   * template from `discordRouteTemplate`, never the raw path. `retryAfterMs`
-   * is the delay actually slept, after the cap; `attempt` counts from 1.
+   * A retried Discord 429 (`discord.rate_limited`), or one asking for longer
+   * than the client waits and thrown at once (`discord.rate_limited_gave_up`).
+   * `route` is a path template from `discordRouteTemplate`, never the raw
+   * path. `retryAfterMs` is the delay Discord asked for; `attempt` counts from 1.
    * Scope and bucket are Discord's `X-RateLimit-*` headers when sent;
    * `rateLimitGlobal` is `true` or `false`.
    */

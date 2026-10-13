@@ -114,9 +114,10 @@ export type DiscordRestClientOptions = {
 // that never arrives.
 const MAX_ATTEMPTS = 3;
 
-// Discord reports `retry_after` in seconds, as a float. Cap it: a global limit
-// can report a value far longer than any interaction can wait for, and honouring
-// it exactly would hold the request open well past the point of usefulness.
+// Discord reports `retry_after` in seconds, as a float. A 429 asking for longer
+// than this is thrown at once, without a retry: a global limit can report a
+// value far longer than any interaction can wait for, and retrying after a
+// shorter pause only earns another 429.
 const MAX_RETRY_DELAY_MS = 5_000;
 const DISCORD_REQUEST_TIMEOUT_MS = 10_000;
 
@@ -158,7 +159,7 @@ function retryDelayMs(body: unknown): number {
   if (typeof body === 'object' && body !== null && 'retry_after' in body) {
     const retryAfter = (body as { retry_after: unknown }).retry_after;
     if (typeof retryAfter === 'number' && retryAfter >= 0) {
-      return Math.min(retryAfter * 1000, MAX_RETRY_DELAY_MS);
+      return retryAfter * 1000;
     }
   }
   return 1000;
@@ -254,10 +255,13 @@ export function createDiscordRestClient(options: DiscordRestClientOptions): Disc
           // control-plane state it already wrote makes a second attempt safe.
           if (response.status === 429 && remaining > 1) {
             const delayMs = retryDelayMs(payload);
-            // Only the retried 429s: the final one is thrown, and reporting it
-            // belongs to the caller that decides what the failure means.
+            const giveUp = delayMs > MAX_RETRY_DELAY_MS;
+            // Only the retried 429s and a give-up: the final one is thrown, and
+            // reporting it belongs to the caller that decides what the failure
+            // means. A give-up is logged here because it fails too fast to
+            // reach the slow-request line.
             logClipEvent({
-              event: 'discord.rate_limited',
+              event: giveUp ? 'discord.rate_limited_gave_up' : 'discord.rate_limited',
               method,
               route: discordRouteTemplate(path),
               retryAfterMs: String(delayMs),
@@ -266,8 +270,10 @@ export function createDiscordRestClient(options: DiscordRestClientOptions): Disc
               rateLimitBucket: response.headers.get('X-RateLimit-Bucket') ?? undefined,
               rateLimitGlobal: String(isGlobalRateLimit(response, payload)),
             });
-            await sleep(delayMs);
-            continue;
+            if (!giveUp) {
+              await sleep(delayMs);
+              continue;
+            }
           }
 
           throw new DiscordApiError(`Discord ${method} ${path} failed with ${response.status}`, {
