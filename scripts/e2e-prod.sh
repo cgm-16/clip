@@ -7,10 +7,11 @@
 #   bash scripts/e2e-prod.sh 1559501336641404960 -g "pagination|channel filter"
 #
 # Run by Ori, never by an agent: it reads production secrets and writes setup
-# tokens into the production database. Nothing it runs prints a secret, and
-# every secret lives only in this process's environment, so nothing needs
-# unsetting afterwards. The guild's archive should hold more than 20 clips, or
-# the pagination test skips itself.
+# tokens into the production database. Nothing it runs prints the database URL
+# or the session secret; a failing Playwright step can print a seeded setup
+# link, which stays valid for 15 minutes. Every secret lives only in this
+# process's environment, so nothing needs unsetting afterwards. The guild's
+# archive should hold more than 20 clips, or the pagination test skips itself.
 set -euo pipefail
 
 guild="${1:?usage: bash scripts/e2e-prod.sh <guild-id> [playwright args...]}"
@@ -19,26 +20,40 @@ shift
 cd "$(dirname "$0")/.."
 
 # The suite measures the deployed image with this checkout's tests and seed.
-# Refuse when the code they run against differs from what is deployed;
-# docs-only drift is fine.
+# Refuse when the code they run against differs from what is deployed,
+# uncommitted edits included; docs-only drift is fine.
 image="$(kubectl -n clip get deploy clip -o jsonpath='{.spec.template.spec.containers[?(@.name=="clip")].image}')"
 deployed_sha="${image##*:sha-}"
+if [[ ! "$deployed_sha" =~ ^[0-9a-f]{7,40}$ ]]; then
+  echo "deployed image ${image} is not tagged sha-<commit>; cannot check this checkout against it" >&2
+  exit 1
+fi
 if ! git cat-file -e "${deployed_sha}^{commit}" 2>/dev/null; then
   git fetch -q origin
 fi
-if ! git diff --quiet "$deployed_sha" HEAD -- app lib prisma; then
+if ! git diff --quiet "$deployed_sha" -- app lib prisma; then
   echo "deployed image is sha-${deployed_sha}, but this checkout's app/, lib/ or prisma/ differ from it:" >&2
-  git --no-pager diff --stat "$deployed_sha" HEAD -- app lib prisma >&2
+  git --no-pager diff --stat "$deployed_sha" -- app lib prisma >&2
   echo "check out sha-${deployed_sha}'s commit, or deploy this one first" >&2
   exit 1
 fi
 
 port=15432
-kubectl -n clip port-forward svc/clip-db-rw "${port}:5432" >/dev/null 2>&1 &
+# Anything already listening here (a leftover port-forward, a local Postgres)
+# would receive the production credentials below instead of the tunnel.
+if nc -z localhost "$port" 2>/dev/null; then
+  echo "localhost:${port} is already in use; stop whatever holds it and retry" >&2
+  exit 1
+fi
+kubectl -n clip port-forward svc/clip-db-rw "${port}:5432" >/dev/null &
 port_forward=$!
 trap 'kill "$port_forward" 2>/dev/null || true' EXIT
 
 for _ in $(seq 1 20); do
+  if ! kill -0 "$port_forward" 2>/dev/null; then
+    echo "port-forward to svc/clip-db-rw exited" >&2
+    exit 1
+  fi
   if nc -z localhost "$port" 2>/dev/null; then break; fi
   sleep 0.5
 done
@@ -54,11 +69,10 @@ export PUBLIC_BASE_URL=https://clipendpoint.cc
 # Never read by the seed; lib/env.ts only requires them to be set.
 export DISCORD_APPLICATION_ID=unused DISCORD_PUBLIC_KEY=unused DISCORD_BOT_TOKEN=unused
 
-# The Prisma client is generated code that `pnpm install` does not produce.
-# Generation reads DATABASE_URL for its config but never connects.
-if [ ! -d generated/prisma ]; then
-  pnpm exec prisma generate >/dev/null
-fi
+# The Prisma client is generated code that `pnpm install` does not produce,
+# and one left from another branch may not match this schema. Generation
+# reads DATABASE_URL for its config but never connects.
+pnpm exec prisma generate >/dev/null
 
 # A plain assignment, not `eval "$(...)"`: only the assignment makes a failed
 # seed stop the script under `set -e`.
