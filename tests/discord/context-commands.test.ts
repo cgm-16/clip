@@ -26,6 +26,7 @@ const BASE_URL = 'https://clipendpoint.cc';
 const BOT_TOKEN = 'bot-token-value';
 
 const APPLICATION_COMMAND_INTERACTION_TYPE = 2;
+const CHANNEL_MESSAGE_WITH_SOURCE = 4;
 const DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE = 5;
 const EPHEMERAL_FLAG = 64;
 
@@ -62,6 +63,8 @@ type ContextCommandOptions = {
   targetChannelId: string;
   targetAuthorId: string;
   channelName?: string;
+  /** The target message's own fields beyond `id`/`channel_id`/`author`. */
+  targetMessage?: Record<string, unknown>;
 };
 
 function contextCommandInvocation(opts: ContextCommandOptions): unknown {
@@ -83,6 +86,8 @@ function contextCommandInvocation(opts: ContextCommandOptions): unknown {
       resolved: {
         messages: {
           [opts.targetMessageId]: {
+            type: 0,
+            ...opts.targetMessage,
             id: opts.targetMessageId,
             channel_id: opts.targetChannelId,
             author: { id: opts.targetAuthorId },
@@ -432,6 +437,40 @@ describe('Clip / Unclip / Remove context commands', () => {
       const thirdFollowup = await waitForCall(calls, (call) => call.url === followupUrl(thirdToken));
       expect(thirdFollowup.body).toEqual({ content: DISCORD_COPY.duplicate });
       expect(await countClipperRows(fixture)).toBe(2);
+    });
+
+    // A poll is a DEFAULT message carrying a `poll` field; POLL_RESULT (46) is
+    // a system message. Neither can be forwarded (spec §6.3).
+    test.each([
+      ['a poll', { type: 0, poll: { question: { text: 'which?' } } }],
+      ['an unforwardable message type', { type: 46 }],
+    ])('clipping %s is refused before any state is written', async (_label, targetMessage) => {
+      const fixture = await seedConfiguredGuild();
+      const { fetchImpl, calls } = createFetchStub();
+      vi.stubGlobal('fetch', fetchImpl);
+
+      const response = await POST(
+        signedRequest(
+          contextCommandInvocation({
+            commandName: CLIP_COMMAND_NAME,
+            guildId: fixture.guildId,
+            invokerId: fakeSnowflake(),
+            invokerPermissions: MANAGE_GUILD_ONLY,
+            interactionToken: `token-${fakeSnowflake()}`,
+            targetMessageId: fixture.sourceMessageId,
+            targetChannelId: fixture.sourceChannelId,
+            targetAuthorId: fixture.sourceAuthorUserId,
+            targetMessage,
+          }),
+        ),
+      );
+
+      await expect(response.json()).resolves.toEqual({
+        type: CHANNEL_MESSAGE_WITH_SOURCE,
+        data: { content: DISCORD_COPY.invalidTarget, flags: EPHEMERAL_FLAG },
+      });
+      expect(await readClip(fixture)).toBeNull();
+      expect(calls).toEqual([]);
     });
   });
 

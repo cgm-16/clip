@@ -97,6 +97,7 @@ function contextCommandInvocation(opts: {
         messages: {
           [opts.targetMessageId]: {
             id: opts.targetMessageId,
+            type: 0,
             channel_id: opts.targetChannelId,
             author: { id: opts.targetAuthorId },
           },

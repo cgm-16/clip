@@ -27,6 +27,16 @@ const FORWARDABLE_MESSAGE_TYPES: ReadonlySet<number> = new Set([
   23, // CONTEXT_MENU_COMMAND
 ]);
 
+/**
+ * Whether Discord can forward a message. A poll is a `DEFAULT` message that
+ * carries a `poll` field, so the type alone does not exclude it; Discord
+ * refuses its forward with 50035, which would otherwise read as a failure to
+ * retry rather than a target that can never be archived.
+ */
+export function isForwardableMessage(type: number, hasPoll: boolean): boolean {
+  return FORWARDABLE_MESSAGE_TYPES.has(type) && !hasPoll;
+}
+
 /** `message_reference.type` for a forward. Anything else is a reply. */
 const REFERENCE_TYPE_FORWARD = 1;
 
@@ -54,20 +64,21 @@ function isTargetUnavailable(error: DiscordApiError): boolean {
 }
 
 /** The fields of a source message this product is allowed to read. */
-type SourceMessage = { type: number; timestamp: string };
+type SourceMessage = { type: number; timestamp: string; hasPoll: boolean };
 
 function parseSourceMessage(body: unknown): SourceMessage | null {
   if (typeof body !== 'object' || body === null) {
     return null;
   }
-  const { type, timestamp } = body as { type?: unknown; timestamp?: unknown };
+  const { type, timestamp, poll } = body as { type?: unknown; timestamp?: unknown; poll?: unknown };
   if (typeof type !== 'number' || typeof timestamp !== 'string') {
     return null;
   }
-  // Only these two fields are lifted off the payload. The response also carries
-  // `content`, `embeds` and `attachments`, and narrowing here is what keeps them
-  // from travelling any further into the process (§12).
-  return { type, timestamp };
+  // Only these two fields are lifted off the payload, plus whether a poll is
+  // present -- never the poll itself. The response also carries `content`,
+  // `embeds` and `attachments`, and narrowing here is what keeps them from
+  // travelling any further into the process (§12).
+  return { type, timestamp, hasPoll: poll !== undefined && poll !== null };
 }
 
 function messageIdOf(body: unknown): string | null {
@@ -159,7 +170,7 @@ export function createDiscordArchiveGateway(
     async createArchiveMessage(input: CreateArchiveInput): Promise<ArchiveMessageIds> {
       const source = await readSourceMessage(input);
 
-      if (!FORWARDABLE_MESSAGE_TYPES.has(source.type)) {
+      if (!isForwardableMessage(source.type, source.hasPoll)) {
         throw new ArchiveTargetUnavailableError('source message type cannot be forwarded');
       }
 
