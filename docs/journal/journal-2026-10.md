@@ -309,3 +309,19 @@ Ori ran `bash scripts/e2e-prod.sh 1559501336641404960` (guild `test2`, 21 clips)
 **#90 instrument and how to read it:** each retried 429 logs `discord.rate_limited`, and every Discord request that takes 1s or longer, retries included, logs `discord.slow_request` with its outcome. The second line exists because the review pointed out an asymmetry: retry lines alone could confirm the 429 hypothesis but never refute it, since a slow answer or a timeout swallowed by `fetchOrNull` left no trace. The lines carry no timestamp, so read them with `kubectl -n clip logs -f deploy/clip -c clip --timestamps`, started before the run.
 
 **Found, not fixed (outside #90):** `DiscordApiError`'s message is `Discord ${method} ${path} failed …`. For `patchFollowupMessage` that path contains the interaction token. Nothing in the repo logs `error.message`, but an unhandled error that reached Next's own logger would print it.
+
+## 2026-10-14 — 6.4 e2e on `sha-43fc2df`: the #90 lines name the cause
+
+Ori deployed `sha-43fc2df` (#90's logging) and ran the full suite with `kubectl -n clip logs deploy/clip -c clip --timestamps` afterwards. 7 of 8 passed. "a valid setup link opens setup" failed again; "the archive list renders" passed, so #82 still holds.
+
+What the log window (07:28:05–07:28:29) shows:
+- 181 `discord.rate_limited` on `/channels/{id}/messages/{id}`, bucket `d2d6d106`, scope `user`. These are Screen D's source-message reads: 20 per page, all in one source channel, so all in one bucket.
+- 81 `archive.content_read_failed` with step `source_read` and status 429: those reads still lost after three attempts.
+- 93 `discord.slow_request`.
+- `/guilds/{id}/channels` (bucket `a66d55b1`) was also rate-limited, with `retryAfterMs` at the 5000 cap. The last `discord.slow_request` for it ended with 429 after 10815ms at 07:28:29.4. That is the setup page's channel read, and it is the failure: the setup test had already passed its 5s window. Screen D and Screen E read `/guilds/{id}/channels` on every render, which loads the same bucket.
+- `⨯ Error: The destination stream closed early`: Discord reads on the server continue after the browser has navigated away.
+
+**Reading:** the hypothesis from the `sha-9bce61c` runs is confirmed. A render waits out 429s server-side, and Screen D's per-row source reads plus each render's channel-name read saturate the buckets that setup also needs. Three changes, Ori approved 2026-10-14:
+1. When `retry_after` exceeds the 5s cap, fail at once instead of sleeping 5s and asking again. Discord has said the wait is longer.
+2. Cache guild display data (guild name, channel names) for about 60s, across requests. This pulls a product-spec P1 item (line 565, short-lived server-side cache) into P0, for display lookups only, and amends restoration spec line 91.
+3. Drop Screen D's source-message reads for P0. Cards lose the reply author line and the verified-unavailable tag (`원본 메시지를 찾을 수 없습니다.`); the original link is always offered. This amends restoration spec lines 81 and 151.

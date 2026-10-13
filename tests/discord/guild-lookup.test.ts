@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import {
   createDiscordGuildLookup,
+  createGuildDisplayCache,
   GuildLookupFailedError,
   GuildUnavailableError,
 } from '@/lib/discord/guild-lookup';
@@ -298,14 +299,14 @@ describe('getMemberRoleIds', () => {
 describe('display lookups', () => {
   test('getGuildName returns the guild name', async () => {
     const { fetchImpl } = stubPaths({ [`/guilds/${GUILD_ID}`]: json({ id: GUILD_ID, name: 'Test guild' }) });
-    const lookup = createDiscordGuildLookup({ botToken: BOT_TOKEN, fetchImpl });
+    const lookup = createDiscordGuildLookup({ botToken: BOT_TOKEN, fetchImpl, displayCache: createGuildDisplayCache() });
 
     expect(await lookup.getGuildName(GUILD_ID)).toBe('Test guild');
   });
 
   test('getGuildName falls back to null when the lookup fails', async () => {
     const { fetchImpl } = stubPaths({ [`/guilds/${GUILD_ID}`]: json({ code: 50001 }, 403) });
-    const lookup = createDiscordGuildLookup({ botToken: BOT_TOKEN, fetchImpl });
+    const lookup = createDiscordGuildLookup({ botToken: BOT_TOKEN, fetchImpl, displayCache: createGuildDisplayCache() });
 
     expect(await lookup.getGuildName(GUILD_ID)).toBeNull();
   });
@@ -334,14 +335,79 @@ describe('getGuildChannelNames', () => {
         rawChannel('300', 'news', 5),
       ]),
     });
-    const lookup = createDiscordGuildLookup({ botToken: BOT_TOKEN, fetchImpl });
+    const lookup = createDiscordGuildLookup({ botToken: BOT_TOKEN, fetchImpl, displayCache: createGuildDisplayCache() });
     expect(await lookup.getGuildChannelNames(GUILD_ID)).toEqual({ '100': 'general', '200': 'voice', '300': 'news' });
   });
 
   test('is empty when the lookup fails', async () => {
     const { fetchImpl } = stubFetch({ channels: json({ message: 'nope' }, 500) });
-    const lookup = createDiscordGuildLookup({ botToken: BOT_TOKEN, fetchImpl, sleep: async () => {} });
+    const lookup = createDiscordGuildLookup({
+      botToken: BOT_TOKEN,
+      fetchImpl,
+      sleep: async () => {},
+      displayCache: createGuildDisplayCache(),
+    });
     expect(await lookup.getGuildChannelNames(GUILD_ID)).toEqual({});
+  });
+});
+
+describe('display lookup cache', () => {
+  const CHANNELS_PATH = `/guilds/${GUILD_ID}/channels`;
+  const NAMES = { '100': 'general' };
+
+  test('serves a second lookup instance from the shared cache', async () => {
+    const { fetchImpl, calls } = stubPaths({ [CHANNELS_PATH]: json([rawChannel('100', 'general', 0)]) });
+    const displayCache = createGuildDisplayCache(() => 0);
+
+    const first = createDiscordGuildLookup({ botToken: BOT_TOKEN, fetchImpl, displayCache });
+    const second = createDiscordGuildLookup({ botToken: BOT_TOKEN, fetchImpl, displayCache });
+
+    expect(await first.getGuildChannelNames(GUILD_ID)).toEqual(NAMES);
+    expect(await second.getGuildChannelNames(GUILD_ID)).toEqual(NAMES);
+    expect(calls).toHaveLength(1);
+  });
+
+  test('keeps guild names and channel names apart', async () => {
+    const { fetchImpl, calls } = stubPaths({
+      [`/guilds/${GUILD_ID}`]: json({ id: GUILD_ID, name: 'Test guild' }),
+      [CHANNELS_PATH]: json([rawChannel('100', 'general', 0)]),
+    });
+    const displayCache = createGuildDisplayCache(() => 0);
+    const lookup = createDiscordGuildLookup({ botToken: BOT_TOKEN, fetchImpl, displayCache });
+
+    expect(await lookup.getGuildName(GUILD_ID)).toBe('Test guild');
+    expect(await lookup.getGuildChannelNames(GUILD_ID)).toEqual(NAMES);
+    expect(await createDiscordGuildLookup({ botToken: BOT_TOKEN, fetchImpl, displayCache }).getGuildName(GUILD_ID)).toBe(
+      'Test guild',
+    );
+    expect(calls).toHaveLength(2);
+  });
+
+  test('does not cache a failed read', async () => {
+    const routes = { [CHANNELS_PATH]: json({ message: 'nope' }, 500) };
+    const { fetchImpl, calls } = stubPaths(routes);
+    const displayCache = createGuildDisplayCache(() => 0);
+    const lookup = createDiscordGuildLookup({ botToken: BOT_TOKEN, fetchImpl, displayCache });
+
+    expect(await lookup.getGuildChannelNames(GUILD_ID)).toEqual({});
+    routes[CHANNELS_PATH] = json([rawChannel('100', 'general', 0)]);
+    expect(await lookup.getGuildChannelNames(GUILD_ID)).toEqual(NAMES);
+    expect(calls).toHaveLength(2);
+  });
+
+  test('re-reads once an entry is older than 60 seconds', async () => {
+    const { fetchImpl, calls } = stubPaths({ [CHANNELS_PATH]: json([rawChannel('100', 'general', 0)]) });
+    let clock = 0;
+    const displayCache = createGuildDisplayCache(() => clock);
+    const lookup = createDiscordGuildLookup({ botToken: BOT_TOKEN, fetchImpl, displayCache });
+
+    await lookup.getGuildChannelNames(GUILD_ID);
+    clock = 59_999;
+    await lookup.getGuildChannelNames(GUILD_ID);
+    expect(calls).toHaveLength(1);
+    clock = 60_001;
+    await lookup.getGuildChannelNames(GUILD_ID);
+    expect(calls).toHaveLength(2);
   });
 });
 

@@ -22,8 +22,8 @@ export type SafeClipLog = {
    * The step that failed: `source_read`, `forwardability_check` (no Discord
    * call), `provenance_post` or `forward_post` while archiving;
    * `forward_history_read` (no
-   * `sourceMessageId`: it serves the whole page), `forward_read` or
-   * `source_read` on the archive page; `forward_read` when checking whether an
+   * `sourceMessageId`: it serves the whole page) or `forward_read` on the
+   * archive page; `forward_read` when checking whether an
    * archive copy is gone.
    */
   step?: string;
@@ -32,9 +32,10 @@ export type SafeClipLog = {
   httpStatus?: string;
   discordCode?: string;
   /**
-   * A retried Discord 429 (`discord.rate_limited`). `route` is a path
-   * template from `discordRouteTemplate`, never the raw path. `retryAfterMs`
-   * is the delay actually slept, after the cap; `attempt` counts from 1.
+   * A retried Discord 429 (`discord.rate_limited`), or one asking for longer
+   * than the client waits and thrown at once (`discord.rate_limited_gave_up`).
+   * `route` is a path template from `discordRouteTemplate`, never the raw
+   * path. `retryAfterMs` is the delay Discord asked for; `attempt` counts from 1.
    * Scope and bucket are Discord's `X-RateLimit-*` headers when sent;
    * `rateLimitGlobal` is `true` or `false`.
    */

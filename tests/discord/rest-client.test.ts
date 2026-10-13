@@ -92,7 +92,7 @@ describe('rate-limit retry logging', () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     const sleep = vi.fn(async () => {});
     const fetchImpl = sequence([
-      rateLimited(7.5, { 'X-RateLimit-Scope': 'shared', 'X-RateLimit-Bucket': 'abcd1234' }),
+      rateLimited(5, { 'X-RateLimit-Scope': 'shared', 'X-RateLimit-Bucket': 'abcd1234' }),
       new Response(JSON.stringify({ id: 'ok' }), { status: 200 }),
     ]);
     const client = createDiscordRestClient({ botToken: BOT_TOKEN, fetchImpl, sleep });
@@ -115,6 +115,54 @@ describe('rate-limit retry logging', () => {
     for (const sentinel of [BOT_TOKEN, BODY_SENTINEL, QUERY_SENTINEL, CHANNEL_ID]) {
       expect(lines[0]).not.toContain(sentinel);
     }
+  });
+
+  it.each([5.5, 30])('gives up at once on a 429 asking for %s s, past the 5 s cap, and logs it', async (retryAfter) => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const sleep = vi.fn(async () => {});
+    const fetchImpl = vi.fn(
+      sequence([
+        rateLimited(retryAfter, { 'X-RateLimit-Scope': 'shared', 'X-RateLimit-Bucket': 'abcd1234' }),
+        new Response(JSON.stringify({ id: 'ok' }), { status: 200 }),
+      ]),
+    );
+    const client = createDiscordRestClient({ botToken: BOT_TOKEN, fetchImpl, sleep });
+
+    const request = client.request('GET', PATH);
+    await expect(request).rejects.toBeInstanceOf(DiscordApiError);
+    await expect(request).rejects.toMatchObject({ status: 429, code: 0 });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+    const lines = rawLogLines();
+    expect(lines.map((line) => JSON.parse(line))).toEqual([
+      {
+        event: 'discord.rate_limited_gave_up',
+        method: 'GET',
+        route: '/channels/{id}/messages',
+        retryAfterMs: String(retryAfter * 1000),
+        attempt: '1',
+        rateLimitScope: 'shared',
+        rateLimitBucket: 'abcd1234',
+        rateLimitGlobal: 'false',
+      },
+    ]);
+    for (const sentinel of [BOT_TOKEN, BODY_SENTINEL, QUERY_SENTINEL, CHANNEL_ID]) {
+      expect(lines[0]).not.toContain(sentinel);
+    }
+  });
+
+  it('retries a 429 without retry_after after the 1 s default', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const sleep = vi.fn(async () => {});
+    const fetchImpl = sequence([
+      new Response(JSON.stringify({ code: 0 }), { status: 429 }),
+      new Response(JSON.stringify({ id: 'ok' }), { status: 200 }),
+    ]);
+    const client = createDiscordRestClient({ botToken: BOT_TOKEN, fetchImpl, sleep });
+
+    await expect(client.request('GET', PATH)).resolves.toEqual({ id: 'ok' });
+    expect(sleep).toHaveBeenCalledWith(1000);
   });
 
   it('logs each retried 429 and leaves the final one to the caller', async () => {

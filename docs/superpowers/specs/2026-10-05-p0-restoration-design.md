@@ -80,6 +80,8 @@ The current Clip schema has no original-message timestamp. Use the snapshot time
 
 Snapshots do not supply original authors or reply references. Use the stored author ID and live display lookups; never mistake the forward's bot author for the original author. For a reply, retrieve only source reference metadata when available, without including the parent body. If source/reply metadata is inaccessible, retain the archive and omit the unavailable reply detail. Offer the original link; mark it unavailable only when checked, not merely because the archived snapshot exists or a lookup timed out.
 
+**Amended — approved by Ori 2026-10-14 (#95):** P0 makes no source-message read. Each per-row read shared one source channel's rate-limit bucket and starved the setup and settings renders (journal 2026-10-14). Cards therefore show no reply detail and never mark the original unavailable; the original link is always offered. The rule above returns with the source read.
+
 | Result | Row behavior |
 | --- | --- |
 | Valid snapshot | Ready content and control-plane provenance |
@@ -89,6 +91,8 @@ Snapshots do not supply original authors or reply references. Use the stored aut
 | Session expired | Stop content loading, clear visible content and show `/setup` recovery |
 
 Browsing never changes Clip status, removes control rows or performs reconciliation. No raw body, attachment, embed payload or response-bearing exception is persisted/logged. Discord display lookups are deduplicated only inside the current request; there is no persistent content cache.
+
+**Amended — approved by Ori 2026-10-14 (#94):** the guild name and the channel-name map are cached in server memory for about 60 seconds across requests, successes only. This brings forward, for these two display lookups only, the product spec's P1 short-lived cache (`docs/01_CLIP_PRODUCT_SPEC.md`, "P1 performance polish"). It holds no message content, and nothing that grants or checks a permission reads from it.
 
 ## Guild-data deletion and concurrent work
 
@@ -148,7 +152,7 @@ Use the project's existing Vitest/Testing Library suites and real PostgreSQL 18.
 - Effective destination permission refusals and successful setup without changing existing-channel overwrites; private auto-create with bot read/write access and bootstrap permission revocation.
 - Cross-guild/expired-session denial on every admin route; origin/acknowledgement enforcement on mutations.
 - Cursor ties, forward/back navigation, new inserts between pages, channel filters, totals/ranges, zero results and tombstone/non-ACTIVE exclusion against real Postgres.
-- Current-page-only Discord reads, request limits/concurrency, payload validation, safe rendering, code/attachments, reply metadata availability, missing copies and transient/permission error separation.
+- Current-page-only Discord reads, request limits/concurrency, payload validation, safe rendering, code/attachments, no source-message read (amended 2026-10-14, #95), missing copies and transient/permission error separation.
 - Atomic deletion, rollback, other-guild isolation, zero deletion-initiated Discord calls, credential invalidation, and deterministic races with save/token exchange/Clip completion and deletion followed by re-setup.
 - Existing uniqueness, state-machine, author/admin removal, tombstone, idempotency and count-dependent races remain green. Integrate the HTTP/domain paths against real Postgres instead of relabelling unit tests as the missing integrated pass.
 

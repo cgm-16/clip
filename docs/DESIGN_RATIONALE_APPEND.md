@@ -328,3 +328,7 @@ The 7.1 sweep (#39) measured every text pairing at AA or better. The boundaries 
 - `--danger-solid-text: #ffffff` names the handoff's white text on `--danger-solid` (`docs/06_DESIGN_HANDOFF.md`:90, 8.27:1). Without it, the confirm-step button borrowed a background token.
 
 The light theme has no `--focus` override, so in light a focused control's border (`#8f9fd6`, 2.59:1 on light `--sunken` `#ffffff`) is dimmer than its rest border; P0 ships dark only, and a light `--focus` needs a ruling before a light theme ships.
+
+## 18. 2026-10-14 — Clip card: no reply line, no verified-unavailable tag (#95)
+
+P0 drops Screen D's per-row source-message read, so a clip card no longer shows the reply-provenance line (`답장 → @author`) or `원본 메시지를 찾을 수 없습니다.`. The original-message link is always shown. On `sha-43fc2df` those reads, 20 per page in one source channel's rate-limit bucket, produced 181 retried 429s in one e2e run and starved the setup page's own Discord read (journal 2026-10-14). Ori approved the cut on 2026-10-14. The card's reply and unavailable branches and their approved copy stay in the code, unreachable, for when the read returns.
