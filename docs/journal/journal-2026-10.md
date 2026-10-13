@@ -247,3 +247,8 @@ Ori ran `docs/tasks/wave-6-manual-checklist.md` in a fresh guild (`test2`), with
 - The poll finding came from reading `FORWARDABLE_MESSAGE_TYPES` before the row was run. A poll is type `0` with a `poll` field, so the type check cannot catch it.
 
 **Fix order agreed with Ori:** #82, #83 and #84 before 10-31. #86 can ride along. #85 waits on Korean copy. #87 is polish.
+
+**6.4 e2e on `sha-cdcabaf` (guild `test2`, 21 clips), first runs:**
+- Run 1 never seeded: `pnpm install` does not generate the Prisma client, and `eval "$(seed)"` swallows the seed's failure. The suite then ran with no tokens; only "unknown token opens Screen A" passed. Nothing reached the database.
+- Run 2 (seeded): 5 passed. "the archive list renders" failed with 6 of 20 cards showing `다시 시도` on one cold page load. That is #82, reproduced by the suite. Pagination and channel filter were skipped by serial mode.
+- So the production recipe moved into `scripts/e2e-prod.sh`, run by Ori. It does one process: port-forward, secrets in its own environment only, generate if missing, a seed whose failure stops the run (`seed="$(...)"`, not `eval "$(...)"`; checked: the eval form continues past a failed substitution under `set -e`), suite, and teardown. It refuses a checkout whose `app/`, `lib/` or `prisma/` differ from the deployed sha.
