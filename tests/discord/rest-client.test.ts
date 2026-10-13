@@ -161,6 +161,69 @@ describe('rate-limit retry logging', () => {
   });
 });
 
+describe('slow request logging', () => {
+  const PATH = '/guilds/1234567890123456789/channels?with_counts=SENTINEL-QUERY';
+
+  /** A clock that reads `start` when the request begins and `end` when it settles. */
+  function clock(start: number, end: number): () => number {
+    return vi.fn<() => number>().mockReturnValueOnce(start).mockReturnValueOnce(end);
+  }
+
+  function logLines(): unknown[] {
+    return vi.mocked(console.log).mock.calls.map(([line]) => JSON.parse(String(line)));
+  }
+
+  it('logs a request that took a second or longer, with its outcome', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const fetchImpl = (async () => new Response('{}', { status: 200 })) as unknown as typeof fetch;
+    const client = createDiscordRestClient({ botToken: 'SENTINEL-BOT-TOKEN', fetchImpl, now: clock(0, 1500) });
+
+    await client.request('GET', PATH);
+
+    expect(logLines()).toEqual([
+      {
+        event: 'discord.slow_request',
+        method: 'GET',
+        route: '/guilds/{id}/channels',
+        durationMs: '1500',
+        attempt: '1',
+        httpStatus: '200',
+      },
+    ]);
+  });
+
+  it('logs a request that timed out, and still throws', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const fetchImpl = (async () => {
+      throw Object.assign(new Error('timed out'), { name: 'TimeoutError' });
+    }) as unknown as typeof fetch;
+    const client = createDiscordRestClient({ botToken: 'SENTINEL-BOT-TOKEN', fetchImpl, now: clock(0, 10000) });
+
+    await expect(client.request('GET', PATH)).rejects.toMatchObject({ name: 'TimeoutError' });
+
+    expect(logLines()).toEqual([
+      {
+        event: 'discord.slow_request',
+        method: 'GET',
+        route: '/guilds/{id}/channels',
+        durationMs: '10000',
+        attempt: '1',
+        failure: 'timeout',
+      },
+    ]);
+  });
+
+  it('logs nothing for a request under a second', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const fetchImpl = (async () => new Response('{}', { status: 200 })) as unknown as typeof fetch;
+    const client = createDiscordRestClient({ botToken: 'SENTINEL-BOT-TOKEN', fetchImpl, now: clock(0, 999) });
+
+    await client.request('GET', PATH);
+
+    expect(logLines()).toEqual([]);
+  });
+});
+
 describe('discordRouteTemplate', () => {
   it('replaces every numeric id segment and drops the query string', () => {
     expect(discordRouteTemplate('/channels/1234567890123456789/messages/9876543210987654321')).toBe(

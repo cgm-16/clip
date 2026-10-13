@@ -45,6 +45,12 @@ export type SafeClipLog = {
   rateLimitScope?: string;
   rateLimitBucket?: string;
   rateLimitGlobal?: string;
+  /**
+   * A Discord request that took a second or longer, retries included
+   * (`discord.slow_request`), with `route`, `attempt` and its outcome as
+   * `httpStatus` or the `failure` facts.
+   */
+  durationMs?: string;
 };
 
 // The single source of truth for what may be logged. Built as an allowlist,
@@ -72,6 +78,7 @@ const SAFE_KEYS = [
   'rateLimitScope',
   'rateLimitBucket',
   'rateLimitGlobal',
+  'durationMs',
 ] as const satisfies readonly (keyof SafeClipLog)[];
 
 /**
