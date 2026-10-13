@@ -136,8 +136,8 @@ function isAccessDenied(error: unknown): boolean {
 /** One line per failed Discord read: which read, and its failure class -- never the error's message. */
 function logReadFailure(
   guildId: string,
-  sourceMessageId: string,
-  step: 'forward_read' | 'source_read',
+  sourceMessageId: string | undefined,
+  step: 'forward_history_read' | 'forward_read' | 'source_read',
   error: unknown,
 ): void {
   logClipEvent({
@@ -147,6 +147,41 @@ function logReadFailure(
     step,
     ...describeDiscordFailure(error),
   });
+}
+
+/**
+ * The wanted forwards found in one read of the archive channel's history, keyed
+ * by forward id. Anything else the channel holds -- provenance lines, other
+ * forwards, unrelated chatter -- is dropped here. A forward absent from the
+ * result is not proof it is gone: Discord answers an empty list when the bot
+ * lacks Read Message History, and one page holds at most 100 messages.
+ */
+async function readForwardHistory(
+  client: DiscordRestClient,
+  guildId: string,
+  archiveChannelId: string,
+  forwardIds: readonly string[],
+): Promise<Map<string, Snapshot | null>> {
+  const found = new Map<string, Snapshot | null>();
+  const wanted = new Set(forwardIds.filter((id) => SNOWFLAKE.test(id)));
+  if (wanted.size === 0) {
+    return found;
+  }
+  const lowest = [...wanted].map((id) => BigInt(id)).reduce((a, b) => (a < b ? a : b));
+  let history: unknown;
+  try {
+    history = await client.request('GET', `/channels/${archiveChannelId}/messages?after=${lowest - 1n}&limit=100`);
+  } catch (error) {
+    logReadFailure(guildId, undefined, 'forward_history_read', error);
+    return found;
+  }
+  for (const message of Array.isArray(history) ? history : []) {
+    const id = record(message)?.id;
+    if (typeof id === 'string' && wanted.has(id)) {
+      found.set(id, parseSnapshot(message));
+    }
+  }
+  return found;
 }
 
 async function mapWithConcurrency<T, R>(
@@ -176,9 +211,13 @@ async function mapWithConcurrency<T, R>(
  * Nothing read here is stored or logged; a failed read logs only which read
  * failed and its failure class.
  *
- * Each row costs two reads, run in sequence inside one of at most four
- * concurrent slots: the forward (content) and the source message (reply
- * author and whether the original still exists).
+ * Every forward lives in the one archive channel, so all rows share one
+ * Discord rate-limit bucket. One history read of that channel, starting just
+ * before the lowest wanted forward, serves every forward it lists. Each row
+ * then costs one or two reads, run in sequence inside one of at most four
+ * concurrent slots: the forward (content), only when the history did not list
+ * it, and the source message (reply author and whether the original still
+ * exists). Only a per-row forward read can prove a copy is missing.
  */
 export async function loadArchiveContent(input: {
   guildId: string;
@@ -217,20 +256,31 @@ export async function loadArchiveContent(input: {
     return name;
   }
 
+  // `archiveForwardMessageId` is non-null on every ACTIVE row
+  // (`clips_active_requires_archive`).
+  const listed = await readForwardHistory(
+    input.client,
+    input.guildId,
+    config.archiveChannelId,
+    activeIds.map((id) => byId.get(id)!.archiveForwardMessageId!),
+  );
+
   const items = await mapWithConcurrency(activeIds, CONTENT_FETCH_CONCURRENCY, async (sourceMessageId): Promise<ArchiveRowContent> => {
     const row = byId.get(sourceMessageId)!;
-    let forward: unknown = null;
+    const forwardId = row.archiveForwardMessageId!;
+    let parsed: Snapshot | null = null;
     let forwardError: unknown = null;
-    try {
-      // `archiveForwardMessageId` is non-null on every ACTIVE row
-      // (`clips_active_requires_archive`).
-      forward = await input.client.request(
-        'GET',
-        `/channels/${config.archiveChannelId}/messages/${row.archiveForwardMessageId}`,
-      );
-    } catch (error) {
-      forwardError = error;
-      logReadFailure(input.guildId, sourceMessageId, 'forward_read', error);
+    if (listed.has(forwardId)) {
+      parsed = listed.get(forwardId) ?? null;
+    } else {
+      try {
+        parsed = parseSnapshot(
+          await input.client.request('GET', `/channels/${config.archiveChannelId}/messages/${forwardId}`),
+        );
+      } catch (error) {
+        forwardError = error;
+        logReadFailure(input.guildId, sourceMessageId, 'forward_read', error);
+      }
     }
 
     let original: OriginalStatus = 'unknown';
@@ -261,7 +311,6 @@ export async function loadArchiveContent(input: {
       }
       return { ...base, state: 'error', reason: isAccessDenied(forwardError) ? 'access' : 'transient' };
     }
-    const parsed = parseSnapshot(forward);
     if (!parsed) {
       return { ...base, state: 'error', reason: 'transient' };
     }
