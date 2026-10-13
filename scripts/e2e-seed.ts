@@ -19,9 +19,13 @@
  *   eval "$(pnpm exec tsx --env-file=.env scripts/e2e-seed.ts --guild <guild-id>)"
  *   E2E_BASE_URL=http://localhost:3077 pnpm e2e
  *
- * Against production. The hash of a token is keyed by ADMIN_SESSION_SECRET,
- * so the seed must use production's. Run from a checkout that has this script;
- * the suite then measures the deployed image, so first check what it lacks:
+ * Against production, use `scripts/e2e-prod.sh <guild-id>`: it runs every step
+ * below in one process and refuses a checkout whose app code differs from the
+ * deployed image. The manual steps, for when the script itself is in question:
+ *
+ * The hash of a token is keyed by ADMIN_SESSION_SECRET, so the seed must use
+ * production's. Run from a checkout that has this script; the suite then
+ * measures the deployed image, so first check what it lacks:
  *
  *   kubectl -n clip get deploy clip -o jsonpath='{.spec.template.spec.containers[0].image}'
  *   # ghcr.io/cgm-16/clip:sha-<7> (scripts/release-image.sh)
@@ -37,6 +41,9 @@
  *   export PUBLIC_BASE_URL=https://clipendpoint.cc
  *   # Never read by the seed; lib/env.ts only requires them to be set.
  *   export DISCORD_APPLICATION_ID=unused DISCORD_PUBLIC_KEY=unused DISCORD_BOT_TOKEN=unused
+ *   # `pnpm install` does not generate the Prisma client; without it the seed
+ *   # fails with "Cannot find module '../generated/prisma/client'".
+ *   pnpm exec prisma generate
  *   eval "$(pnpm exec tsx scripts/e2e-seed.ts --guild <guild-id>)"
  *   E2E_BASE_URL=https://clipendpoint.cc pnpm e2e
  *   unset DATABASE_URL ADMIN_SESSION_SECRET PUBLIC_BASE_URL DISCORD_APPLICATION_ID DISCORD_PUBLIC_KEY DISCORD_BOT_TOKEN \

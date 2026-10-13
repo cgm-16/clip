@@ -234,3 +234,42 @@ Branch `feat/63-repost-missing-copy`. Built before Ori's 6.1/6.3 run on `sha-cdc
 **Deferred minors (review):**
 - No test pins the ACTIVE-only trigger for a DELETING Clip inside its lease that still holds ids. The swap predicate still refuses it; only wasted calls are at stake.
 - `clip.archive_check_failed` carries no guild or source key.
+
+## 2026-10-13 — Wave 6 live run (6.1 matrix, 6.3 scenarios) on `sha-cdcabaf`
+
+Ori ran `docs/tasks/wave-6-manual-checklist.md` in a fresh guild (`test2`), with the orchestrator walking it row by row. The full row table and 68 screenshots are in `docs/evidence/wave-6/` (`RESULTS.md`).
+
+**Permission matrix, measured:**
+
+| Permission | Where | Measured without it |
+|---|---|---|
+| `MANAGE_CHANNELS` | server | Clip and Unclip work (P4). "Create new" setup fails with only the generic save error (P6, #85). |
+| `VIEW_CHANNEL` | source | Clip refused (`invalidTarget`), row `FAILED` (R1). |
+| `READ_MESSAGE_HISTORY` | source | The same (R2). Steady-state, not bootstrap. |
+| `VIEW_CHANNEL` | archive | `transientFailure`, `provenance_post 403/50001` (R3). |
+| `SEND_MESSAGES` | archive | `transientFailure`, `provenance_post 403/50013` (R4). |
+| `ADD_REACTIONS` | source | Clip succeeds; only the 📎 is missing (R5). |
+| Message Content Intent | application | Clip refused (`invalidTarget`) (R6). `160014` is not provable from the log (#86). |
+
+**Scenarios:**
+- Every scenario passed except 17b (poll, #84).
+- Scenario 2 passed only after a workaround: five `FAILED` rows from the R rows blocked the repoint (#83). Unclipping each failed message cleared them.
+- The DM remove button was run as its own row (10b), since scenario 10 used the context command.
+- Scenario 15 passed on 21 clips. Screen D then failed rows with Discord `429` during ordinary paging and filtering (#82), which is the most visible defect the run found.
+- The burst showed no archive failures, but two people clicking is not concurrency evidence. That stays with the real-Postgres integration tests.
+
+**Instrument notes:**
+- `#clip-archive` carries a **member** overwrite for the bot, created by setup. Denying the Clip *role* there changes nothing, so R3 and R4 had to edit the member entry. A role-level deny would have produced a false pass.
+- The P3 "no DM" scare was the wrong DM thread on screen. The log line `clip.author_notified` (written only after Discord accepts the DM) settled it before any code was suspected.
+- Two orchestrator predictions were wrong and are recorded as such:
+  - "no second DM for the same author": §11.1 is per canonical archival, not per author;
+  - "DMs-off gives `50007`": the measured code is `50278`.
+- The poll finding came from reading `FORWARDABLE_MESSAGE_TYPES` before the row was run. A poll is type `0` with a `poll` field, so the type check cannot catch it.
+
+**Fix order agreed with Ori:** #82, #83 and #84 before 10-31. #86 can ride along. #85 waits on Korean copy. #87 is polish.
+
+**6.4 e2e on `sha-cdcabaf` (guild `test2`, 21 clips), first runs:**
+- Run 1 never seeded: `pnpm install` does not generate the Prisma client, and `eval "$(seed)"` swallows the seed's failure. The suite then ran with no tokens; only "unknown token opens Screen A" passed. Nothing reached the database.
+- Run 2 (seeded): 5 passed. "the archive list renders" failed with 6 of 20 cards showing `다시 시도` on one cold page load. That is #82, reproduced by the suite. Pagination and channel filter were skipped by serial mode.
+- So the production recipe moved into `scripts/e2e-prod.sh`, run by Ori. It does one process: port-forward, secrets in its own environment only, generate if missing, a seed whose failure stops the run (`seed="$(...)"`, not `eval "$(...)"`; checked: the eval form continues past a failed substitution under `set -e`), suite, and teardown. It refuses a checkout whose `app/`, `lib/` or `prisma/` differ from the deployed sha.
+- Run 3, the script's first production run (`bash scripts/e2e-prod.sh 1559501336641404960 -g "pagination|channel filter"`): 2 passed. Pagination keeps `before=`/`after=` in the URL, and the channel filter keeps `channel=`. Net on `sha-cdcabaf`: 7 of 8 pass. The one failure is #82.
