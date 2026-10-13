@@ -24,8 +24,6 @@ interface DeployOptions {
 }
 
 const GENERATION = '3';
-const REVISION = '7';
-const REVISION_JSONPATH = 'jsonpath={.metadata.annotations.deployment\\.kubernetes\\.io/revision}';
 
 /**
  * Runs the script with fake `gh`, `git` and `kubectl` first on PATH. The fake
@@ -34,9 +32,11 @@ const REVISION_JSONPATH = 'jsonpath={.metadata.annotations.deployment\\.kubernet
  * `diff` reports uncommitted changes. The fake `kubectl` logs each call's
  * arguments, exits 1 for a call starting with `failingKubectl`, keeps a copy of
  * any file applied from outside `k8s/` (the rendered deployment, deleted when
- * the script exits) and answers that apply with GENERATION. It prints REVISION
- * for the revision annotation, `finalGeneration` for the generation read after
- * the rollout, and `deployedImage` for the image read-back.
+ * the script exits) and answers that apply with GENERATION. Like a `Recreate`
+ * Deployment whose new ReplicaSet does not exist yet, it reports revision 12 and
+ * fails a `rollout status` pinned to it. It prints `finalGeneration` for the
+ * generation read after the rollout, and `deployedImage` for the image
+ * read-back.
  */
 function deployWith(
   runLine: string,
@@ -59,8 +59,9 @@ function deployWith(
       `if [ -n '${failingKubectl}' ]; then case "$*" in '${failingKubectl}'*) exit 1 ;; esac; fi`,
       `case "$1 $3" in "apply k8s/"*) ;; "apply "*) cat "$3" > '${renderedCopy}'; printf '%s' '${GENERATION}' ;; esac`,
       `case "$*" in`,
+      `  *"rollout status "*"--revision="*) echo 'error: desired revision (12) is different from the running revision (13)' >&2; exit 1 ;;`,
       `  *"get deploy clip -o jsonpath={.metadata.generation}") printf '%s' '${finalGeneration}' ;;`,
-      `  *"get deploy clip -o jsonpath={.metadata.annotations."*) printf '%s' '${REVISION}' ;;`,
+      `  *"get deploy clip -o jsonpath={.metadata.annotations."*) printf '%s' '12' ;;`,
       `  *"get deploy clip -o jsonpath={.spec."*) printf '%s' '${deployedImage}' ;;`,
       `esac`,
     ].join('\n'),
@@ -99,9 +100,7 @@ describe('deploy', () => {
       'apply -f k8s/service.yaml',
       'apply -f k8s/ingress.yaml',
       expect.stringMatching(/^apply -f \/\S+ -o jsonpath=\{\.metadata\.generation\}$/),
-      `-n clip wait --for=jsonpath={.status.observedGeneration}=${GENERATION} deploy/clip --timeout=5m`,
-      `-n clip get deploy clip -o ${REVISION_JSONPATH}`,
-      `-n clip rollout status deploy/clip --revision=${REVISION} --timeout=5m`,
+      '-n clip rollout status deploy/clip --timeout=5m',
       '-n clip get deploy clip -o jsonpath={.metadata.generation}',
       `-n clip get deploy clip -o jsonpath={.spec.template.spec.containers[?(@.name=="clip")].image}`,
     ]);
@@ -109,8 +108,18 @@ describe('deploy', () => {
     expect(result.stdout).toContain(IMAGE);
   });
 
+  // Under `strategy: Recreate` the controller sets observedGeneration before it
+  // creates the new ReplicaSet and bumps the revision annotation, so a revision
+  // read then is the old one and a rollout pinned to it fails.
+  it('deploys when the revision annotation lags the generation, as under Recreate', () => {
+    const result = deployWith(`completed|success|${SHA}`);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(`deployed ${IMAGE}`);
+  });
+
   // Another change (a `kubectl rollout restart`, a second deploy) bumps the
-  // generation; the revision waited on above is then no longer the one running.
+  // generation; the rollout waited on above is then no longer this deploy's.
   it('fails without reporting a deploy when another change superseded it during the rollout', () => {
     const result = deployWith(`completed|success|${SHA}`, { finalGeneration: '4' });
 
@@ -149,6 +158,6 @@ describe('deploy', () => {
     const result = deployWith(`completed|success|${SHA}`, { failingKubectl: '-n clip rollout status' });
 
     expect(result.status).not.toBe(0);
-    expect(result.kubectlCalls.at(-1)).toBe(`-n clip rollout status deploy/clip --revision=${REVISION} --timeout=5m`);
+    expect(result.kubectlCalls.at(-1)).toBe('-n clip rollout status deploy/clip --timeout=5m');
   });
 });

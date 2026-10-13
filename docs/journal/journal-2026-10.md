@@ -325,3 +325,27 @@ What the log window (07:28:05–07:28:29) shows:
 1. When `retry_after` exceeds the 5s cap, fail at once instead of sleeping 5s and asking again. Discord has said the wait is longer.
 2. Cache guild display data (guild name, channel names) for about 60s, across requests. This pulls a product-spec P1 item (line 565, short-lived server-side cache) into P0, for display lookups only, and amends restoration spec line 91.
 3. Drop Screen D's source-message reads for P0. Cards lose the reply author line and the verified-unavailable tag (`원본 메시지를 찾을 수 없습니다.`); the original link is always offered. This amends restoration spec lines 81 and 151.
+
+## 2026-10-14 — deploy.sh revision pin failed on its first real run
+
+The first real `scripts/deploy.sh` run failed after the apply:
+
+```
+deployment.apps/clip condition met
+error: desired revision (12) is different from the running revision (13)
+```
+
+**Root cause:** the Deployment uses `strategy: Recreate`. The controller's recreate path scales down the old ReplicaSets, then syncs status, which sets `observedGeneration` to the new generation. Only after the old pods are gone does it create the new ReplicaSet and bump the `deployment.kubernetes.io/revision` annotation. So the script's `kubectl wait` on `observedGeneration` returned, the revision read that followed got the old revision, and `rollout status --revision` pinned to it failed.
+
+**Fix:** no `wait` and no revision read. Plain `kubectl -n clip rollout status deploy/clip --timeout=5m` waits for `observedGeneration` itself and then for the updated pods. The generation re-check against `applied_generation` stays and is what catches a `kubectl rollout restart` overlapping the deploy; a restart keeps the image, so the image read-back catches only an overlapping deploy of a different image. `tests/scripts/deploy.test.ts` has a regression test whose stub kubectl reproduces the lagging annotation.
+
+**Found, not fixed:** the verification procedure in `docs/02_CLIP_IMPLEMENTATION_PLAN.md` (around lines 242-284) does the same thing, `wait` on `observedGeneration`, then a revision read and `rollout status --revision`, and has the same race under `Recreate`.
+
+## 2026-10-14 — 6.4 e2e on `sha-b845a59`: 8 of 8, #38 gate met
+
+`sha-b845a59` (#96: fail fast on long 429s, a 60s display-lookup cache, no Screen D source reads) was deployed with `scripts/deploy.sh`. Its rollout check failed (entry above), but the rollout itself completed: Ori read back generation, observed generation and revision 13 and the image `sha-b845a59`. Ori then ran `bash scripts/e2e-prod.sh 1559501336641404960` (guild `test2`, 21 clips) while `kubectl logs -f --timestamps` captured the server log.
+
+- 8 of 8 passed in 10.0s. The archive list rendered in 2.5s (8.5s on `sha-9bce61c`), and setup passed in 4.1s.
+- The log had two matching lines, both from one archive-channel history read: a 429 asking for 661ms, retried once, then 200 after 1300ms. On `sha-43fc2df` the same patterns matched 181 retried 429s, 93 slow requests and 81 failed source reads. There were no give-ups and no `destination stream closed early`.
+
+**Process slip:** #38 had already been closed on 2026-10-13 by the merge of #89, whose PR body linked it as closed, before its 8/8 gate was met. The gate is met now, and the evidence is on #38. Link the gate issue with "Refs" until the gate is met.
