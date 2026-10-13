@@ -481,23 +481,12 @@ describe('loadArchiveContent', () => {
       expect(items).toMatchObject([{ state: 'ready', body: [{ kind: 'text', text: 'still here' }] }]);
     });
 
-    test.each([
-      [
-        'a rate limit after retries',
-        () => new DiscordApiError(SENTINEL_MESSAGE, { status: 429, code: null }),
-        { failure: 'http', httpStatus: '429' },
-      ],
-      [
-        'missing access',
-        () => new DiscordApiError(SENTINEL_MESSAGE, { status: 403, code: 50001 }),
-        { failure: 'http', httpStatus: '403', discordCode: '50001' },
-      ],
-    ])('a failed history read (%s) logs one line and every row falls back', async (_label, failure, facts) => {
+    test('a failed history read (missing access) logs one line and every row falls back', async () => {
       const guildId = await configuredGuild();
       const rows = [await seedRow(guildId), await seedRow(guildId)];
       const stub = stubClient(
         (path) => (rows.some((row) => path === paths(row).forward) ? snapshot({ content: 'fallback' }) : {}),
-        failure,
+        () => new DiscordApiError(SENTINEL_MESSAGE, { status: 403, code: 50001 }),
       );
 
       const items = await load(guildId, rows, stub);
@@ -507,7 +496,37 @@ describe('loadArchiveContent', () => {
       const lines = rawLogLines();
       expect(lines.join('\n')).not.toContain('SENTINEL');
       expect(lines.map((line) => JSON.parse(line))).toEqual([
-        { event: 'archive.content_read_failed', guildId, step: 'forward_history_read', ...facts },
+        {
+          event: 'archive.content_read_failed',
+          guildId,
+          step: 'forward_history_read',
+          failure: 'http',
+          httpStatus: '403',
+          discordCode: '50001',
+        },
+      ]);
+    });
+
+    test('a rate-limited history read makes no per-row forward read; every row is transient', async () => {
+      const guildId = await configuredGuild();
+      const rows = [await seedRow(guildId), await seedRow(guildId)];
+      const stub = stubClient(
+        (path) => (rows.some((row) => path === paths(row).forward) ? new Error(`unexpected ${path}`) : {}),
+        () => new DiscordApiError(SENTINEL_MESSAGE, { status: 429, code: null }),
+      );
+
+      const items = await load(guildId, rows, stub);
+
+      expect(calledPaths(stub).filter((path) => path.startsWith(`/channels/${ARCHIVE_CHANNEL}/messages/`))).toEqual([]);
+      expect(calledPaths(stub)).toEqual(expect.arrayContaining(rows.map((row) => paths(row).source)));
+      expect(items).toMatchObject([
+        { state: 'error', reason: 'transient', original: 'available' },
+        { state: 'error', reason: 'transient', original: 'available' },
+      ]);
+      const lines = rawLogLines();
+      expect(lines.join('\n')).not.toContain('SENTINEL');
+      expect(lines.map((line) => JSON.parse(line))).toEqual([
+        { event: 'archive.content_read_failed', guildId, step: 'forward_history_read', failure: 'http', httpStatus: '429' },
       ]);
     });
 

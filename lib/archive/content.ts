@@ -155,17 +155,20 @@ function logReadFailure(
  * forwards, unrelated chatter -- is dropped here. A forward absent from the
  * result is not proof it is gone: Discord answers an empty list when the bot
  * lacks Read Message History, and one page holds at most 100 messages.
+ * `rateLimited` is the history read's error when Discord still throttled it
+ * after the client's retries: the archive channel is being throttled, and a
+ * per-row read for every row would add to that load rather than relieve it.
  */
 async function readForwardHistory(
   client: DiscordRestClient,
   guildId: string,
   archiveChannelId: string,
   forwardIds: readonly string[],
-): Promise<Map<string, Snapshot | null>> {
+): Promise<{ found: Map<string, Snapshot | null>; rateLimited: DiscordApiError | null }> {
   const found = new Map<string, Snapshot | null>();
   const wanted = new Set(forwardIds.filter((id) => SNOWFLAKE.test(id)));
   if (wanted.size === 0) {
-    return found;
+    return { found, rateLimited: null };
   }
   const lowest = [...wanted].map((id) => BigInt(id)).reduce((a, b) => (a < b ? a : b));
   let history: unknown;
@@ -173,7 +176,7 @@ async function readForwardHistory(
     history = await client.request('GET', `/channels/${archiveChannelId}/messages?after=${lowest - 1n}&limit=100`);
   } catch (error) {
     logReadFailure(guildId, undefined, 'forward_history_read', error);
-    return found;
+    return { found, rateLimited: error instanceof DiscordApiError && error.status === 429 ? error : null };
   }
   for (const message of Array.isArray(history) ? history : []) {
     const id = record(message)?.id;
@@ -181,7 +184,7 @@ async function readForwardHistory(
       found.set(id, parseSnapshot(message));
     }
   }
-  return found;
+  return { found, rateLimited: null };
 }
 
 async function mapWithConcurrency<T, R>(
@@ -217,7 +220,9 @@ async function mapWithConcurrency<T, R>(
  * then costs one or two reads, run in sequence inside one of at most four
  * concurrent slots: the forward (content), only when the history did not list
  * it, and the source message (reply author and whether the original still
- * exists). Only a per-row forward read can prove a copy is missing.
+ * exists). Only a per-row forward read can prove a copy is missing. A history
+ * read still rate-limited after retries skips every per-row forward read:
+ * each unlisted row fails with that error instead, logged once.
  */
 export async function loadArchiveContent(input: {
   guildId: string;
@@ -258,7 +263,7 @@ export async function loadArchiveContent(input: {
 
   // `archiveForwardMessageId` is non-null on every ACTIVE row
   // (`clips_active_requires_archive`).
-  const listed = await readForwardHistory(
+  const { found: listed, rateLimited } = await readForwardHistory(
     input.client,
     input.guildId,
     config.archiveChannelId,
@@ -272,6 +277,8 @@ export async function loadArchiveContent(input: {
     let forwardError: unknown = null;
     if (listed.has(forwardId)) {
       parsed = listed.get(forwardId) ?? null;
+    } else if (rateLimited) {
+      forwardError = rateLimited;
     } else {
       try {
         parsed = parseSnapshot(
