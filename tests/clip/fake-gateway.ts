@@ -4,12 +4,16 @@ import type {
   DiscordArchiveGateway,
 } from '@/lib/clip/types';
 
-export type DeleteCall = { archiveChannelId: string; ids: ArchiveMessageIds };
+export type ArchiveCall = { archiveChannelId: string; ids: ArchiveMessageIds };
 
 export type FakeDiscordArchiveGateway = DiscordArchiveGateway & {
   /** Every create attempt in order, including the ones that threw. */
   readonly createCalls: readonly CreateArchiveInput[];
-  readonly deleteCalls: readonly DeleteCall[];
+  readonly deleteCalls: readonly ArchiveCall[];
+  /** Every `isArchiveCopyMissing` call in order. */
+  readonly missingChecks: readonly ArchiveCall[];
+  /** Makes `isArchiveCopyMissing` report the pair with this forward id as gone. */
+  loseArchiveCopy(forwardMessageId: string): void;
   /** Makes the next `createArchiveMessage` throw `error` instead of posting. */
   failNextCreate(error: Error): void;
   /** Makes the next `deleteArchiveMessage` throw `error`, leaving both messages up. */
@@ -34,7 +38,9 @@ export type FakeDiscordArchiveGateway = DiscordArchiveGateway & {
  */
 export function createFakeGateway(): FakeDiscordArchiveGateway {
   const createCalls: CreateArchiveInput[] = [];
-  const deleteCalls: DeleteCall[] = [];
+  const deleteCalls: ArchiveCall[] = [];
+  const missingChecks: ArchiveCall[] = [];
+  const lostForwardIds = new Set<string>();
   let archivesPosted = 0;
   let nextCreateError: Error | null = null;
   let nextDeleteError: Error | null = null;
@@ -44,6 +50,11 @@ export function createFakeGateway(): FakeDiscordArchiveGateway {
   return {
     createCalls,
     deleteCalls,
+    missingChecks,
+
+    loseArchiveCopy(forwardMessageId: string): void {
+      lostForwardIds.add(forwardMessageId);
+    },
 
     failNextCreate(error: Error): void {
       nextCreateError = error;
@@ -97,6 +108,11 @@ export function createFakeGateway(): FakeDiscordArchiveGateway {
       if (hook !== null) {
         await hook();
       }
+    },
+
+    async isArchiveCopyMissing(archiveChannelId: string, ids: ArchiveMessageIds): Promise<boolean> {
+      missingChecks.push({ archiveChannelId, ids });
+      return lostForwardIds.has(ids.forwardMessageId);
     },
   };
 }

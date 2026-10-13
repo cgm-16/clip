@@ -10,8 +10,10 @@ import {
   describeDiscordFailure,
   DiscordApiError,
   DISCORD_ERROR,
+  isUnknownTarget,
   type DiscordRestClient,
 } from '@/lib/discord/rest-client';
+import { logClipEvent } from '@/lib/logging/safe-log';
 
 /**
  * Discord forwards only these four message types; polls, calls, activities and
@@ -249,6 +251,29 @@ export function createDiscordArchiveGateway(
 
       if (failure !== null) {
         throw failure;
+      }
+    },
+
+    async isArchiveCopyMissing(
+      archiveChannelId: string,
+      ids: ArchiveMessageIds
+    ): Promise<boolean> {
+      try {
+        // The body is discarded unread: a forward's snapshot carries the
+        // source message's content (§12).
+        await client.request('GET', `/channels/${archiveChannelId}/messages/${ids.forwardMessageId}`);
+        return false;
+      } catch (error) {
+        if (isUnknownTarget(error)) {
+          return true;
+        }
+        logClipEvent({
+          event: 'clip.archive_check_failed',
+          archiveForwardMessageId: ids.forwardMessageId,
+          step: 'forward_read',
+          ...describeDiscordFailure(error),
+        });
+        return false;
       }
     },
   };

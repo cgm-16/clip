@@ -52,6 +52,18 @@ export class DiscordApiError extends Error {
 }
 
 /**
+ * Only Discord's own "unknown message/channel" codes confirm a copy is gone.
+ * Codes alone: a bare 404 or 403 can come from an edge proxy or a permission
+ * gap, and treating either as "gone" would repost a copy that still exists.
+ */
+export function isUnknownTarget(error: unknown): boolean {
+  return (
+    error instanceof DiscordApiError &&
+    (error.code === DISCORD_ERROR.UNKNOWN_MESSAGE || error.code === DISCORD_ERROR.UNKNOWN_CHANNEL)
+  );
+}
+
+/**
  * What a failed Discord call can safely say about itself: the class of
  * failure and, for an HTTP failure, the status and Discord's JSON code as
  * decimal strings. Never the message -- a `DiscordApiError`'s message names

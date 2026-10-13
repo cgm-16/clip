@@ -20,7 +20,7 @@ export type SafeClipLog = {
   /**
    * The Discord call that failed: `source_read`, `provenance_post` or
    * `forward_post` while archiving; `forward_read` or `source_read` on the
-   * archive page.
+   * archive page; `forward_read` when checking whether an archive copy is gone.
    */
   step?: string;
   /** `http`, `timeout` or `network`; see `describeDiscordFailure`. */

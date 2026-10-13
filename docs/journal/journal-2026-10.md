@@ -214,3 +214,23 @@ Branch `wave/6-verification-2`. It opens before Ori's 6.1/6.3 runs, so those run
 - At 375px the identity bar wraps a long guild name into a narrow column.
 - The light theme has no `--focus` override (§17).
 - The seed header's local recipe assumes `.env` points at the dev database.
+
+## 2026-10-12 — #63: repost a confirmed-missing archive copy on re-clip
+
+Branch `feat/63-repost-missing-copy`. Built before Ori's 6.1/6.3 run on `sha-cdcabaf`. It merges only after those results are recorded, so the checklist evidence describes one build.
+
+**Why the trigger is sound:** a Clip row stores no archive channel, so the forward is read in the current `GuildConfig.archiveChannelId`. That is safe only because the setup save refuses to repoint while live Clips exist unless Discord confirms the old channel is gone (`app/setup/save/route.ts`, #58). Only 10008/10003 count as missing, through the same `isUnknownTarget` predicate Screen D's `누락` uses.
+
+**Ordering ruling:** the plan's Task 8 text put "delete the old pair" both after and before the swap. The orchestrator ruled: create the new pair, swap under the guild and row locks (ACTIVE and both old ids), then delete the old pair only if the swap applied. If the swap is lost, delete only the new pair. Swap-first is the only order in which a false "missing" can never destroy a real copy.
+
+**Reply ruling:** when the swap is lost, the reply reuses the publish path's `lostPublishReply` instead of always returning the usual success reply. Read literally, the plan would have sent success copy after an author removal had dropped every clipper.
+
+**Known limits:**
+- A repost does not re-add the 📎 marker or re-notify the author.
+- A missing provenance line whose forward survives is not detected.
+- A repost whose source is now unreadable still replies success and logs `clip.repost_failed`.
+- Every re-clip of an ACTIVE Clip costs one Discord GET.
+
+**Deferred minors (review):**
+- No test pins the ACTIVE-only trigger for a DELETING Clip inside its lease that still holds ids. The swap predicate still refuses it; only wasted calls are at stake.
+- `clip.archive_check_failed` carries no guild or source key.
