@@ -238,7 +238,7 @@ pnpm exec tsx scripts/register-discord-commands.ts --register --global
 
 `--register` 없이 실행하면 명령 내용만 출력하는 드라이런입니다. `--global`은 모든 서버에 등록하고(#67), 성공한 뒤 테스트 길드의 사본을 지웁니다.
 
-머지 게이트는 `pnpm lint`, `pnpm test`, `pnpm build`입니다. 인터랙션 엔드포인트는 유효한 인증서를 가진 진짜 HTTPS를 요구하므로, 디스코드 관련 동작은 로컬이 아니라 배포본에 대고 확인합니다.
+머지 게이트는 `pnpm lint`, `pnpm lint:design`, `pnpm test`, `pnpm build`입니다. 인터랙션 엔드포인트는 유효한 인증서를 가진 진짜 HTTPS를 요구하므로, 디스코드 관련 동작은 로컬이 아니라 배포본에 대고 확인합니다.
 
 ## AI 활용 개발 방식
 
