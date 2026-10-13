@@ -184,10 +184,33 @@ function stringField(body: unknown, field: string): string | null {
   return typeof value === 'string' ? value : null;
 }
 
+/**
+ * Successful guild-name and channel-name reads, kept for 60 seconds across
+ * requests so each admin page render does not re-read them from Discord.
+ * Display data only, never message content, and nothing that checks a
+ * permission reads it. Keyed by method and guild id; entries are not evicted,
+ * which holds while the bot serves few guilds.
+ */
+export type GuildDisplayCache = {
+  now: () => number;
+  entries: Map<string, { value: unknown; expiresAt: number }>;
+};
+
+const DISPLAY_CACHE_TTL_MS = 60_000;
+
+export function createGuildDisplayCache(now: () => number = Date.now): GuildDisplayCache {
+  return { now, entries: new Map() };
+}
+
+// Module-level so it outlives the per-request lookup instance.
+const defaultDisplayCache = createGuildDisplayCache();
+
 export type DiscordGuildLookupOptions = {
   botToken: string;
   fetchImpl: typeof fetch;
   sleep?: (ms: number) => Promise<void>;
+  /** Injected so a test gets its own cache and clock. */
+  displayCache?: GuildDisplayCache;
 };
 
 export type DiscordGuildLookup = {
@@ -213,6 +236,7 @@ export type DiscordGuildLookup = {
 
 export function createDiscordGuildLookup(options: DiscordGuildLookupOptions): DiscordGuildLookup {
   const client: DiscordRestClient = createDiscordRestClient(options);
+  const displayCache = options.displayCache ?? defaultDisplayCache;
 
   async function fetchOrThrow(path: string) {
     try {
@@ -235,6 +259,20 @@ export function createDiscordGuildLookup(options: DiscordGuildLookupOptions): Di
     }
   }
 
+  /** `fetchOrNull`, parsed and cached; a failed read is not cached, so the next call retries. */
+  async function cachedDisplayRead<T>(key: string, path: string, parse: (body: unknown) => T): Promise<T> {
+    const entry = displayCache.entries.get(key);
+    if (entry !== undefined && entry.expiresAt > displayCache.now()) {
+      return entry.value as T;
+    }
+    const body = await fetchOrNull(path);
+    const value = parse(body);
+    if (body !== null) {
+      displayCache.entries.set(key, { value, expiresAt: displayCache.now() + DISPLAY_CACHE_TTL_MS });
+    }
+    return value;
+  }
+
   return {
     async getGuildSetupChannels(guildId: string): Promise<SetupChannel[]> {
       return parseChannels(await fetchOrThrow(`/guilds/${guildId}/channels`));
@@ -251,7 +289,7 @@ export function createDiscordGuildLookup(options: DiscordGuildLookupOptions): Di
       return Array.isArray(roles) ? roles.filter((role): role is string => typeof role === 'string') : [];
     },
     async getGuildName(guildId: string): Promise<string | null> {
-      return stringField(await fetchOrNull(`/guilds/${guildId}`), 'name');
+      return cachedDisplayRead(`name:${guildId}`, `/guilds/${guildId}`, (body) => stringField(body, 'name'));
     },
     async getUserHandle(userId: string): Promise<string | null> {
       return stringField(await fetchOrNull(`/users/${userId}`), 'username');
@@ -265,15 +303,16 @@ export function createDiscordGuildLookup(options: DiscordGuildLookupOptions): Di
       }
     },
     async getGuildChannelNames(guildId: string): Promise<Record<string, string>> {
-      const body = await fetchOrNull(`/guilds/${guildId}/channels`);
-      const names: Record<string, string> = {};
-      for (const item of Array.isArray(body) ? body : []) {
-        const channel = item as { id?: unknown; name?: unknown } | null;
-        if (typeof channel?.id === 'string' && typeof channel.name === 'string') {
-          names[channel.id] = channel.name;
+      return cachedDisplayRead(`channels:${guildId}`, `/guilds/${guildId}/channels`, (body) => {
+        const names: Record<string, string> = {};
+        for (const item of Array.isArray(body) ? body : []) {
+          const channel = item as { id?: unknown; name?: unknown } | null;
+          if (typeof channel?.id === 'string' && typeof channel.name === 'string') {
+            names[channel.id] = channel.name;
+          }
         }
-      }
-      return names;
+        return names;
+      });
     },
   };
 }
