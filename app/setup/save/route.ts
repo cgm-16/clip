@@ -19,7 +19,11 @@ import {
   missingArchivePermissions,
   PERMISSION,
 } from '@/lib/discord/permissions';
-import { createDiscordRestClient, DiscordApiError } from '@/lib/discord/rest-client';
+import {
+  createDiscordRestClient,
+  describeDiscordFailure,
+  DiscordApiError,
+} from '@/lib/discord/rest-client';
 import { parseEnv } from '@/lib/env';
 import { logClipEvent } from '@/lib/logging/safe-log';
 
@@ -242,6 +246,16 @@ export async function POST(request: NextRequest) {
             ).toString(),
           },
         ],
+      }).catch((error: unknown) => {
+        // Logged here, not in the outer catch: the bot identity read above
+        // throws the same raw DiscordApiError, and only this request's
+        // failure (e.g. MANAGE_CHANNELS missing) is this event.
+        logClipEvent({
+          event: 'setup.archive_channel_create_failed',
+          guildId,
+          ...describeDiscordFailure(error),
+        });
+        throw error;
       });
       const parsedChannel = parseCreatedChannel(created);
       if (!parsedChannel) {

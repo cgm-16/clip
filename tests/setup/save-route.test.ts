@@ -391,6 +391,49 @@ describe('POST /setup/save', () => {
     expect(response.status).toBe(200);
   });
 
+  test('logs the Discord status and code when channel creation is refused, and returns 502', async () => {
+    stubEnv();
+    authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
+    const createError = new DiscordApiError('Missing Permissions', { status: 403, code: 50013 });
+    discordRequest.mockImplementation(async (method: string) => {
+      if (method === 'GET') {
+        return { id: BOT_USER_ID };
+      }
+      throw createError;
+    });
+    const logged = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const response = await POST(postJson({ destination: 'create', channelId: null, allowedRoleIds: [], guildId: GUILD_ID }));
+
+    expect(response.status).toBe(502);
+    expect(await response.text()).toBe('');
+    const lines = logged.mock.calls.map(([line]) => JSON.parse(line as string));
+    expect(lines).toEqual([
+      {
+        event: 'setup.archive_channel_create_failed',
+        guildId: GUILD_ID,
+        failure: 'http',
+        httpStatus: '403',
+        discordCode: '50013',
+      },
+    ]);
+    expect(JSON.stringify(lines)).not.toContain(createError.message);
+    expect(finalizeGuildArchiveConfig).not.toHaveBeenCalled();
+  });
+
+  test('a failed bot identity lookup is not logged as a channel creation failure', async () => {
+    stubEnv();
+    authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
+    discordRequest.mockRejectedValue(new DiscordApiError('Missing Access', { status: 403, code: 50001 }));
+    const logged = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const response = await POST(postJson({ destination: 'create', channelId: null, allowedRoleIds: [], guildId: GUILD_ID }));
+
+    expect(response.status).toBe(502);
+    expect(discordRequest).not.toHaveBeenCalledWith('POST', `/guilds/${GUILD_ID}/channels`, expect.anything());
+    expect(logged).not.toHaveBeenCalled();
+  });
+
   test('returns 502 before channel creation when bot identity is malformed', async () => {
     stubEnv();
     authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
