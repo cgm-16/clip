@@ -273,4 +273,4 @@ pnpm exec tsx scripts/register-discord-commands.ts --register --global
 
 ## 라이선스
 
-미정.
+[MIT](LICENSE)
