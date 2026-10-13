@@ -217,7 +217,7 @@ Branch `wave/6-verification-2`. It opens before Ori's 6.1/6.3 runs, so those run
 
 ## 2026-10-13 — Wave 6 live run (6.1 matrix, 6.3 scenarios) on `sha-cdcabaf`
 
-Ori ran `docs/tasks/wave-6-manual-checklist.md` in a fresh guild (`test2`), with the orchestrator walking it row by row. The full row table and 67 screenshots are in `docs/evidence/wave-6/` (`RESULTS.md`).
+Ori ran `docs/tasks/wave-6-manual-checklist.md` in a fresh guild (`test2`), with the orchestrator walking it row by row. The full row table and 68 screenshots are in `docs/evidence/wave-6/` (`RESULTS.md`).
 
 **Permission matrix, measured:**
 
