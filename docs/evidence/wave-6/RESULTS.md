@@ -10,15 +10,16 @@ Checklist: `docs/tasks/wave-6-manual-checklist.md`. Run by Ori, recorded by Clau
 
 **Findings filed:** #82 (Screen D 429), #83 (a FAILED row blocks repoint), #84 (poll), #85 (create without Manage Channels, needs copy), #86 (target-unavailable log fields), #87 (polish).
 
-**Still open from the run:**
-- Prep consent-screen permission list and the P1 time were not recorded.
-- S12: the source edit was not captured in a screenshot.
-- S17b: absence of a stray provenance message in `#archive-existing` was not confirmed.
-- Not run against `sha-cdcabaf`: 6.4 e2e (#38).
+**Confirmed by Ori after the run:**
+- The invite consent screen listed exactly the five permissions of `68688`.
+- S12: the source showed the edited text with `(수정됨)` while the archive kept the original.
+- S17b: no stray provenance in `#archive-existing`. The only lone provenance line is C's from S17, as intended (`s17b-archive-no-stray.png`).
+
+**Not recorded:** the P1 time. **Not run yet against `sha-cdcabaf`:** 6.4 e2e (#38).
 
 | Row | Result | Time KST | Shot | Notes |
 |---|---|---|---|---|
-| Prep | pass | ? | prep-guild.png | consent-screen 5 perms: ? |
+| Prep | pass | — | prep-guild.png | consent screen: exactly the five permissions (Ori, confirmed after the run) |
 | P1 | pass | ? | p1-screen-c.png, p1-channel-list.png | READY + 설정을 마쳤습니다; #clip-archive private (lock icon); OK note re MANAGE_CHANNELS; no log lines |
 | P2 | pass | 18:49 | p2-source-reply.png, p2-archive.png | ✓ 보관했습니다 (ephemeral); provenance "@Deer · #일반 · 2026년 10월 13일 오후 6:49" + forward "I like food"; 📎 1 on source. guild 1559501336641404960 msg 1559503250196004935. Log: clip.state_changed PENDING→ACTIVE |
 | P3 | pass | 18:49 | p3-deer-dm.png | Deer DM "회원님이 **test2 / #일반** 에 남긴…" with 원본 보기 + 아카이브에서 제거; first message in a new DM thread (Discord shows 스팸 신고 banner, normal for a first DM). Earlier "missing" was a false alarm: wrong DM thread viewed. Log: clip.author_notified |
@@ -47,12 +48,12 @@ Checklist: `docs/tasks/wave-6-manual-checklist.md`. Run by Ori, recorded by Clau
 | S3–9 (cont.) | pass | — | s9-archive-only-y.png | After S9 #archive-existing holds only Y's pair. Log: X=1559533553488756788, Y=1559533420751618190; X PENDING→ACTIVE once, Y PENDING→ACTIVE once; S5 clip.rejected NOT_AUTHORIZED user 982869953365569536 (Deer); X ACTIVE→DELETING exactly once (after Deer's unclip, not Ori's). Workaround unclips logged FAILED→DELETING for all 5 failed rows. |
 | S10 | pass | 20:55 | s10-11-ori-thread.png, s10-archive-empty.png | Ori (author of Y) used the Remove from Clip Archive context command (not the DM button) → ✓ 보관을 해제했습니다; Y pair gone though Deer still clipped it. Log: Y ACTIVE→REMOVED_BY_AUTHOR. DM-button path still untested live. |
 | S11 | pass | 20:55 | s10-11-ori-thread.png, s11b-deer-thread.png | Re-clip Y by Ori (admin) and Deer → 이 메시지는 보관할 수 없습니다. No log line for a refused re-clip of a tombstone (minor observability note). |
-| S12 | pass (edit unconfirmed by shot) | 20:57 | s12-13-17-archive.png, s13-17-screen-d.png | A's forward in archive and Screen D both show original "A". Need confirmation the source was actually edited. |
+| S12 | pass | 20:57 | s12-13-17-archive.png, s13-17-screen-d.png | A's forward in archive and Screen D both show original "A". Ori confirmed the source showed the edit with (수정됨). |
 | S13 | pass | 20:57 | s12-13-17-archive.png, s13-17-screen-d.png | B source deleted: forward survives; Screen D row shows content "B" + 원본 메시지를 찾을 수 없습니다. (no 원본 보기 button). Log: archive.content_read_failed step=source_read 404/10008 (msg 1559535507854073857). |
 | S17 | pass | 20:57 | s13-17-screen-d.png | C forward deleted by hand: Screen D row 누락 + 보관된 사본을 Discord에서 찾을 수 없습니다 + explanation; provenance metadata kept. Log: archive.content_read_failed step=forward_read 404/10008 (msg 1559535512715534398). C left for the #63 repost check. |
 | S10b | pass | 20:59 | s10b-dm-button.png | Deer clicked 아카이브에서 제거 in W's DM → ✓ 보관을 해제했습니다; W pair gone; Screen D lists 3. Log: 1559535516716769342 ACTIVE→REMOVED_BY_AUTHOR. |
 | S14 | pass | 21:02 | s14-screen-d.png | Deer DMs off in both shared servers; Ori clips D → archived (Screen D row D, 4 total). Log: PENDING→ACTIVE, clip.author_notification_undeliverable errorCode=50278 (not 50007 as guessed) (msg 1559536818347708497). |
-| S17b | FINDING | 21:04 | s17b-poll.png | Deer clips Ori's poll → 보관하지 못했습니다. 다시 시도해 주세요 (retry copy, wrong: expected 이 메시지는 보관할 수 없습니다). Log: ARCHIVE_CREATE_PERMANENT step=forward_post http 400 discordCode=50035; PENDING→FAILED (msg 1559537230773747793). Cause: a poll is type 0 + `poll` field; FORWARDABLE_MESSAGE_TYPES (lib/discord/archive-message.ts:21) checks type only, and the check runs after the PENDING row anyway. So (a) wrong copy, (b) a FAILED row is written (spec: rejected before any state), (c) that row trips the hasLiveClips over-refusal. Possible stray provenance in #archive-existing — to confirm. |
+| S17b | FINDING | 21:04 | s17b-poll.png | Deer clips Ori's poll → 보관하지 못했습니다. 다시 시도해 주세요 (retry copy, wrong: expected 이 메시지는 보관할 수 없습니다). Log: ARCHIVE_CREATE_PERMANENT step=forward_post http 400 discordCode=50035; PENDING→FAILED (msg 1559537230773747793). Cause: a poll is type 0 + `poll` field; FORWARDABLE_MESSAGE_TYPES (lib/discord/archive-message.ts:21) checks type only, and the check runs after the PENDING row anyway. So (a) wrong copy, (b) a FAILED row is written (spec: rejected before any state), (c) that row trips the hasLiveClips over-refusal. Orphaned provenance was deleted: no stray line (s17b-archive-no-stray.png). |
 | Burst | pass (low concurrency) | 21:06–21:07 | burst-screen-d.png, burst-deer-dms.png, burst-replies.png | 10 clips (7 #일반, 3 #second) over ~1 min, mostly Deer: all PENDING→ACTIVE + author_notified, 0 clip.archive_failed, one duplicate (E twice → 이미 보관된 메시지입니다). Two humans can't produce real concurrency; that is covered by integration tests against real Postgres. Archive-failure fields: none to report. |
 | Burst / Screen D | FINDING | 21:07 | burst-screen-d.png | archive.content_read_failed step=forward_read httpStatus=429 (no discordCode) on 4 rows (1559537837345345647, 1559537833402962041, 1559535507854073857, 1559535512715534398) on a 14-row Screen D load. Cause (lib/archive/content.ts ~226-280): per row, 1 forward GET (all in the same archive channel → same Discord rate-limit bucket) + 1 source GET, no cache by spec; a 429 forward read renders the row as state 'error' reason 'transient'. ARCHIVE_PAGE_SIZE=20 → ~40 GETs per page load. Likely worse on a full page. Need: what the 429 rows rendered. |
 | S15 | pass (URL unverified) | ~21:15 | s15-page1-*.png, s15-page2.png, s15-filter-second-errors.png, s15-filter-general.png | Re-clipped 7 earlier #일반 messages (pears, lemons, this is X, bananas, food is good, I like food, I really like food — all PENDING→ACTIVE, re-clip after unclip works) → 21. Page 1 "1–20 / 21" (이전 disabled), page 2 "21–21 / 21" (다음 disabled). Filter #second → 3, #일반 → 18. URL bar not in shots; e2e/archive.spec.ts asserts URL. |
