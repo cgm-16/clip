@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Deploys the newest release image to production: resolves it with
 # `scripts/release-image.sh`, renders k8s/deployment.yaml with it, applies the
-# manifests, waits for the rollout, then confirms the deployment spec carries
-# that image once rollout status has reported the updated pods available.
+# manifests, waits for the rollout of the revision that apply created, then
+# confirms nothing superseded it and that the deployment spec carries that
+# image.
 #
 #   bash scripts/deploy.sh
 #
@@ -36,9 +37,27 @@ scripts/render-k8s-deployment.sh "$image" "$rendered"
 for manifest in namespace service ingress; do
   kubectl apply -f "k8s/${manifest}.yaml"
 done
-kubectl apply -f "$rendered"
+is_positive_integer() {
+  case "$1" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$1" -gt 0 ]
+}
 
-kubectl -n clip rollout status deploy/clip --timeout=5m
+applied_generation="$(kubectl apply -f "$rendered" -o jsonpath='{.metadata.generation}')"
+is_positive_integer "$applied_generation" || { echo "apply returned generation '${applied_generation}', not a positive integer" >&2; exit 1; }
+
+# An unpinned rollout status follows the newest revision, which another change
+# (a `kubectl rollout restart`) could have started; pin it to the revision the
+# controller created for this apply.
+kubectl -n clip wait --for=jsonpath='{.status.observedGeneration}'="$applied_generation" deploy/clip --timeout=5m
+revision="$(kubectl -n clip get deploy clip -o jsonpath='{.metadata.annotations.deployment\.kubernetes\.io/revision}')"
+is_positive_integer "$revision" || { echo "deployment reports revision '${revision}', not a positive integer" >&2; exit 1; }
+kubectl -n clip rollout status deploy/clip --revision="$revision" --timeout=5m
+
+generation="$(kubectl -n clip get deploy clip -o jsonpath='{.metadata.generation}')"
+if [ "$generation" != "$applied_generation" ]; then
+  echo "deployment generation is ${generation}, not ${applied_generation}: another change superseded this deploy" >&2
+  exit 1
+fi
 
 # Reads the spec just applied, not the running pods; rollout status above
 # already proved the updated pods available.
