@@ -98,6 +98,15 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+/** The `attempt` of each retried-429 line the REST client logged, in order. */
+function rateLimitedEvents(): string[] {
+  return vi
+    .mocked(console.log)
+    .mock.calls.map(([line]) => JSON.parse(String(line)) as { event: string; attempt?: string })
+    .filter((entry) => entry.event === 'discord.rate_limited')
+    .map((entry) => entry.attempt ?? '');
+}
+
 describe('createArchiveMessage', () => {
   test('posts the provenance message and then the forward, returning both ids', async () => {
     const { fetchImpl, calls } = stubFetch([
@@ -397,6 +406,7 @@ describe('createArchiveMessage', () => {
   });
 
   test('an exhausted rate limit on the provenance post names its step, status and Discord code', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
     const rateLimited = json({ message: SENTINEL, retry_after: 0.001, global: false, code: 0 }, 429);
     const { fetchImpl } = stubFetch([sourceMessage(DEFAULT), rateLimited, rateLimited, rateLimited]);
     const gateway = createDiscordArchiveGateway({ botToken: BOT_TOKEN, fetchImpl });
@@ -408,6 +418,7 @@ describe('createArchiveMessage', () => {
       step: 'provenance_post',
       failure: { failure: 'http', httpStatus: '429', discordCode: '0' },
     });
+    expect(rateLimitedEvents()).toEqual(['1', '2']);
   });
 
   test('a timed-out forward post names its step and the timeout', async () => {
@@ -429,6 +440,7 @@ describe('createArchiveMessage', () => {
   });
 
   test('retries after a 429 and succeeds', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
     const { fetchImpl, calls } = stubFetch([
       sourceMessage(DEFAULT),
       json({ retry_after: 0.001, global: false }, 429),
@@ -441,9 +453,11 @@ describe('createArchiveMessage', () => {
 
     expect(archive.provenanceMessageId).toBe(PROVENANCE_ID);
     expect(calls).toHaveLength(4);
+    expect(rateLimitedEvents()).toEqual(['1']);
   });
 
   test('gives up rather than retrying a rate limit forever', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
     const rateLimited = json({ retry_after: 0.001, global: false }, 429);
     const { fetchImpl } = stubFetch([
       sourceMessage(DEFAULT),
@@ -459,6 +473,7 @@ describe('createArchiveMessage', () => {
     await expect(gateway.createArchiveMessage(input)).rejects.toBeInstanceOf(
       ArchiveCreationFailedError
     );
+    expect(rateLimitedEvents()).toEqual(['1', '2']);
   });
 });
 

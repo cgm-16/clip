@@ -7,6 +7,7 @@
  */
 
 import { setTimeout as defaultSleep } from 'node:timers/promises';
+import { logClipEvent } from '@/lib/logging/safe-log';
 
 const API_BASE = 'https://discord.com/api/v10';
 
@@ -103,6 +104,8 @@ export type DiscordRestClientOptions = {
   fetchImpl: typeof fetch;
   /** Injected so a rate-limit test does not have to wait in real time. */
   sleep?: (ms: number) => Promise<void>;
+  /** Milliseconds from a monotonic clock; injected so a slow-request test need not be slow. */
+  now?: () => number;
 };
 
 // Three attempts, not more. A 429 is Discord asking for a pause, but an
@@ -116,6 +119,11 @@ const MAX_ATTEMPTS = 3;
 // it exactly would hold the request open well past the point of usefulness.
 const MAX_RETRY_DELAY_MS = 5_000;
 const DISCORD_REQUEST_TIMEOUT_MS = 10_000;
+
+// A request that takes this long, retries included, is logged with its
+// outcome. A slow answer or a timeout costs a render as much as a 429 wait,
+// and without this line it would leave no trace at all.
+const SLOW_REQUEST_MS = 1_000;
 
 /**
  * Reads the JSON body, tolerating a response that has none.
@@ -156,9 +164,42 @@ function retryDelayMs(body: unknown): number {
   return 1000;
 }
 
+function isGlobalRateLimit(response: Response, body: unknown): boolean {
+  if (response.headers.get('X-RateLimit-Global') === 'true') {
+    return true;
+  }
+  return typeof body === 'object' && body !== null && (body as { global?: unknown }).global === true;
+}
+
+/**
+ * The request path with its variable parts replaced, so retries group by
+ * route rather than by the ids in them: every all-digit segment becomes
+ * `{id}`, the interaction token in a webhook path becomes `{token}`, and the
+ * query string is dropped. Only lowercase route words (`channels`, `@me`)
+ * are kept; any other segment becomes `{value}`. The token is a credential
+ * and a query or an unknown segment can carry anything, so none of them may
+ * reach a log line. The rule fails closed for any segment that is not a
+ * lowercase word; a variable segment that is one would be logged as is.
+ */
+export function discordRouteTemplate(path: string): string {
+  const segments = path.split('?')[0].split('/');
+  return segments
+    .map((segment, index) => {
+      if (/^\d+$/.test(segment)) {
+        return '{id}';
+      }
+      if (index >= 2 && segments[index - 2] === 'webhooks') {
+        return '{token}';
+      }
+      return segment === '' || /^@?[a-z-]+$/.test(segment) ? segment : '{value}';
+    })
+    .join('/');
+}
+
 export function createDiscordRestClient(options: DiscordRestClientOptions): DiscordRestClient {
   const { botToken, fetchImpl } = options;
   const sleep = options.sleep ?? defaultSleep;
+  const now = options.now ?? (() => performance.now());
 
   async function attempt(method: string, path: string, body: unknown): Promise<Response> {
     const headers: Record<string, string> = { Authorization: `Bot ${botToken}` };
@@ -175,31 +216,70 @@ export function createDiscordRestClient(options: DiscordRestClientOptions): Disc
 
   return {
     async request(method: string, path: string, body?: unknown): Promise<unknown> {
-      for (let remaining = MAX_ATTEMPTS; remaining > 0; remaining -= 1) {
-        const response = await attempt(method, path, body);
-        if (response.ok) {
-          return readJson(response);
+      const started = now();
+      let attempts = 0;
+      let outcome: DiscordFailureFacts | { httpStatus: string } | null = null;
+      try {
+        return await send();
+      } catch (error) {
+        outcome = describeDiscordFailure(error);
+        throw error;
+      } finally {
+        const durationMs = Math.round(now() - started);
+        if (durationMs >= SLOW_REQUEST_MS) {
+          logClipEvent({
+            event: 'discord.slow_request',
+            method,
+            route: discordRouteTemplate(path),
+            durationMs: String(durationMs),
+            attempt: String(attempts),
+            ...outcome,
+          });
         }
-
-        const payload = await readJson(response);
-
-        // Only a rate limit is retried in place. A 5xx is surfaced with
-        // `retryable` set and re-decided by the caller, which knows whether the
-        // control-plane state it already wrote makes a second attempt safe.
-        if (response.status === 429 && remaining > 1) {
-          await sleep(retryDelayMs(payload));
-          continue;
-        }
-
-        throw new DiscordApiError(`Discord ${method} ${path} failed with ${response.status}`, {
-          status: response.status,
-          code: errorCodeOf(payload),
-        });
       }
 
-      // Unreachable: the loop either returns, throws, or continues, and the
-      // final iteration cannot continue because `remaining > 1` is false.
-      throw new Error('unreachable: rate-limit retry loop exited without a result');
+      async function send(): Promise<unknown> {
+        for (let remaining = MAX_ATTEMPTS; remaining > 0; remaining -= 1) {
+          attempts += 1;
+          const response = await attempt(method, path, body);
+          if (response.ok) {
+            outcome = { httpStatus: String(response.status) };
+            return readJson(response);
+          }
+
+          const payload = await readJson(response);
+
+          // Only a rate limit is retried in place. A 5xx is surfaced with
+          // `retryable` set and re-decided by the caller, which knows whether the
+          // control-plane state it already wrote makes a second attempt safe.
+          if (response.status === 429 && remaining > 1) {
+            const delayMs = retryDelayMs(payload);
+            // Only the retried 429s: the final one is thrown, and reporting it
+            // belongs to the caller that decides what the failure means.
+            logClipEvent({
+              event: 'discord.rate_limited',
+              method,
+              route: discordRouteTemplate(path),
+              retryAfterMs: String(delayMs),
+              attempt: String(MAX_ATTEMPTS - remaining + 1),
+              rateLimitScope: response.headers.get('X-RateLimit-Scope') ?? undefined,
+              rateLimitBucket: response.headers.get('X-RateLimit-Bucket') ?? undefined,
+              rateLimitGlobal: String(isGlobalRateLimit(response, payload)),
+            });
+            await sleep(delayMs);
+            continue;
+          }
+
+          throw new DiscordApiError(`Discord ${method} ${path} failed with ${response.status}`, {
+            status: response.status,
+            code: errorCodeOf(payload),
+          });
+        }
+
+        // Unreachable: the loop either returns, throws, or continues, and the
+        // final iteration cannot continue because `remaining > 1` is false.
+        throw new Error('unreachable: rate-limit retry loop exited without a result');
+      }
     },
   };
 }

@@ -1,5 +1,6 @@
 /**
- * Structured log shape for Clip events. Deliberately excludes any field that
+ * Structured log shape for Clip events, and for the Discord REST client's
+ * rate-limit retries that serve them. Deliberately excludes any field that
  * could carry Discord message content (`content`, `embeds`, `attachments`):
  * operational logs must never dump message bodies (product spec §12).
  *
@@ -30,6 +31,26 @@ export type SafeClipLog = {
   failure?: string;
   httpStatus?: string;
   discordCode?: string;
+  /**
+   * A retried Discord 429 (`discord.rate_limited`). `route` is a path
+   * template from `discordRouteTemplate`, never the raw path. `retryAfterMs`
+   * is the delay actually slept, after the cap; `attempt` counts from 1.
+   * Scope and bucket are Discord's `X-RateLimit-*` headers when sent;
+   * `rateLimitGlobal` is `true` or `false`.
+   */
+  method?: string;
+  route?: string;
+  retryAfterMs?: string;
+  attempt?: string;
+  rateLimitScope?: string;
+  rateLimitBucket?: string;
+  rateLimitGlobal?: string;
+  /**
+   * A Discord request that took a second or longer, retries included
+   * (`discord.slow_request`), with `route`, `attempt` and its outcome as
+   * `httpStatus` or the `failure` facts.
+   */
+  durationMs?: string;
 };
 
 // The single source of truth for what may be logged. Built as an allowlist,
@@ -50,6 +71,14 @@ const SAFE_KEYS = [
   'failure',
   'httpStatus',
   'discordCode',
+  'method',
+  'route',
+  'retryAfterMs',
+  'attempt',
+  'rateLimitScope',
+  'rateLimitBucket',
+  'rateLimitGlobal',
+  'durationMs',
 ] as const satisfies readonly (keyof SafeClipLog)[];
 
 /**

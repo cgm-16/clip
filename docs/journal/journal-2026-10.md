@@ -293,3 +293,19 @@ A first attempt clipped the burst "C" (21:06) instead, which has a live forward,
 - A page is ordered by `created_at`, not by forward id. A channel filter, chatter in an existing channel, or a #63 repost can spread a page's forwards across the channel, so the fix is bounded rather than "one request": one history read (`after` = lowest forward − 1, `limit=100`), with a per-row fallback for anything it does not list.
 - Absence never means missing. Without Read Message History, Discord returns an empty list.
 - Source reads are unchanged (Ori's option A): 20 per page, mostly in one source channel. A failed source read degrades to `original: 'unknown'`, not `오류`, so the page should render clean. Whether those 429s still slow it is unmeasured until the deploy and the e2e re-run.
+
+## 2026-10-14 — 6.4 e2e on `sha-9bce61c`: #82 holds, the suite does not go green
+
+Ori ran `bash scripts/e2e-prod.sh 1559501336641404960` (guild `test2`, 21 clips) after deploying #89.
+
+- **Run 1:** 7 of 8 passed. "the archive list renders" passed in 8.5s with no retry buttons, so #82 is fixed on production. "a valid setup link opens setup" stayed on `/setup/<token>` past the 5s window, and its snapshot was an empty page, still loading. Run on its own straight afterwards (`-g "valid setup link"`), it passed in 4.7s.
+- **Run 2:** 7 of 8 passed. The archive list passed again (8.9s) and setup passed. "the channel filter narrows the list" did not reach `?channel=` within 5s: the snapshot still showed `전체` with every card loading. Deletion took 16.0s, against 1.0s in run 1.
+- Nothing on the setup or settings paths changed between `cdcabaf` (setup green) and `9bce61c`.
+
+**Reading:** two different failures in two runs, both a server-rendered navigation outlasting 5s. #38 stays open, and the gate is not moved by re-running until one run happens to pass. The hypothesis is that unlogged 429 retries happen in the server-side Discord calls each render makes. Screen D makes `/guilds/{id}` and `/guilds/{id}/channels` on every navigation. The REST client sleeps up to 5s per retry and logs nothing. Since it could be neither confirmed nor refuted from the logs, #90 adds the instrument first; timeouts are not raised.
+
+**Process slip:** the deploy command in the session summary pointed at `scratchpad/deploy.sh`, a file that no longer existed. The deploy was rebuilt from the repo's own `scripts/release-image.sh` and `scripts/render-k8s-deployment.sh`. A committed `scripts/deploy.sh` is proposed separately.
+
+**#90 instrument and how to read it:** each retried 429 logs `discord.rate_limited`, and every Discord request that takes 1s or longer, retries included, logs `discord.slow_request` with its outcome. The second line exists because the review pointed out an asymmetry: retry lines alone could confirm the 429 hypothesis but never refute it, since a slow answer or a timeout swallowed by `fetchOrNull` left no trace. The lines carry no timestamp, so read them with `kubectl -n clip logs -f deploy/clip -c clip --timestamps`, started before the run.
+
+**Found, not fixed (outside #90):** `DiscordApiError`'s message is `Discord ${method} ${path} failed …`. For `patchFollowupMessage` that path contains the interaction token. Nothing in the repo logs `error.message`, but an unhandled error that reached Next's own logger would print it.
