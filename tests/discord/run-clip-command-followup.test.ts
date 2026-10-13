@@ -157,6 +157,7 @@ describe('runClipCommand: nothing after the member is answered may overwrite tha
             messages: {
               [sourceMessageId]: {
                 id: sourceMessageId,
+                type: 0,
                 channel_id: sourceChannelId,
                 author: { id: sourceAuthorUserId },
               },

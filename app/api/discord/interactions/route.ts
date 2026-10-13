@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { issueSetupToken } from '@/lib/admin-session/service';
-import { createDiscordArchiveGateway } from '@/lib/discord/archive-message';
+import { createDiscordArchiveGateway, isForwardableMessage } from '@/lib/discord/archive-message';
 import {
   CLIP_COMMAND_NAME,
   REMOVE_FROM_CLIP_ARCHIVE_COMMAND_NAME,
@@ -84,8 +84,11 @@ const MessageContextInvocationSchema = z.object({
         z.string(),
         z.object({
           id: z.string().min(1),
+          type: z.number().int(),
           channel_id: z.string().min(1).optional(),
           author: z.object({ id: z.string().min(1) }),
+          // Read only for its presence; see `isForwardableMessage`.
+          poll: z.unknown().optional(),
         }),
       ),
     }),
@@ -121,6 +124,7 @@ type ContextCommandContext = {
   invokingUserRoleIds: readonly string[];
   invokingUserHasManageGuild: boolean;
   channelName: string | null;
+  sourceIsForwardable: boolean;
 };
 
 function parseContextCommand(interaction: unknown): ContextCommandContext | null {
@@ -147,6 +151,10 @@ function parseContextCommand(interaction: unknown): ContextCommandContext | null
     invokingUserRoleIds: member.roles,
     invokingUserHasManageGuild: hasManageGuild(member.permissions),
     channelName: parsed.data.channel?.name ?? null,
+    sourceIsForwardable: isForwardableMessage(
+      message.type,
+      message.poll !== undefined && message.poll !== null,
+    ),
   };
 }
 
@@ -444,6 +452,13 @@ function handleContextCommand(
     // commands; kept as a fail-closed answer rather than a thrown error on
     // the (untrusted) chance the payload does not match what Discord signed.
     return ephemeralReply(DISCORD_COPY.transientFailure);
+  }
+
+  // An unforwardable target is refused here, before `ClipService` writes a
+  // PENDING row, so it never becomes a FAILED one (spec §6.3). The archive
+  // gateway repeats the check against the message it reads.
+  if (name === CLIP_COMMAND_NAME && !ctx.sourceIsForwardable) {
+    return ephemeralReply(DISCORD_COPY.invalidTarget);
   }
 
   const response = deferredEphemeralReply();

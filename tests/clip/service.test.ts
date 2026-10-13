@@ -615,6 +615,68 @@ describe('clip service', () => {
     expect(await countClipperRows(fixture)).toBe(1);
   });
 
+  // #83: a FAILED Clip holding no archive id no longer blocks a repoint, so a
+  // re-clip can post into the old channel while the repoint commits. The
+  // publish must refuse that pair rather than go ACTIVE on ids nothing can
+  // address through the configured channel (finding C3).
+  test('a re-clip that posted into a channel repointed meanwhile is taken down and stays FAILED', async () => {
+    const fixture = await seedConfiguredGuild();
+    const clipperUserId = fakeSnowflake();
+    const repointedArchiveChannelId = fakeSnowflake();
+    gateway.failNextCreate(
+      new ArchiveCreationFailedError('discord rate limited the post', {
+        retryable: true,
+        orphanedProvenanceMessageId: null,
+        step: 'provenance_post',
+        failure: { failure: 'http', httpStatus: '429', discordCode: '0' },
+      }),
+    );
+    expect(await service.clip(clipInput(fixture, clipperUserId))).toEqual({
+      kind: 'FAILED',
+      retryable: true,
+    });
+
+    let repoint: Awaited<ReturnType<typeof finalizeGuildArchiveConfig>> | undefined;
+    gateway.onNextCreate(async () => {
+      repoint = await finalizeGuildArchiveConfig({
+        guildId: fixture.guildId,
+        sessionTokenHash: await liveSession(fixture.guildId),
+        archiveChannelId: repointedArchiveChannelId,
+        configuredByUserId: fakeSnowflake(),
+        allowedRoleIds: [fixture.allowedRoleId],
+      });
+    });
+    const raced = await service.clip(clipInput(fixture, clipperUserId));
+
+    expect(repoint).toEqual({ kind: 'SAVED' });
+    expect(raced).toEqual({ kind: 'FAILED', retryable: true });
+    expect(await readClip(fixture)).toMatchObject({
+      status: 'FAILED',
+      archiveProvenanceMessageId: null,
+      archiveForwardMessageId: null,
+    });
+    expect(gateway.createCalls.at(-1)?.archiveChannelId).toBe(fixture.archiveChannelId);
+    expect(gateway.deleteCalls).toEqual([
+      {
+        archiveChannelId: fixture.archiveChannelId,
+        ids: { provenanceMessageId: 'provenance-1', forwardMessageId: 'forward-1' },
+      },
+    ]);
+
+    const retry = await service.clip(clipInput(fixture, clipperUserId));
+
+    expect(retry).toEqual({
+      kind: 'CREATED',
+      archive: { provenanceMessageId: 'provenance-2', forwardMessageId: 'forward-2' },
+    });
+    expect(gateway.createCalls.at(-1)?.archiveChannelId).toBe(repointedArchiveChannelId);
+    expect(await readClip(fixture)).toMatchObject({
+      status: 'ACTIVE',
+      archiveProvenanceMessageId: 'provenance-2',
+      archiveForwardMessageId: 'forward-2',
+    });
+  });
+
   // The raw line for one event. The sentinel is asserted against the string
   // console.log received, not a parsed copy, so a leak through any key --
   // allowlisted or not -- is caught.
@@ -657,6 +719,32 @@ describe('clip service', () => {
     });
   });
 
+  test('an unavailable target logs the step and failure class, never the message', async () => {
+    const fixture = await seedConfiguredGuild();
+    gateway.failNextCreate(
+      new ArchiveTargetUnavailableError(SENTINEL_MESSAGE, {
+        step: 'source_read',
+        failure: { failure: 'http', httpStatus: '403', discordCode: '50001' },
+      }),
+    );
+
+    await service.clip(clipInput(fixture, fakeSnowflake()));
+
+    const lines = rawLogLines('clip.archive_failed');
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).not.toContain('SENTINEL');
+    expect(JSON.parse(lines[0])).toEqual({
+      event: 'clip.archive_failed',
+      guildId: fixture.guildId,
+      sourceMessageId: fixture.sourceMessageId,
+      errorCode: 'ARCHIVE_TARGET_UNAVAILABLE',
+      step: 'source_read',
+      failure: 'http',
+      httpStatus: '403',
+      discordCode: '50001',
+    });
+  });
+
   test('a failed revival logs the step and failure class, never the message', async () => {
     const fixture = await seedConfiguredGuild();
     const first = fakeSnowflake();
@@ -689,7 +777,12 @@ describe('clip service', () => {
 
   test('an unforwardable or invisible source message reports SOURCE_UNAVAILABLE', async () => {
     const fixture = await seedConfiguredGuild();
-    gateway.failNextCreate(new ArchiveTargetUnavailableError('message 160014'));
+    gateway.failNextCreate(
+      new ArchiveTargetUnavailableError('message 160014', {
+        step: 'forward_post',
+        failure: { failure: 'http', httpStatus: '400', discordCode: '160014' },
+      }),
+    );
 
     const result = await service.clip(clipInput(fixture, fakeSnowflake()));
 
@@ -1090,7 +1183,12 @@ describe('clip service', () => {
       expect(revival.kind).toBe('CLIPPER_ADDED');
       // Applies to the finalizer's rebuild, which is the next create: the
       // reviving clip does not create a second archive.
-      gateway.failNextCreate(new ArchiveTargetUnavailableError('source gone'));
+      gateway.failNextCreate(
+        new ArchiveTargetUnavailableError('source gone', {
+          step: 'source_read',
+          failure: { failure: 'http', httpStatus: '404', discordCode: '10008' },
+        }),
+      );
     });
 
     const result = await service.unclip({

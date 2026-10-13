@@ -17,8 +17,9 @@ const DEFAULT = 0;
 const REPLY = 19;
 const CHAT_INPUT_COMMAND = 20;
 const CONTEXT_MENU_COMMAND = 23;
-// A poll. Deliberately one of the types the spec names as unforwardable.
-const POLL = 46;
+// POLL_RESULT, a system message. Deliberately one of the types the spec names
+// as unforwardable. A poll itself is a DEFAULT message carrying a `poll` field.
+const POLL_RESULT = 46;
 
 const ORIGINAL_TIMESTAMP = '2026-08-19T12:34:56.000+00:00';
 const ORIGINAL_UNIX = Math.floor(Date.parse(ORIGINAL_TIMESTAMP) / 1000);
@@ -43,8 +44,9 @@ function json(body: unknown, status = 200): StubResponse {
   return { status, body };
 }
 
-function sourceMessage(type: number): StubResponse {
+function sourceMessage(type: number, extra: Record<string, unknown> = {}): StubResponse {
   return json({
+    ...extra,
     id: SOURCE_MESSAGE_ID,
     type,
     channel_id: SOURCE_CHANNEL_ID,
@@ -225,7 +227,7 @@ describe('createArchiveMessage', () => {
   });
 
   test('rejects an unforwardable type before writing anything to Discord', async () => {
-    const { fetchImpl, calls } = stubFetch([sourceMessage(POLL)]);
+    const { fetchImpl, calls } = stubFetch([sourceMessage(POLL_RESULT)]);
     const gateway = createDiscordArchiveGateway({ botToken: BOT_TOKEN, fetchImpl });
 
     await expect(gateway.createArchiveMessage(input)).rejects.toBeInstanceOf(
@@ -233,6 +235,20 @@ describe('createArchiveMessage', () => {
     );
     // The read only. Rejecting after posting provenance would leave an orphan
     // for a message that was never archivable in the first place.
+    expect(calls).toHaveLength(1);
+  });
+
+  test('rejects a poll before writing anything to Discord', async () => {
+    const { fetchImpl, calls } = stubFetch([
+      sourceMessage(DEFAULT, { poll: { question: { text: SECRET_BODY } } }),
+    ]);
+    const gateway = createDiscordArchiveGateway({ botToken: BOT_TOKEN, fetchImpl });
+
+    await expect(gateway.createArchiveMessage(input)).rejects.toBeInstanceOf(
+      ArchiveTargetUnavailableError
+    );
+    // Discord answers a forward of a poll with 50035, which reads as a failure
+    // to retry rather than a target that can never be archived.
     expect(calls).toHaveLength(1);
   });
 
@@ -327,6 +343,47 @@ describe('createArchiveMessage', () => {
 
     expect(error).toBeInstanceOf(ArchiveCreationFailedError);
     expect(error).toMatchObject({ step: 'source_read', failure: { failure: 'http', httpStatus: '503' } });
+  });
+
+  test('a source the bot cannot see names its step, status and Discord code', async () => {
+    const { fetchImpl } = stubFetch([json({ code: 50001, message: SENTINEL }, 403)]);
+    const gateway = createDiscordArchiveGateway({ botToken: BOT_TOKEN, fetchImpl });
+
+    const error = await gateway.createArchiveMessage(input).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ArchiveTargetUnavailableError);
+    expect(error).toMatchObject({
+      step: 'source_read',
+      failure: { failure: 'http', httpStatus: '403', discordCode: '50001' },
+    });
+  });
+
+  test('an unforwardable source type names its step with no failure facts', async () => {
+    const { fetchImpl } = stubFetch([sourceMessage(POLL_RESULT)]);
+    const gateway = createDiscordArchiveGateway({ botToken: BOT_TOKEN, fetchImpl });
+
+    const error = await gateway.createArchiveMessage(input).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ArchiveTargetUnavailableError);
+    expect(error).toMatchObject({ step: 'forwardability_check', failure: null });
+  });
+
+  test('a forward refused as unreadable names its step, status and Discord code', async () => {
+    const { fetchImpl } = stubFetch([
+      sourceMessage(DEFAULT),
+      json({ id: PROVENANCE_ID }),
+      json({ code: 160014, message: SENTINEL }, 400),
+      json(null, 204),
+    ]);
+    const gateway = createDiscordArchiveGateway({ botToken: BOT_TOKEN, fetchImpl });
+
+    const error = await gateway.createArchiveMessage(input).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ArchiveTargetUnavailableError);
+    expect(error).toMatchObject({
+      step: 'forward_post',
+      failure: { failure: 'http', httpStatus: '400', discordCode: '160014' },
+    });
   });
 
   test('a source message in an unexpected shape names its step with no failure facts', async () => {

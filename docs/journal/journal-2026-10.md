@@ -273,3 +273,23 @@ Ori ran `docs/tasks/wave-6-manual-checklist.md` in a fresh guild (`test2`), with
 - Run 2 (seeded): 5 passed. "the archive list renders" failed with 6 of 20 cards showing `다시 시도` on one cold page load. That is #82, reproduced by the suite. Pagination and channel filter were skipped by serial mode.
 - So the production recipe moved into `scripts/e2e-prod.sh`, run by Ori. It does one process: port-forward, secrets in its own environment only, generate if missing, a seed whose failure stops the run (`seed="$(...)"`, not `eval "$(...)"`; checked: the eval form continues past a failed substitution under `set -e`), suite, and teardown. It refuses a checkout whose `app/`, `lib/` or `prisma/` differ from the deployed sha.
 - Run 3, the script's first production run (`bash scripts/e2e-prod.sh 1559501336641404960 -g "pagination|channel filter"`): 2 passed. Pagination keeps `before=`/`after=` in the URL, and the channel filter keeps `channel=`. Net on `sha-cdcabaf`: 7 of 8 pass. The one failure is #82.
+
+## 2026-10-13 — #63 verified live on `sha-4d28e3d`
+
+Ori re-clipped the scenario-17 C (20:57, `1559535512715534398`) at 22:22 in `test2`. Its forward was gone, leaving its provenance line alone in the archive. The reply was `이미 보관된 메시지입니다`. A new provenance-plus-forward pair was posted at the bottom of `#archive-existing`, the old lone provenance line was deleted (the top now reads A, B, D), and Screen D's C row shows `C` instead of `누락`. Evidence: `docs/evidence/wave-6/63-*.png`.
+
+A successful repost writes no log line; only `clip.repost_failed` and `clip.archive_check_failed` exist. Added to #87.
+
+A first attempt clipped the burst "C" (21:06) instead, which has a live forward, so nothing was reposted. That was the right behaviour for the wrong message.
+
+## 2026-10-13 — Wave 6 findings: #84, #86, #83, #82 on `wave/6-findings`
+
+**#84 (poll):** Discord's gateway docs exempt "content of the message a message context menu command is used on" from the Message Content intent. So `data.resolved.messages[target]` carries `poll` even with the intent off, and checking the payload before `service.clip` is sufficient. Mapping `forward_post` `50035` to "target unavailable" was rejected: `50035` also fires on bad payloads we build ourselves. Side effect: the forwardability check runs before authorization, so a member without the role who clips a poll is told it can't be archived rather than told they lack permission.
+
+**#83 (repoint guard), a plan that would have been wrong:** the first plan was to stop counting `FAILED` rows with no archive ids. The implementer traced the re-clip path and stopped, as briefed: a `FAILED` re-clip reads the archive channel in one transaction, posts with no lock held, and goes `FAILED → ACTIVE` (there is no `FAILED → PENDING`). `publishArchive` rechecked only `configurationId`, which a repoint does not change. Narrowing the guard alone would therefore have let a repoint commit during the post and publish `ACTIVE` ids that live in the old channel, which is C3 again. A probe on real Postgres confirmed that the row stays `FAILED`, with no ids, for the whole post window. The fix Ori chose (option 1 of 3): `lockClip` also rechecks `archiveChannelId` under the guild lock, and a mismatch takes the lost-publish path (delete the pair from the channel it was posted into, retryable failure). A `PENDING` row still triggers the "messages are archived" refusal, and that copy stays wrong for it. Changing the copy needs Ori's Korean.
+
+**#82 (Screen D 429):**
+- Get Channel Messages returns full message objects, `message_snapshots` included. Per-route limits are keyed on `channel_id`, so every forward read on a page shared one bucket.
+- A page is ordered by `created_at`, not by forward id. A channel filter, chatter in an existing channel, or a #63 repost can spread a page's forwards across the channel, so the fix is bounded rather than "one request": one history read (`after` = lowest forward − 1, `limit=100`), with a per-row fallback for anything it does not list.
+- Absence never means missing. Without Read Message History, Discord returns an empty list.
+- Source reads are unchanged (Ori's option A): 20 per page, mostly in one source channel. A failed source read degrades to `original: 'unknown'`, not `오류`, so the page should render clean. Whether those 429s still slow it is unmeasured until the deploy and the e2e re-run.

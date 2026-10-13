@@ -135,7 +135,10 @@ function errorCodeOf(error: unknown): string {
 function archiveFailureFields(
   error: unknown,
 ): Pick<SafeClipLog, 'step' | 'failure' | 'httpStatus' | 'discordCode'> {
-  if (!(error instanceof ArchiveCreationFailedError)) {
+  if (
+    !(error instanceof ArchiveCreationFailedError) &&
+    !(error instanceof ArchiveTargetUnavailableError)
+  ) {
     return {};
   }
   return { step: error.step, ...error.failure };
@@ -151,7 +154,8 @@ function signalReply(added: boolean, archive: ArchiveMessageIds | null): ClipCom
 /**
  * The reply when an archive this request posted lost the row to someone else
  * and has been taken back down. `clip` is the row as the losing write found
- * it, or null when it was gone or its configuration replaced.
+ * it, or null when it was gone, its configuration replaced, or its archive
+ * channel repointed.
  */
 function lostPublishReply(clip: ClipRecord | null, added: boolean): ClipCommandResult {
   if (clip === null) {
@@ -298,8 +302,7 @@ export function createClipService(gateway: DiscordArchiveGateway) {
    * somewhere `FAILED` is no longer reachable from while the attempt ran.
    *
    * A Clip with no clipper and no archive is deleted instead: every signal was
-   * withdrawn during the attempt, so a FAILED row would preserve nothing yet
-   * still count as a live Clip for the guild (`hasLiveClips`).
+   * withdrawn during the attempt, so a FAILED row would preserve nothing.
    *
    * The status is re-read under a fresh lock because the attempt spanned a
    * Discord round-trip: the author may have removed the Clip meanwhile, and
@@ -334,10 +337,15 @@ export function createClipService(gateway: DiscordArchiveGateway) {
    * `clips_active_requires_archive` rejects the other order at commit time, and
    * an ACTIVE row pointing at messages that do not exist is precisely the false
    * ACTIVE state §17 case 7 forbids.
+   *
+   * `archiveChannelId` is the channel the pair was posted into. A FAILED Clip
+   * holding no ids does not block a repoint (`hasLiveClips`), so the guild may
+   * have moved off that channel during the post; the publish is then declined.
    */
   async function publishArchive(
     key: ClipKey,
     archive: ArchiveMessageIds,
+    archiveChannelId: string,
     configurationId: string | null,
   ): Promise<{ published: true } | { published: false; clip: ClipRecord | null }> {
     const outcome = await lockClip(key.guildId, key.sourceMessageId, async (tx, locked) => {
@@ -360,7 +368,7 @@ export function createClipService(gateway: DiscordArchiveGateway) {
       }
       logTransition(key, locked.status, 'ACTIVE');
       return { published: true as const };
-    }, configurationOptions(configurationId));
+    }, { ...configurationOptions(configurationId), archiveChannelId });
     return outcome ?? { published: false, clip: null };
   }
 
@@ -528,7 +536,7 @@ export function createClipService(gateway: DiscordArchiveGateway) {
       return { kind: 'FAILED', retryable: false };
     }
 
-    const published = await publishArchive(key, archive, configurationId);
+    const published = await publishArchive(key, archive, config.archiveChannelId, configurationId);
     if (published.published) {
       return { kind: 'CREATED', archive };
     }
@@ -654,7 +662,7 @@ export function createClipService(gateway: DiscordArchiveGateway) {
         return { kind: 'UNSETTLED' };
       }
 
-      const published = await publishArchive(key, recreated, configurationId);
+      const published = await publishArchive(key, recreated, archiveChannelId, configurationId);
       if (published.published) {
         return { kind: 'ACTIVE', archive: recreated };
       }
@@ -670,7 +678,10 @@ export function createClipService(gateway: DiscordArchiveGateway) {
       // the rebuild and a fresh clip before the next lock -- two member actions,
       // each behind a Discord round-trip. A removal instead leaves via
       // `isTerminalStatus`, and no replacement clipper leaves via
-      // `deleteClipWithClippers`.
+      // `deleteClipWithClippers`. A publish declined because the archive
+      // channel moved needs the old channel confirmed gone (a DELETING row
+      // blocks any other repoint), so the next rebuild's post into it fails
+      // and leaves through `recordArchiveFailure` or `UNSETTLED`.
       archive = recreated;
     }
   }
