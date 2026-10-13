@@ -345,6 +345,47 @@ describe('createArchiveMessage', () => {
     expect(error).toMatchObject({ step: 'source_read', failure: { failure: 'http', httpStatus: '503' } });
   });
 
+  test('a source the bot cannot see names its step, status and Discord code', async () => {
+    const { fetchImpl } = stubFetch([json({ code: 50001, message: SENTINEL }, 403)]);
+    const gateway = createDiscordArchiveGateway({ botToken: BOT_TOKEN, fetchImpl });
+
+    const error = await gateway.createArchiveMessage(input).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ArchiveTargetUnavailableError);
+    expect(error).toMatchObject({
+      step: 'source_read',
+      failure: { failure: 'http', httpStatus: '403', discordCode: '50001' },
+    });
+  });
+
+  test('an unforwardable source type names its step with no failure facts', async () => {
+    const { fetchImpl } = stubFetch([sourceMessage(POLL_RESULT)]);
+    const gateway = createDiscordArchiveGateway({ botToken: BOT_TOKEN, fetchImpl });
+
+    const error = await gateway.createArchiveMessage(input).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ArchiveTargetUnavailableError);
+    expect(error).toMatchObject({ step: 'forwardability_check', failure: null });
+  });
+
+  test('a forward refused as unreadable names its step, status and Discord code', async () => {
+    const { fetchImpl } = stubFetch([
+      sourceMessage(DEFAULT),
+      json({ id: PROVENANCE_ID }),
+      json({ code: 160014, message: SENTINEL }, 400),
+      json(null, 204),
+    ]);
+    const gateway = createDiscordArchiveGateway({ botToken: BOT_TOKEN, fetchImpl });
+
+    const error = await gateway.createArchiveMessage(input).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ArchiveTargetUnavailableError);
+    expect(error).toMatchObject({
+      step: 'forward_post',
+      failure: { failure: 'http', httpStatus: '400', discordCode: '160014' },
+    });
+  });
+
   test('a source message in an unexpected shape names its step with no failure facts', async () => {
     const { fetchImpl } = stubFetch([json({ id: SOURCE_MESSAGE_ID })]);
     const gateway = createDiscordArchiveGateway({ botToken: BOT_TOKEN, fetchImpl });

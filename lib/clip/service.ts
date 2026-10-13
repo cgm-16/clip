@@ -135,7 +135,10 @@ function errorCodeOf(error: unknown): string {
 function archiveFailureFields(
   error: unknown,
 ): Pick<SafeClipLog, 'step' | 'failure' | 'httpStatus' | 'discordCode'> {
-  if (!(error instanceof ArchiveCreationFailedError)) {
+  if (
+    !(error instanceof ArchiveCreationFailedError) &&
+    !(error instanceof ArchiveTargetUnavailableError)
+  ) {
     return {};
   }
   return { step: error.step, ...error.failure };

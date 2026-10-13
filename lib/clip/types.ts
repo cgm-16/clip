@@ -86,11 +86,37 @@ export interface DiscordArchiveGateway {
   isArchiveCopyMissing(archiveChannelId: string, ids: ArchiveMessageIds): Promise<boolean>;
 }
 
-/** The target message cannot be archived: deleted, invisible, or an unforwardable type. */
-export class ArchiveTargetUnavailableError extends Error {}
+/**
+ * The step within archive creation that failed: one of its Discord calls, or
+ * the check that the source message is a forwardable type, which makes none.
+ */
+export type ArchiveCreationStep =
+  | 'source_read'
+  | 'forwardability_check'
+  | 'provenance_post'
+  | 'forward_post';
 
-/** The Discord call within archive creation that failed. */
-export type ArchiveCreationStep = 'source_read' | 'provenance_post' | 'forward_post';
+/**
+ * Which step of archive creation failed and how, for the log line. `failure` is
+ * null when no Discord call failed: the call succeeded but its response was not
+ * in the expected shape, or the step makes no call.
+ */
+export type ArchiveStepFailure = {
+  step: ArchiveCreationStep;
+  failure: DiscordFailureFacts | null;
+};
+
+/** The target message cannot be archived: deleted, invisible, or an unforwardable type. */
+export class ArchiveTargetUnavailableError extends Error {
+  readonly step: ArchiveCreationStep;
+  readonly failure: DiscordFailureFacts | null;
+
+  constructor(message: string, options: ArchiveStepFailure) {
+    super(message);
+    this.step = options.step;
+    this.failure = options.failure;
+  }
+}
 
 /**
  * The archive could not be created. `orphanedProvenanceMessageId` is set when the
@@ -109,9 +135,7 @@ export class ArchiveCreationFailedError extends Error {
     options: {
       retryable: boolean;
       orphanedProvenanceMessageId: string | null;
-      step: ArchiveCreationStep;
-      failure: DiscordFailureFacts | null;
-    }
+    } & ArchiveStepFailure
   ) {
     super(message);
     this.retryable = options.retryable;

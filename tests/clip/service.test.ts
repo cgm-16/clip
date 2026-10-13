@@ -657,6 +657,32 @@ describe('clip service', () => {
     });
   });
 
+  test('an unavailable target logs the step and failure class, never the message', async () => {
+    const fixture = await seedConfiguredGuild();
+    gateway.failNextCreate(
+      new ArchiveTargetUnavailableError(SENTINEL_MESSAGE, {
+        step: 'source_read',
+        failure: { failure: 'http', httpStatus: '403', discordCode: '50001' },
+      }),
+    );
+
+    await service.clip(clipInput(fixture, fakeSnowflake()));
+
+    const lines = rawLogLines('clip.archive_failed');
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).not.toContain('SENTINEL');
+    expect(JSON.parse(lines[0])).toEqual({
+      event: 'clip.archive_failed',
+      guildId: fixture.guildId,
+      sourceMessageId: fixture.sourceMessageId,
+      errorCode: 'ARCHIVE_TARGET_UNAVAILABLE',
+      step: 'source_read',
+      failure: 'http',
+      httpStatus: '403',
+      discordCode: '50001',
+    });
+  });
+
   test('a failed revival logs the step and failure class, never the message', async () => {
     const fixture = await seedConfiguredGuild();
     const first = fakeSnowflake();
@@ -689,7 +715,12 @@ describe('clip service', () => {
 
   test('an unforwardable or invisible source message reports SOURCE_UNAVAILABLE', async () => {
     const fixture = await seedConfiguredGuild();
-    gateway.failNextCreate(new ArchiveTargetUnavailableError('message 160014'));
+    gateway.failNextCreate(
+      new ArchiveTargetUnavailableError('message 160014', {
+        step: 'forward_post',
+        failure: { failure: 'http', httpStatus: '400', discordCode: '160014' },
+      }),
+    );
 
     const result = await service.clip(clipInput(fixture, fakeSnowflake()));
 
@@ -1090,7 +1121,12 @@ describe('clip service', () => {
       expect(revival.kind).toBe('CLIPPER_ADDED');
       // Applies to the finalizer's rebuild, which is the next create: the
       // reviving clip does not create a second archive.
-      gateway.failNextCreate(new ArchiveTargetUnavailableError('source gone'));
+      gateway.failNextCreate(
+        new ArchiveTargetUnavailableError('source gone', {
+          step: 'source_read',
+          failure: { failure: 'http', httpStatus: '404', discordCode: '10008' },
+        }),
+      );
     });
 
     const result = await service.unclip({

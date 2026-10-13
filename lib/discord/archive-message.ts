@@ -144,7 +144,10 @@ export function createDiscordArchiveGateway(
       );
     } catch (error) {
       if (error instanceof DiscordApiError && isTargetUnavailable(error)) {
-        throw new ArchiveTargetUnavailableError('source message cannot be read');
+        throw new ArchiveTargetUnavailableError('source message cannot be read', {
+          step: 'source_read',
+          failure: describeDiscordFailure(error),
+        });
       }
       throw new ArchiveCreationFailedError('could not read the source message', {
         retryable: error instanceof DiscordApiError ? error.retryable : true,
@@ -171,7 +174,10 @@ export function createDiscordArchiveGateway(
       const source = await readSourceMessage(input);
 
       if (!isForwardableMessage(source.type, source.hasPoll)) {
-        throw new ArchiveTargetUnavailableError('source message type cannot be forwarded');
+        throw new ArchiveTargetUnavailableError('source message type cannot be forwarded', {
+          step: 'forwardability_check',
+          failure: null,
+        });
       }
 
       const archivePath = `/channels/${input.archiveChannelId}/messages`;
@@ -225,7 +231,10 @@ export function createDiscordArchiveGateway(
         // id -- so the provenance message is cleaned up here rather than leaked.
         if (error instanceof DiscordApiError && isTargetUnavailable(error)) {
           await deleteQuietly(input.archiveChannelId, provenanceMessageId);
-          throw new ArchiveTargetUnavailableError('source message cannot be forwarded');
+          throw new ArchiveTargetUnavailableError('source message cannot be forwarded', {
+            step: 'forward_post',
+            failure: describeDiscordFailure(error),
+          });
         }
         throw new ArchiveCreationFailedError('could not post the forward', {
           retryable: error instanceof DiscordApiError ? error.retryable : true,
