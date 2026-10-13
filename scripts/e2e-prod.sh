@@ -21,7 +21,12 @@ cd "$(dirname "$0")/.."
 
 # The suite measures the deployed image with this checkout's tests and seed.
 # Refuse when the code they run against differs from what is deployed,
-# uncommitted edits included; docs-only drift is fine.
+# uncommitted edits included; docs-only drift is fine. The paths are what this
+# checkout executes: the seed's and the tests' imports, and the dependency and
+# Prisma config that shape the client the seed writes with. Build-only inputs
+# (Dockerfile, next.config.ts) never run here, and the suite reaches the
+# deployed build itself over HTTP.
+code_paths=(app lib prisma prisma.config.ts package.json pnpm-lock.yaml)
 image="$(kubectl -n clip get deploy clip -o jsonpath='{.spec.template.spec.containers[?(@.name=="clip")].image}')"
 deployed_sha="${image##*:sha-}"
 if [[ ! "$deployed_sha" =~ ^[0-9a-f]{7,40}$ ]]; then
@@ -31,9 +36,9 @@ fi
 if ! git cat-file -e "${deployed_sha}^{commit}" 2>/dev/null; then
   git fetch -q origin
 fi
-if ! git diff --quiet "$deployed_sha" -- app lib prisma; then
-  echo "deployed image is sha-${deployed_sha}, but this checkout's app/, lib/ or prisma/ differ from it:" >&2
-  git --no-pager diff --stat "$deployed_sha" -- app lib prisma >&2
+if ! git diff --quiet "$deployed_sha" -- "${code_paths[@]}"; then
+  echo "deployed image is sha-${deployed_sha}, but this checkout's code differs from it:" >&2
+  git --no-pager diff --stat "$deployed_sha" -- "${code_paths[@]}" >&2
   echo "check out sha-${deployed_sha}'s commit, or deploy this one first" >&2
   exit 1
 fi
