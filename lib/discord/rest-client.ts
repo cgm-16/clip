@@ -7,6 +7,7 @@
  */
 
 import { setTimeout as defaultSleep } from 'node:timers/promises';
+import { logClipEvent } from '@/lib/logging/safe-log';
 
 const API_BASE = 'https://discord.com/api/v10';
 
@@ -156,6 +157,37 @@ function retryDelayMs(body: unknown): number {
   return 1000;
 }
 
+function isGlobalRateLimit(response: Response, body: unknown): boolean {
+  if (response.headers.get('X-RateLimit-Global') === 'true') {
+    return true;
+  }
+  return typeof body === 'object' && body !== null && (body as { global?: unknown }).global === true;
+}
+
+/**
+ * The request path with its variable parts replaced, so retries group by
+ * route rather than by the ids in them: every all-digit segment becomes
+ * `{id}`, the interaction token in a webhook path becomes `{token}`, and the
+ * query string is dropped. Only lowercase route words (`channels`, `@me`)
+ * are kept; any other segment becomes `{value}`. The token is a credential
+ * and a query or an unknown segment can carry anything, so none of them may
+ * reach a log line -- the rule fails closed for a path added later.
+ */
+export function discordRouteTemplate(path: string): string {
+  const segments = path.split('?')[0].split('/');
+  return segments
+    .map((segment, index) => {
+      if (/^\d+$/.test(segment)) {
+        return '{id}';
+      }
+      if (index >= 2 && segments[index - 2] === 'webhooks') {
+        return '{token}';
+      }
+      return segment === '' || /^@?[a-z-]+$/.test(segment) ? segment : '{value}';
+    })
+    .join('/');
+}
+
 export function createDiscordRestClient(options: DiscordRestClientOptions): DiscordRestClient {
   const { botToken, fetchImpl } = options;
   const sleep = options.sleep ?? defaultSleep;
@@ -187,7 +219,20 @@ export function createDiscordRestClient(options: DiscordRestClientOptions): Disc
         // `retryable` set and re-decided by the caller, which knows whether the
         // control-plane state it already wrote makes a second attempt safe.
         if (response.status === 429 && remaining > 1) {
-          await sleep(retryDelayMs(payload));
+          const delayMs = retryDelayMs(payload);
+          // Only the retried 429s: the final one is thrown, and reporting it
+          // belongs to the caller that decides what the failure means.
+          logClipEvent({
+            event: 'discord.rate_limited',
+            method,
+            route: discordRouteTemplate(path),
+            retryAfterMs: String(delayMs),
+            attempt: String(MAX_ATTEMPTS - remaining + 1),
+            rateLimitScope: response.headers.get('X-RateLimit-Scope') ?? undefined,
+            rateLimitBucket: response.headers.get('X-RateLimit-Bucket') ?? undefined,
+            rateLimitGlobal: String(isGlobalRateLimit(response, payload)),
+          });
+          await sleep(delayMs);
           continue;
         }
 
