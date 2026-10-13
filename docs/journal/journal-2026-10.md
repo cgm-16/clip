@@ -276,7 +276,7 @@ Ori ran `docs/tasks/wave-6-manual-checklist.md` in a fresh guild (`test2`), with
 
 ## 2026-10-13 — #63 verified live on `sha-4d28e3d`
 
-Ori re-clipped the scenario-17 C (20:57, `1559535512715534398`) at 22:22 in `test2`, after deleting its forward by hand. The reply was `이미 보관된 메시지입니다`. A new provenance-plus-forward pair was posted at the bottom of `#archive-existing`, the old lone provenance line was deleted (the top now reads A, B, D), and Screen D's C row shows `C` instead of `누락`. Evidence: `docs/evidence/wave-6/63-*.png`.
+Ori re-clipped the scenario-17 C (20:57, `1559535512715534398`) at 22:22 in `test2`. Its forward was gone, leaving its provenance line alone in the archive. The reply was `이미 보관된 메시지입니다`. A new provenance-plus-forward pair was posted at the bottom of `#archive-existing`, the old lone provenance line was deleted (the top now reads A, B, D), and Screen D's C row shows `C` instead of `누락`. Evidence: `docs/evidence/wave-6/63-*.png`.
 
 A successful repost writes no log line; only `clip.repost_failed` and `clip.archive_check_failed` exist. Added to #87.
 
