@@ -72,7 +72,7 @@ export DISCORD_APPLICATION_ID=unused DISCORD_PUBLIC_KEY=unused DISCORD_BOT_TOKEN
 # The Prisma client is generated code that `pnpm install` does not produce,
 # and one left from another branch may not match this schema. Generation
 # reads DATABASE_URL for its config but never connects.
-pnpm exec prisma generate >/dev/null
+PRISMA_HIDE_UPDATE_MESSAGE=1 pnpm exec prisma generate >/dev/null
 
 # A plain assignment, not `eval "$(...)"`: only the assignment makes a failed
 # seed stop the script under `set -e`.
