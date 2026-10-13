@@ -325,3 +325,18 @@ What the log window (07:28:05–07:28:29) shows:
 1. When `retry_after` exceeds the 5s cap, fail at once instead of sleeping 5s and asking again. Discord has said the wait is longer.
 2. Cache guild display data (guild name, channel names) for about 60s, across requests. This pulls a product-spec P1 item (line 565, short-lived server-side cache) into P0, for display lookups only, and amends restoration spec line 91.
 3. Drop Screen D's source-message reads for P0. Cards lose the reply author line and the verified-unavailable tag (`원본 메시지를 찾을 수 없습니다.`); the original link is always offered. This amends restoration spec lines 81 and 151.
+
+## 2026-10-14 — deploy.sh revision pin failed on its first real run
+
+The first real `scripts/deploy.sh` run failed after the apply:
+
+```
+deployment.apps/clip condition met
+error: desired revision (12) is different from the running revision (13)
+```
+
+**Root cause:** the Deployment uses `strategy: Recreate`. The controller's recreate path scales down the old ReplicaSets, then syncs status, which sets `observedGeneration` to the new generation. Only after the old pods are gone does it create the new ReplicaSet and bump the `deployment.kubernetes.io/revision` annotation. So the script's `kubectl wait` on `observedGeneration` returned, the revision read that followed got the old revision, and `rollout status --revision` pinned to it failed.
+
+**Fix:** no `wait` and no revision read. Plain `kubectl -n clip rollout status deploy/clip --timeout=5m` waits for `observedGeneration` itself and then for the updated pods. The generation re-check against `applied_generation` stays and still catches a `kubectl rollout restart` overlapping the deploy, as does the image read-back. `tests/scripts/deploy.test.ts` has a regression test whose stub kubectl reproduces the lagging annotation.
+
+**Found, not fixed:** the verification procedure in `docs/02_CLIP_IMPLEMENTATION_PLAN.md` (around lines 242-284) does the same thing, `wait` on `observedGeneration`, then a revision read and `rollout status --revision`, and has the same race under `Recreate`.
