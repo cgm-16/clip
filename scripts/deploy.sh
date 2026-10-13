@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Deploys the newest release image to production: resolves it with
 # `scripts/release-image.sh`, renders k8s/deployment.yaml with it, applies the
-# manifests, waits for the rollout of the revision that apply created, then
-# confirms nothing superseded it and that the deployment spec carries that
+# manifests, waits for the rollout to finish, then confirms the deployment is
+# still at the generation that apply created and that its spec carries that
 # image.
 #
 #   bash scripts/deploy.sh
@@ -45,14 +45,14 @@ is_positive_integer() {
 applied_generation="$(kubectl apply -f "$rendered" -o jsonpath='{.metadata.generation}')"
 is_positive_integer "$applied_generation" || { echo "apply returned generation '${applied_generation}', not a positive integer" >&2; exit 1; }
 
-# An unpinned rollout status follows the newest revision, which another change
-# (a `kubectl rollout restart`) could have started; pin it to the revision the
-# controller created for this apply.
-kubectl -n clip wait --for=jsonpath='{.status.observedGeneration}'="$applied_generation" deploy/clip --timeout=5m
-revision="$(kubectl -n clip get deploy clip -o jsonpath='{.metadata.annotations.deployment\.kubernetes\.io/revision}')"
-is_positive_integer "$revision" || { echo "deployment reports revision '${revision}', not a positive integer" >&2; exit 1; }
-kubectl -n clip rollout status deploy/clip --revision="$revision" --timeout=5m
+# rollout status waits for observedGeneration to reach the generation, then for
+# the updated pods to become available. No --revision pin: under `Recreate` the
+# revision annotation is bumped only after observedGeneration, so a revision
+# read at that point can be the old one.
+kubectl -n clip rollout status deploy/clip --timeout=5m
 
+# Another change that overlaps the deploy (a `kubectl rollout restart`) bumps
+# the generation, whether it lands during or after the rollout status above.
 generation="$(kubectl -n clip get deploy clip -o jsonpath='{.metadata.generation}')"
 if [ "$generation" != "$applied_generation" ]; then
   echo "deployment generation is ${generation}, not ${applied_generation}: another change superseded this deploy" >&2
