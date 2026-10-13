@@ -18,8 +18,9 @@ export type SafeClipLog = {
   stateTo?: string;
   errorCode?: string;
   /**
-   * The Discord call that failed: `source_read`, `provenance_post` or
-   * `forward_post` while archiving; `forward_history_read` (no
+   * The step that failed: `source_read`, `forwardability_check` (no Discord
+   * call), `provenance_post` or `forward_post` while archiving;
+   * `forward_history_read` (no
    * `sourceMessageId`: it serves the whole page), `forward_read` or
    * `source_read` on the archive page; `forward_read` when checking whether an
    * archive copy is gone.

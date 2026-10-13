@@ -678,7 +678,10 @@ export function createClipService(gateway: DiscordArchiveGateway) {
       // the rebuild and a fresh clip before the next lock -- two member actions,
       // each behind a Discord round-trip. A removal instead leaves via
       // `isTerminalStatus`, and no replacement clipper leaves via
-      // `deleteClipWithClippers`.
+      // `deleteClipWithClippers`. A publish declined because the archive
+      // channel moved needs the old channel confirmed gone (a DELETING row
+      // blocks any other repoint), so the next rebuild's post into it fails
+      // and leaves through `recordArchiveFailure` or `UNSETTLED`.
       archive = recreated;
     }
   }
