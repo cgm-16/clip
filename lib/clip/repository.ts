@@ -140,28 +140,45 @@ export function claimClipInTransaction(
  * unless the guild's current configuration still has that id -- or, for a
  * captured null, still has none. The guild lock makes the check and the write
  * atomic with respect to deletion and re-setup.
+ *
+ * With `options.archiveChannelId`, likewise resolves to null unless the guild
+ * is still configured with that archive channel, atomically with respect to a
+ * repoint.
  */
 export function lockClip<T>(
   guildId: string,
   sourceMessageId: string,
   fn: (tx: TxClient, clip: ClipRecord) => Promise<T>,
-  options: { configurationId?: string | null } = {},
+  options: { configurationId?: string | null; archiveChannelId?: string } = {},
 ): Promise<T | null> {
   return getPrismaClient().$transaction(async (tx) => {
     // Guild lock first, always: see lib/guild-lock.ts for the lock order.
     await lockGuild(tx, guildId);
-    if (options.configurationId !== undefined) {
+    if (options.configurationId !== undefined || options.archiveChannelId !== undefined) {
+      const current = await tx.guildConfig.findUnique({
+        where: { guildId },
+        select: { configurationId: true, archiveChannelId: true },
+      });
       // The caller started under a configuration that a deletion (and
       // perhaps a re-setup) has since replaced. Its write belongs to a
       // lifetime that no longer exists, so it is discarded rather than
       // applied to whatever Clip now holds the same key.
-      const current = await tx.guildConfig.findUnique({
-        where: { guildId },
-        select: { configurationId: true },
-      });
       // A captured null ("this guild had no configuration") must still find
       // none: a re-setup in between is a different lifetime too.
-      if ((current?.configurationId ?? null) !== options.configurationId) {
+      if (
+        options.configurationId !== undefined &&
+        (current?.configurationId ?? null) !== options.configurationId
+      ) {
+        return null;
+      }
+      // The caller posted an archive into a channel the guild has since been
+      // repointed off. Recording those ids would leave the Clip pointing at
+      // messages the configured channel cannot address (finding C3), so the
+      // write is discarded and the caller takes the pair back down.
+      if (
+        options.archiveChannelId !== undefined &&
+        current?.archiveChannelId !== options.archiveChannelId
+      ) {
         return null;
       }
     }
@@ -553,15 +570,18 @@ export function upsertGuildArchiveConfig(input: UpsertGuildArchiveConfigInput): 
  * while both archive messages stay live and orphaned.
  *
  * `TOMBSTONE_STATUSES` is reused rather than re-deriving the same set from
- * `isTerminalStatus` in `lib/clip/state-machine.ts`: it names exactly the
- * statuses whose rows stop blocking once Discord cleanup has cleared both
- * archive ids.
+ * `isTerminalStatus` in `lib/clip/state-machine.ts`: with `FAILED`, it names
+ * exactly the statuses whose rows stop blocking once both archive ids are
+ * clear.
  *
- * This over-refuses on a PENDING or FAILED Clip, neither of which has
- * posted an archive yet -- deliberately: the cheap, correct-by-construction
- * guard is "any non-terminal row or retained archive id blocks it", not one
- * that has to reason about which live states already have a Discord side
- * effect to protect.
+ * A PENDING Clip blocks even though it holds no archive id: its creator may
+ * be mid-post into the old channel, and a brand-new Clip's PENDING row is
+ * created in the same transaction that reads the channel it will post into.
+ * A FAILED Clip holding neither id does not block: it has nothing in the old
+ * channel to strand, and a re-clip that posted into the old channel while a
+ * repoint committed is refused at publish, where the channel it posted into
+ * is rechecked under the guild lock. A FAILED Clip retaining either id still
+ * blocks through the id conditions.
  * Storing the archive channel per Clip, so a reconfiguration could never
  * orphan an existing one at all, is the real long-term fix; it is out of
  * scope today.
@@ -574,7 +594,7 @@ async function hasLiveClipsWithClient(
     where: {
       guildId,
       OR: [
-        { status: { notIn: TOMBSTONE_STATUSES } },
+        { status: { notIn: [...TOMBSTONE_STATUSES, 'FAILED'] } },
         { archiveProvenanceMessageId: { not: null } },
         { archiveForwardMessageId: { not: null } },
       ],
