@@ -132,4 +132,63 @@ describe('stale PENDING takeover', () => {
     expect(gateway.createCalls.map((call) => call.archiveChannelId)).toEqual([newChannelId]);
     expect((await prisma.clip.findUnique({ where: key }))?.status).toBe('ACTIVE');
   });
+
+  // The repoint can also commit between a brand-new claim and the joined lock.
+  // The row this request created would otherwise sit PENDING inside its lease,
+  // unreachable by a retry, so the discarded lock releases it.
+  test('a repoint between a new claim and its lock releases the row the claim created', async () => {
+    const guildId = fakeSnowflake();
+    const oldChannelId = fakeSnowflake();
+    const newChannelId = fakeSnowflake();
+    const allowedRoleId = fakeSnowflake();
+    const sourceChannelId = fakeSnowflake();
+    const sourceMessageId = fakeSnowflake();
+    cleanupGuildIds.push(guildId);
+    await prisma.guildConfig.create({
+      data: {
+        guildId,
+        archiveChannelId: oldChannelId,
+        configuredByUserId: fakeSnowflake(),
+        allowedRoles: { create: [{ roleId: allowedRoleId }] },
+      },
+    });
+    const key = { guildId_sourceMessageId: { guildId, sourceMessageId } };
+    const sessionTokenHash = fakeSnowflake();
+    await prisma.adminSession.create({
+      data: { tokenHash: sessionTokenHash, guildId, userId: fakeSnowflake(), expiresAt: new Date(Date.now() + 60_000) },
+    });
+    const clipInput = {
+      guildId,
+      sourceChannelId,
+      sourceMessageId,
+      sourceAuthorUserId: fakeSnowflake(),
+      clipperUserId: fakeSnowflake(),
+      clipperRoleIds: [allowedRoleId],
+      clipperHasManageGuild: false,
+    };
+
+    let repoint: Awaited<ReturnType<typeof finalizeGuildArchiveConfig>> | undefined;
+    seam.beforeNextLockClip = async () => {
+      repoint = await finalizeGuildArchiveConfig({
+        guildId,
+        sessionTokenHash,
+        archiveChannelId: newChannelId,
+        configuredByUserId: fakeSnowflake(),
+        allowedRoleIds: [allowedRoleId],
+        goneArchiveChannelId: oldChannelId,
+      });
+    };
+    const raced = await service.clip(clipInput);
+
+    expect(seam.beforeNextLockClip).toBeNull();
+    expect(repoint).toEqual({ kind: 'SAVED' });
+    expect(raced).toEqual({ kind: 'FAILED', retryable: true });
+    expect(gateway.createCalls).toEqual([]);
+    expect(await prisma.clip.findUnique({ where: key })).toBeNull();
+
+    const retried = await service.clip(clipInput);
+    expect(retried.kind).toBe('CREATED');
+    expect(gateway.createCalls.map((call) => call.archiveChannelId)).toEqual([newChannelId]);
+    expect((await prisma.clip.findUnique({ where: key }))?.status).toBe('ACTIVE');
+  });
 });

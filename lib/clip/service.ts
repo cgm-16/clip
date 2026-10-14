@@ -438,6 +438,10 @@ export function createClipService(gateway: DiscordArchiveGateway) {
       // The Clip was deleted between the claim and the lock, or the archive
       // channel was repointed in that gap, so this request's signal never
       // landed and nothing was posted. Retrying re-claims it from scratch.
+      // A row this request created would otherwise sit PENDING inside its
+      // lease, unreachable by a retry; a row it did not create may belong to
+      // a live creator, so it is left alone.
+      if (created) await recordArchiveFailure(key, configurationId);
       return { kind: 'FAILED', retryable: true };
     }
     if (joined.tombstoned) {
