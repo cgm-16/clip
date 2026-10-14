@@ -288,14 +288,20 @@ test('every slide carries both languages in its heading and body', () => {
   });
 });
 
-test('every image has both alt texts, and Korean content starts hidden', () => {
+test('every image has both alt texts', () => {
   for (const image of Array.from(document.querySelectorAll<HTMLImageElement>('img'))) {
     expect(image.dataset.altEn?.trim()).toBeTruthy();
     expect(image.dataset.altKo?.trim()).toBeTruthy();
   }
-  for (const element of Array.from(document.querySelectorAll<HTMLElement>('main [lang="ko"]'))) {
-    expect(isShownInSlide(element)).toBe(false);
-  }
+});
+
+test('the source markup hides Korean content, and the toggle button shows Korean as its label', () => {
+  const source = new DOMParser().parseFromString(html, 'text/html');
+  const korean = Array.from(source.querySelectorAll('[lang="ko"]')).filter((el) => !el.closest('#lang'));
+  expect(korean.length).toBeGreaterThan(0);
+  for (const element of korean) expect(element.hasAttribute('hidden')).toBe(true);
+  expect(source.querySelector('#lang [lang="en"]')!.hasAttribute('hidden')).toBe(true);
+  expect(source.querySelector('#lang [lang="ko"]')!.hasAttribute('hidden')).toBe(false);
 });
 
 test('deck.js contains no Hangul', () => {

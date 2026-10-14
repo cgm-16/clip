@@ -5,6 +5,8 @@
 // The #lang button toggles English and Korean: every [lang] element in the body
 // is shown or hidden, and image alt text and aria-labels are swapped from their
 // data-alt-* / data-label-* attributes. The current slide does not change.
+// An element with a lang attribute is a language container toggled as a whole:
+// never put a lang attribute on an element nested inside another one.
 (function () {
   function setLanguage(code) {
     document.documentElement.lang = code;
