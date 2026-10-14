@@ -36,12 +36,15 @@ export async function authenticateAdminPage(guildId: string): Promise<AdminAuth 
 }
 
 /**
- * CSRF guard for admin POSTs. The Origin check matches `/setup/save`'s, and
- * a request with no Origin passes it -- so JSON is also required: a
- * cross-site form or `text/plain` POST cannot set it without a CORS
- * preflight, which this app never grants.
+ * CSRF guard for the admin and setup POSTs. A request with no Origin passes
+ * the Origin check -- so JSON is also required: a cross-site form or
+ * `text/plain` POST cannot set it without a CORS preflight, which this app
+ * never grants. (`request.json()` ignores Content-Type, so without that
+ * requirement a cross-origin `text/plain` POST is a CORS *simple* request
+ * with no preflight, and the admin session cookie rides along regardless of
+ * `SameSite=Lax`.)
  */
-export function rejectUnsafeMutation(request: NextRequest): Response | null {
+export function rejectUnsafeMutation(request: Request): Response | null {
   const origin = request.headers.get('Origin');
   if (origin !== null && origin !== parseEnv(process.env).PUBLIC_BASE_URL) {
     return new Response(null, { status: 403 });

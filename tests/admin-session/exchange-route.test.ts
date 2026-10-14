@@ -89,6 +89,7 @@ describe('POST /api/setup/exchange', () => {
     const notJson = await POST(
       new Request('https://clipendpoint.cc/api/setup/exchange', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: 'not json',
       }),
     );
@@ -109,6 +110,20 @@ describe('POST /api/setup/exchange', () => {
     );
 
     expect(response.status).toBe(403);
+    expect(response.headers.get('Set-Cookie')).toBeNull();
+    expect(exchangeSetupToken).not.toHaveBeenCalled();
+  });
+
+  test('a POST with no Origin and a non-JSON content type is refused with 415 and exchanges nothing', async () => {
+    const response = await POST(
+      new Request(`${BASE_URL}/api/setup/exchange`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ token: 'setup-bearer' }),
+      }),
+    );
+
+    expect(response.status).toBe(415);
     expect(response.headers.get('Set-Cookie')).toBeNull();
     expect(exchangeSetupToken).not.toHaveBeenCalled();
   });

@@ -699,6 +699,19 @@ describe('POST /setup/save', () => {
     expect(authenticateAdminSession).not.toHaveBeenCalled();
   });
 
+  test('a POST with no Origin and a non-JSON content type is refused with 415 and nothing is persisted', async () => {
+    const response = await POST(
+      new NextRequest(`${BASE_URL}/setup/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain', Cookie: SESSION_COOKIE },
+        body: JSON.stringify({ destination: 'create', channelId: null, allowedRoleIds: [], guildId: GUILD_ID }),
+      }),
+    );
+
+    expect(response.status).toBe(415);
+    expect(authenticateAdminSession).not.toHaveBeenCalled();
+  });
+
   test('a same-origin POST is still accepted', async () => {
     stubEnv();
     authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });

@@ -106,6 +106,7 @@ describe('admin session service', () => {
     const response = await POST(
       new Request('https://clipendpoint.cc/api/setup/exchange', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: issued.token }),
       }),
     );
@@ -241,7 +242,7 @@ describe('admin session service', () => {
     function exchangeRequest(token: string, cookie?: string): Request {
       return new Request('https://clipendpoint.cc/api/setup/exchange', {
         method: 'POST',
-        headers: cookie ? { Cookie: cookie } : {},
+        headers: { 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}) },
         body: JSON.stringify({ token }),
       });
     }
