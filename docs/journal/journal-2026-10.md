@@ -399,3 +399,16 @@ Not fixed:
 
 - **Unclip/re-clip race:** an Unclip whose `remaining === 0` removes the marker even if a concurrent Clip added a clipper during the delete window and `finalizeDeletion` rebuilt the archive (`ACTIVE`). A Clip adds the marker only on `CREATED`, not `CLIPPER_ADDED`. The result is an `ACTIVE` Clip with no marker. The marker is best-effort by design and the window is narrow; unverified by a test.
 - **`deleteArchiveMessage` treats any 404 as already gone.** Dropped: Unknown Channel (10003) arrives as HTTP 404, so it is already handled as gone, and a code-less 404 would have to come from Discord's own edge.
+
+## 2026-10-15 — `sha-55602c3`: e2e 8/8 after the review fixes, and a deploy that never happened
+
+- **The first "deployed" #109 was not deployed.** Ori merged #108 and #109, ran `scripts/deploy.sh` and then the e2e, which passed 8/8: 9.4s total, the archive list 2.3s, setup with a save 4.1s. Ori then removed a Clip with the DM button, and the 📎 marker stayed. The bot answered `✓ 보관을 해제했습니다`, which the button shows only for `REMOVED`. That result does call `marker.remove`, so the code was not the cause. Reading the image back showed `ghcr.io/cgm-16/clip:sha-9b9d0eb`, the #106 build.
+- **Cause:** the main checkout was still at `b89ef12`, so `scripts/release-image.sh` refused, because the checkout was not at the newest release commit, `55602c3`. The deploy stopped before `kubectl apply` and changed nothing. Claude then reported the e2e as covering #109 without reading the deployed image back. That run and the first Clip/Unclip check both exercised `sha-9b9d0eb`.
+- **Rule:** before recording an e2e or manual check against a build, read the image back with `kubectl -n clip get deploy clip -o jsonpath='{.spec.template.spec.containers[?(@.name=="clip")].image}'`, or take it from `deploy.sh`'s final `deployed` line.
+- **The real run:** after pulling, `bash scripts/deploy.sh` printed `deployed ghcr.io/cgm-16/clip:sha-55602c3`.
+  - `bash scripts/e2e-prod.sh 1559501336641404960`: 8 of 8 in 11.3s. The archive list took 2.2s and setup with a save 5.6s.
+  - The setup save went through the shared CSRF check (#109 item 3) without a 415.
+  - Setup was about 1.5s slower than the two `sha-9b9d0eb` runs: 3.7s in the 2026-10-14 entry above, and 4.1s in the refused-deploy run above. This is not explained. It is possibly a cold first request on the new pod. Watch it on the next run.
+- **Manual checks on `sha-55602c3`, by Ori:**
+  - The DM `아카이브에서 제거` button took the 📎 marker off the source message (#109 item 1). Re-clicking the earlier DM was suggested, since that click takes the idempotent `REMOVED` path. Ori did not say which Clip was used.
+  - Clip and Unclip worked under the five-minute signed-timestamp bound (#109 item 2). Before the deploy, `timedatectl` on `ori-minipc` showed `System clock synchronized: yes` and `NTP service: active`.
