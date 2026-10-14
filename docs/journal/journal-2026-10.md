@@ -412,3 +412,17 @@ Not fixed:
 - **Manual checks on `sha-55602c3`, by Ori:**
   - The DM `아카이브에서 제거` button took the 📎 marker off the source message (#109 item 1). Re-clicking the earlier DM was suggested, since that click takes the idempotent `REMOVED` path. Ori did not say which Clip was used.
   - Clip and Unclip worked under the five-minute signed-timestamp bound (#109 item 2). Before the deploy, `timedatectl` on `ori-minipc` showed `System clock synchronized: yes` and `NTP service: active`.
+
+## 2026-10-15 — #106 deep review follow-up
+
+Fixed:
+
+1. A re-clip's joined `lockClip` now passes the claimed archive channel, so a repoint that commits between the claim and the stale-PENDING takeover returns a retryable `FAILED` before the lease is refreshed or anything is posted. Test: `tests/clip/takeover-repoint.test.ts`.
+2. The `findArchiveChangeBlocker` doc comment sits on the function it documents, not on the `ArchiveChangeBlocker` type.
+
+Not fixed:
+
+- **Orphaned pair after a failed cleanup delete:** a declined publish whose cleanup delete fails (`deleteArchiveQuietly`) leaves an orphaned pair in the old channel with only a log line, and the row stays PENDING (no `recordArchiveFailure`). Reachable for PENDING only when the creator stalls past the 5-minute lease while a repoint commits.
+- **Stale DELETING row blocks a repoint:** a stale DELETING row holding no archive ids blocks a repoint indefinitely as `ARCHIVED` (it shows the "remove archived messages" copy). Predates #106. Copying the PENDING lease rule is not safe: `finalizeDeletion`'s loop relies on DELETING blocking.
+- **Blocker queries:** `findArchiveChangeBlocker` runs two sequential queries, twice per save, one inside the guild lock. Performance only.
+- **Declined:** an unreadable 409 in `setup-client.ts` falls back to the `live-clips` copy; that is the approved #106 design.
