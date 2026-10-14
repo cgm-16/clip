@@ -226,6 +226,10 @@ describe('Clip / Unclip / Remove context commands', () => {
 
   const cleanupGuildIds: string[] = [];
 
+  beforeEach(() => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
   afterEach(async () => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
@@ -316,6 +320,9 @@ describe('Clip / Unclip / Remove context commands', () => {
 
       const followup = await waitForCall(calls, (call) => call.url === followupUrl(token));
       expect(followup.body).toEqual({ content: DISCORD_COPY.noPermission });
+      expect(vi.mocked(console.log)).toHaveBeenCalledWith(
+        expect.stringMatching(/"event":"clip\.rejected".*"errorCode":"NOT_AUTHORIZED"/),
+      );
 
       expect(await readClip(fixture)).toBeNull();
       // No archive post and no marker reaction: an unauthorized attempt

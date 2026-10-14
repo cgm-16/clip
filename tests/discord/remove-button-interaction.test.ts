@@ -188,6 +188,10 @@ describe('POST /api/discord/interactions -- MESSAGE_COMPONENT (remove-from-archi
 
   const cleanupGuildIds: string[] = [];
 
+  beforeEach(() => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
   afterEach(async () => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
