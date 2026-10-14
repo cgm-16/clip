@@ -2,8 +2,25 @@
 // or the buttons. Up/down/page keys stay native so tall slides can be scrolled.
 // A slide change scrolls to the top and focuses the shown slide's heading, so
 // a keyboard or screen-reader user lands on the new content.
+// The #lang button toggles English and Korean: every [lang] element in the body
+// is shown or hidden, and image alt text and aria-labels are swapped from their
+// data-alt-* / data-label-* attributes. The current slide does not change.
 (function () {
-  document.documentElement.lang = 'en';
+  function setLanguage(code) {
+    document.documentElement.lang = code;
+    var toggle = document.getElementById('lang');
+    Array.prototype.forEach.call(document.body.querySelectorAll('[lang]'), function (el) {
+      // The toggle names the other language, so its labels follow the inverse rule.
+      el.hidden = toggle.contains(el) ? el.lang === code : el.lang !== code;
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-alt-en]'), function (el) {
+      el.alt = el.getAttribute('data-alt-' + code);
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-label-en]'), function (el) {
+      el.setAttribute('aria-label', el.getAttribute('data-label-' + code));
+    });
+  }
+  setLanguage('en');
   var slides = Array.prototype.slice.call(document.querySelectorAll('main > section'));
   var counter = document.getElementById('counter');
   var prev = document.getElementById('prev');
@@ -36,5 +53,8 @@
   });
   prev.addEventListener('click', function () { show(current - 1, true); });
   next.addEventListener('click', function () { show(current + 1, true); });
+  document.getElementById('lang').addEventListener('click', function () {
+    setLanguage(document.documentElement.lang === 'en' ? 'ko' : 'en');
+  });
   show(0, false);
 })();

@@ -11,132 +11,257 @@
   <main>
     <section aria-labelledby="s1">
       <h1 id="s1" tabindex="-1">Clip</h1>
-      <p class="lead">Deliberate community memory for Discord.</p>
-      <p class="muted">A Discord bot and admin web app, scoped, directed, deployed and verified by <a href="https://github.com/cgm-16" target="_blank" rel="noopener noreferrer">cgm-16</a>. October 2026.</p>
+      <div lang="en">
+        <p class="lead">Deliberate community memory for Discord.</p>
+        <p class="muted">A Discord bot and admin web app, scoped, directed, deployed and verified by <a href="https://github.com/cgm-16" target="_blank" rel="noopener noreferrer">cgm-16</a>. October 2026.</p>
+      </div>
+      <div lang="ko" hidden>
+        <p class="lead">디스코드를 위한 공동체의 의도적 기억.</p>
+        <p class="muted">디스코드 봇과 관리자 웹 앱. <a href="https://github.com/cgm-16" target="_blank" rel="noopener noreferrer">cgm-16</a>이 범위를 정하고, 방향을 잡고, 배포하고, 검증했습니다. 2026년 10월.</p>
+      </div>
     </section>
     <section aria-labelledby="s2">
-      <h2 id="s2" tabindex="-1">Pins were never meant to be memory</h2>
-      <p>Discord pins are a short list, locked to one channel and managed by moderators. The current limit is 250 per channel.</p>
-      <p>The starting point was concrete: a community had to delete old pins to make room for new ones.</p>
-      <p>Pin count is the symptom. The gap is that a community has no low-friction way to say <em>"this is worth keeping for us."</em></p>
+      <h2 id="s2" tabindex="-1"><span lang="en">Pins were never meant to be memory</span><span lang="ko" hidden>핀은 영원한 기억을 위해 만든 것이 아닙니다</span></h2>
+      <div lang="en">
+        <p>Discord pins are a short list, locked to one channel and managed by moderators. The current limit is 250 per channel.</p>
+        <p>The starting point was concrete: a community had to delete old pins to make room for new ones.</p>
+        <p>Pin count is the symptom. The gap is that a community has no low-friction way to say <em>"this is worth keeping for us."</em></p>
+      </div>
+      <div lang="ko" hidden>
+        <p>디스코드 핀은 모더레이션 권한으로 관리되는, 채널에 종속된 유한한 목록입니다. 현재 한도는 채널당 250개입니다.</p>
+        <p>출발점이 된 사건은 구체적입니다 — 어떤 커뮤니티가 새 핀을 꽂을 자리를 만들려고 오래된 핀을 지워야 했습니다.</p>
+        <p>핀 개수는 증상입니다. 진짜 빈틈은 커뮤니티에 <em>"이건 우리를 위해 남겨둘 가치가 있다"</em>라고 말할 마찰 없는 방법이 없다는 것입니다.</p>
+      </div>
     </section>
     <section aria-labelledby="s3">
-      <h2 id="s3" tabindex="-1">What Clip is, and is not</h2>
-      <div class="positioning" tabindex="0" role="region" aria-label="Positioning table">
-        <table>
-          <thead><tr><th scope="col">Primitive</th><th scope="col">What it means</th></tr></thead>
-          <tbody>
-            <tr><td>Discord pin</td><td>a moderator says this matters <strong>in this channel</strong></td></tr>
-            <tr><td>Personal bookmark</td><td><strong>I</strong> want to see this later</td></tr>
-            <tr><td>Starboard</td><td><strong>enough people</strong> liked it</td></tr>
-            <tr><td>Pin archiver</td><td>it <strong>was already pinned</strong>, and overflowed</td></tr>
-            <tr><td>Bulk logger</td><td>keep <strong>everything</strong>, filter later</td></tr>
-            <tr><td><strong>Clip</strong></td><td><strong>a member with permission says this is worth preserving for the community</strong></td></tr>
-          </tbody>
-        </table>
+      <h2 id="s3" tabindex="-1"><span lang="en">What Clip is, and is not</span><span lang="ko" hidden>Clip은 무엇이고, 무엇이 아닌가</span></h2>
+      <div lang="en">
+        <div class="positioning" tabindex="0" role="region" aria-label="Positioning table" data-label-en="Positioning table" data-label-ko="포지셔닝 표">
+          <table>
+            <thead><tr><th scope="col">Primitive</th><th scope="col">What it means</th></tr></thead>
+            <tbody>
+              <tr><td>Discord pin</td><td>a moderator says this matters <strong>in this channel</strong></td></tr>
+              <tr><td>Personal bookmark</td><td><strong>I</strong> want to see this later</td></tr>
+              <tr><td>Starboard</td><td><strong>enough people</strong> liked it</td></tr>
+              <tr><td>Pin archiver</td><td>it <strong>was already pinned</strong>, and overflowed</td></tr>
+              <tr><td>Bulk logger</td><td>keep <strong>everything</strong>, filter later</td></tr>
+              <tr><td><strong>Clip</strong></td><td><strong>a member with permission says this is worth preserving for the community</strong></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Clip is deliberate memory: one visible message, preserved on purpose, with no pin first, no popularity threshold and no transcript.</p>
       </div>
-      <p>Clip is deliberate memory: one visible message, preserved on purpose, with no pin first, no popularity threshold and no transcript.</p>
+      <div lang="ko" hidden>
+        <div class="positioning" tabindex="0" role="region" aria-label="Positioning table" data-label-en="Positioning table" data-label-ko="포지셔닝 표">
+          <table>
+            <thead><tr><th scope="col">원시 기능</th><th scope="col">그것이 뜻하는 것</th></tr></thead>
+            <tbody>
+              <tr><td>디스코드 핀</td><td>모더레이터가 <strong>이 채널에서</strong> 중요하다고 말함</td></tr>
+              <tr><td>개인 북마크</td><td><strong>내가</strong> 나중에 보고 싶다고 말함</td></tr>
+              <tr><td>Starboard</td><td><strong>충분히 많은 사람이</strong> 좋아했음</td></tr>
+              <tr><td>핀 아카이버</td><td><strong>이미 핀이었고</strong> 넘쳤음</td></tr>
+              <tr><td>대량 로거·익스포터</td><td><strong>전부 담고</strong> 나중에 거름</td></tr>
+              <tr><td><strong>Clip</strong></td><td><strong>권한 있는 멤버가 커뮤니티를 위해 보존할 가치가 있다고 말함</strong></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Clip은 의도적 보존입니다. 보이는 메시지 하나를 고정 기능을 사용할 필요 없이, 인기 투표 없이, 대화를 끊지 않고, 의도적으로 보존합니다.</p>
+      </div>
     </section>
     <section aria-labelledby="s4">
-      <h2 id="s4" tabindex="-1">How it works</h2>
-      <ol>
-        <li>A member right-clicks a message and picks Apps → <strong>Clip</strong>.</li>
-        <li>The archive channel gets two messages: a provenance line (author, source channel, time), then a forward of the message.</li>
-        <li>The original gets a 📎 marker, and its author gets a DM with a remove button. Both are best-effort: a clip still succeeds without them.</li>
-      </ol>
-      <p class="muted">Why two messages: Discord rejects a forward that carries any content of its own (error <code>160011</code>), and a forward's snapshot omits its author. So provenance has to come from Clip's own records, posted alongside.</p>
-      <img src="img/p2-archive.png" alt="The #clip-archive channel showing a provenance line from Clip (author, channel, time) followed by the forwarded message.">
-      <p class="muted">Screenshots from a dedicated test server; the tester shown consented to appear.</p>
+      <h2 id="s4" tabindex="-1"><span lang="en">How it works</span><span lang="ko" hidden>동작 방식</span></h2>
+      <div lang="en">
+        <ol>
+          <li>A member right-clicks a message and picks Apps → <strong>Clip</strong>.</li>
+          <li>The archive channel gets two messages: a provenance line (author, source channel, time), then a forward of the message.</li>
+          <li>The original gets a 📎 marker, and its author gets a DM with a remove button. Both are best-effort: a clip still succeeds without them.</li>
+        </ol>
+        <p class="muted">Why two messages: Discord rejects a forward that carries any content of its own (error <code>160011</code>), and a forward's snapshot omits its author. So provenance has to come from Clip's own records, posted alongside.</p>
+      </div>
+      <div lang="ko" hidden>
+        <ol>
+          <li>멤버가 메시지를 우클릭하고 앱 → <strong>Clip</strong>을 고릅니다.</li>
+          <li>아카이브 채널에 메시지 두 개가 올라갑니다. 출처 메시지(작성자, 원본 채널, 시각) 다음에 메시지 전달이 옵니다.</li>
+          <li>원본 메시지에 📎 마커가 붙고, 작성자에게 "삭제" 버튼이 달린 DM이 갑니다. 둘 다 best-effort라서, 실패해도 Clip은 성공합니다.</li>
+        </ol>
+        <p class="muted">메시지가 두 개인 이유: 디스코드는 자체 내용을 담은 전달을 거부하고(오류 <code>160011</code>), 전달 스냅샷에는 작성자가 빠져 있습니다. 그래서 출처는 Clip 자신의 기록에서 가져와 함께 게시해야 합니다.</p>
+      </div>
+      <img src="img/p2-archive.png" alt="The #clip-archive channel showing a provenance line from Clip (author, channel, time) followed by the forwarded message." data-alt-en="The #clip-archive channel showing a provenance line from Clip (author, channel, time) followed by the forwarded message." data-alt-ko="출처 메시지(작성자, 채널, 시각) 다음에 전달된 메시지가 이어지는 #clip-archive 채널.">
+      <p class="muted" lang="en">Screenshots from a dedicated test server; the tester shown consented to appear.</p>
+      <p class="muted" lang="ko" hidden>스크린샷은 전용 테스트 서버에서 찍었으며, 화면에 나온 테스터는 공개에 동의했습니다.</p>
     </section>
     <section aria-labelledby="s5">
-      <h2 id="s5" tabindex="-1">Discord keeps the content</h2>
-      <p>The central architecture decision is an ownership boundary.</p>
-      <div class="diagram">
-        <div>
-          <h3>Discord</h3>
-          <p>message bodies · embeds, attachments, media · rendered snapshots · user and channel display names</p>
+      <h2 id="s5" tabindex="-1"><span lang="en">Discord keeps the content</span><span lang="ko" hidden>내용은 디스코드가 보관합니다</span></h2>
+      <div lang="en">
+        <p>The central architecture decision is an ownership boundary.</p>
+        <div class="diagram">
+          <div>
+            <h3>Discord</h3>
+            <p>message bodies · embeds, attachments, media · rendered snapshots · user and channel display names</p>
+          </div>
+          <div>
+            <h3>PostgreSQL</h3>
+            <p>guild configuration and allowed roles · Clip identity and state machine · per-member preservation signals · removal tombstones · setup tokens and admin sessions</p>
+          </div>
         </div>
-        <div>
-          <h3>PostgreSQL</h3>
-          <p>guild configuration and allowed roles · Clip identity and state machine · per-member preservation signals · removal tombstones · setup tokens and admin sessions</p>
-        </div>
+        <p>Clip stores no message bodies, attachments, embed payloads, avatars, search index or embeddings. Deleting a server's Clip data erases only Clip's control state. The archive channel and every message in it stay in Discord.</p>
       </div>
-      <p>Clip stores no message bodies, attachments, embed payloads, avatars, search index or embeddings. Deleting a server's Clip data erases only Clip's control state. The archive channel and every message in it stay in Discord.</p>
+      <div lang="ko" hidden>
+        <p>중심 아키텍처 결정은 소유권 경계입니다.</p>
+        <div class="diagram">
+          <div>
+            <h3>디스코드</h3>
+            <p>보관된 메시지 본문 · 임베드, 첨부, 미디어 · 스냅샷 렌더링 · 사용자·채널 표시 정보</p>
+          </div>
+          <div>
+            <h3>PostgreSQL</h3>
+            <p>길드 설정과 허용 역할 · Clip 동일성과 상태 기계 · 사용자별 보존 신호 · 작성자·관리자 삭제 툼스톤 · 관리자 설정 토큰과 세션</p>
+          </div>
+        </div>
+        <p>Clip은 메시지 본문, 첨부 바이너리, 임베드 페이로드, 아바타, 검색 색인, 임베딩을 저장하지 않습니다. 한 길드의 Clip 데이터를 삭제하면 Clip의 제어 상태만 지워지고, 디스코드 아카이브 채널과 그 안의 모든 메시지는 그대로 남습니다.</p>
+      </div>
     </section>
     <section aria-labelledby="s6">
-      <h2 id="s6" tabindex="-1">Setup and the web archive</h2>
-      <p>An admin runs <code>/setup</code> in Discord and gets a one-time link valid for 15 minutes. On the web, they choose the archive channel and the roles allowed to clip. Admins also get a read-only web archive of the server's clips.</p>
+      <h2 id="s6" tabindex="-1"><span lang="en">Setup and the web archive</span><span lang="ko" hidden>설정과 웹 아카이브</span></h2>
+      <div lang="en">
+        <p>An admin runs <code>/setup</code> in Discord and gets a one-time link valid for 15 minutes. On the web, they choose the archive channel and the roles allowed to clip. Admins also get a read-only web archive of the server's clips.</p>
+      </div>
+      <div lang="ko" hidden>
+        <p>관리자가 디스코드에서 <code>/setup</code>을 실행하면 15분 동안 유효한 일회용 링크를 받습니다. 웹에서 아카이브 채널과 클립할 수 있는 역할을 고릅니다. 관리자는 서버의 Clip을 모아 보는 읽기 전용 웹 아카이브도 받습니다.</p>
+      </div>
       <div class="shots">
         <figure>
-          <img src="img/p6-form.png" alt="Clip's setup screen with the recommended option selected: create a new private archive channel.">
-          <figcaption>Setup</figcaption>
+          <img src="img/p6-form.png" alt="Clip's setup screen with the recommended option selected: create a new private archive channel." data-alt-en="Clip's setup screen with the recommended option selected: create a new private archive channel." data-alt-ko="권장 옵션(새 비공개 아카이브 채널 생성)이 선택된 Clip 설정 화면.">
+          <figcaption><span lang="en">Setup</span><span lang="ko" hidden>설정</span></figcaption>
         </figure>
         <figure>
-          <img src="img/burst-screen-d.png" alt="Clip's web archive listing clipped messages with author, source channel, time and a link to the original.">
-          <figcaption>Web archive</figcaption>
+          <img src="img/burst-screen-d.png" alt="Clip's web archive listing clipped messages with author, source channel, time and a link to the original." data-alt-en="Clip's web archive listing clipped messages with author, source channel, time and a link to the original." data-alt-ko="클립된 메시지를 작성자, 원본 채널, 시각, 원본 링크와 함께 나열한 Clip 웹 아카이브.">
+          <figcaption><span lang="en">Web archive</span><span lang="ko" hidden>웹 아카이브</span></figcaption>
         </figure>
       </div>
-      <p class="muted">Screenshots from a dedicated test server; the tester shown consented to appear.</p>
+      <p class="muted" lang="en">Screenshots from a dedicated test server; the tester shown consented to appear.</p>
+      <p class="muted" lang="ko" hidden>스크린샷은 전용 테스트 서버에서 찍었으며, 화면에 나온 테스터는 공개에 동의했습니다.</p>
     </section>
     <section aria-labelledby="s7">
-      <h2 id="s7" tabindex="-1">The hard parts</h2>
-      <ul>
-        <li><strong>One canonical Clip per message, under concurrency.</strong> Uniqueness is enforced by the database, and anything that depends on the clipper count takes a row lock. There is no check-then-insert. Tested against real PostgreSQL.</li>
-        <li><strong>Removal wins.</strong> When the author or an admin removes a clip, that overrides every clipper and leaves a tombstone that blocks the message from being clipped again.</li>
-        <li><strong>Never half-archived.</strong> A Clip never becomes active with a missing or partial archive.</li>
-        <li><strong>Platform facts checked before they were built on</strong>, including <code>160011</code> (a forward cannot carry content), snapshots without <code>author</code>, and the four forwardable message types.</li>
-        <li><strong>One slipped through.</strong> A poll is an ordinary message (type 0) with a poll attached, so the type check let it through. Reading the check before the live run found the gap, the run confirmed it, and polls are now refused before any state is written (#84).</li>
-      </ul>
+      <h2 id="s7" tabindex="-1"><span lang="en">The hard parts</span><span lang="ko" hidden>어려운 부분</span></h2>
+      <div lang="en">
+        <ul>
+          <li><strong>One canonical Clip per message, under concurrency.</strong> Uniqueness is enforced by the database, and anything that depends on the clipper count takes a row lock. There is no check-then-insert. Tested against real PostgreSQL.</li>
+          <li><strong>Removal wins.</strong> When the author or an admin removes a clip, that overrides every clipper and leaves a tombstone that blocks the message from being clipped again.</li>
+          <li><strong>Never half-archived.</strong> A Clip never becomes active with a missing or partial archive.</li>
+          <li><strong>Platform facts checked before they were built on</strong>, including <code>160011</code> (a forward cannot carry content), snapshots without <code>author</code>, and the four forwardable message types.</li>
+          <li><strong>One slipped through.</strong> A poll is an ordinary message (type 0) with a poll attached, so the type check let it through. Reading the check before the live run found the gap, the run confirmed it, and polls are now refused before any state is written (#84).</li>
+        </ul>
+      </div>
+      <div lang="ko" hidden>
+        <ul>
+          <li><strong>동시성 아래에서도 메시지당 정규 Clip 하나.</strong> 유일성은 데이터베이스가 강제하고, 클리퍼 수에 의존하는 모든 변경은 행 잠금을 잡습니다. 확인 후 삽입(check-then-insert)은 없습니다. 실제 PostgreSQL에 대해 테스트했습니다.</li>
+          <li><strong>삭제가 이깁니다.</strong> 작성자나 관리자가 Clip을 삭제하면 모든 클리퍼보다 우선하고, 그 메시지가 다시 클립되지 않도록 툼스톤을 남깁니다.</li>
+          <li><strong>반쯤 보관된 상태는 없습니다.</strong> 아카이브가 없거나 일부만 있으면 Clip은 절대 활성 상태가 되지 않습니다.</li>
+          <li><strong>플랫폼 사실은 그 위에 짓기 전에 확인했습니다.</strong> <code>160011</code>(전달은 내용을 담을 수 없음), <code>author</code>가 없는 스냅샷, 전달 가능한 메시지 유형 네 가지가 그 예입니다.</li>
+          <li><strong>하나는 빠져나갔습니다.</strong> 투표는 투표가 붙은 일반 메시지(유형 0)라서 유형 검사를 통과했습니다. 실측 전에 검사 코드를 읽다가 빈틈을 찾았고, 실측으로 확인했으며, 이제 투표는 어떤 상태도 쓰기 전에 거부됩니다(#84).</li>
+        </ul>
+      </div>
     </section>
     <section aria-labelledby="s8">
-      <h2 id="s8" tabindex="-1">A cut was a decision</h2>
-      <p>On 2026-08-20, 23 hours before the assignment deadline, Claude Code measured the remaining work against the project's own velocity (Wave 1 ≈ 6 h, Wave 2 ≈ 10 h) and put the arithmetic to me instead of absorbing it. It wasn't going to fit, so I cut the web archive and kept the Discord path and minimal setup.</p>
-      <p>I recorded the cut as a real reduction of approved scope, not as drift.</p>
-      <p>Afterwards, I restored it with evidence. The web archive shipped on 2026-10-09 (PR #61). On 2026-10-14 the restoration's browser end-to-end gate passed 8/8 against production on <code>sha-b845a59</code>, and again on <code>sha-3ed1d60</code>.</p>
+      <h2 id="s8" tabindex="-1"><span lang="en">A cut was a decision</span><span lang="ko" hidden>컷은 결정이었습니다</span></h2>
+      <div lang="en">
+        <p>On 2026-08-20, 23 hours before the assignment deadline, Claude Code measured the remaining work against the project's own velocity (Wave 1 ≈ 6 h, Wave 2 ≈ 10 h) and put the arithmetic to me instead of absorbing it. It wasn't going to fit, so I cut the web archive and kept the Discord path and minimal setup.</p>
+        <p>I recorded the cut as a real reduction of approved scope, not as drift.</p>
+        <p>Afterwards, I restored it with evidence. The web archive shipped on 2026-10-09 (PR #61). On 2026-10-14 the restoration's browser end-to-end gate passed 8/8 against production on <code>sha-b845a59</code>, and again on <code>sha-3ed1d60</code>.</p>
+      </div>
+      <div lang="ko" hidden>
+        <p>2026-08-20, 과제 마감 23시간 전에 Claude Code가 남은 작업을 프로젝트 자신의 실측 속도(Wave 1 ≈ 6시간, Wave 2 ≈ 10시간)에 대고 계산했고, 그 산수를 흡수하지 않고 제게 그대로 보고했습니다. 일정에 맞지 않았기에, 저는 웹 아카이브를 잘라내고 디스코드 경로와 최소 설정을 지켰습니다.</p>
+        <p>저는 이 컷을 표류가 아니라 승인된 범위의 실질적 축소로 기록했습니다.</p>
+        <p>그 뒤 증거와 함께 되살렸습니다. 웹 아카이브는 2026-10-09에 출시했습니다(PR #61). 2026-10-14에 복원 작업의 브라우저 E2E 게이트가 프로덕션에 대해 <code>sha-b845a59</code>에서 8/8 통과했고, <code>sha-3ed1d60</code>에서도 다시 통과했습니다.</p>
+      </div>
     </section>
     <section aria-labelledby="s9">
-      <h2 id="s9" tabindex="-1">How I built it</h2>
-      <p>Claude Code was the implementer. I held the product and architecture decisions. During the restoration, every PR got an independent review before it opened, and every code change started with a failing test, recorded before the fix.</p>
-      <p>The failures I recorded share one shape: <strong>rigorous checking aimed one step to the side of the claim it was meant to support.</strong> Here are two, and what caught them.</p>
-      <article>
-        <h3>The forward that couldn't carry its own label</h3>
-        <p><strong>What happened:</strong> an AI-written plan put provenance and the forward into one archive post.</p>
-        <p><strong>Caught by:</strong> a documentation check before any code. Discord returns <code>160011</code> for a forward with content, and snapshots have no author.</p>
-        <p><strong>What changed:</strong> every archive entry is two messages, and provenance comes from Clip's own records.</p>
-      </article>
-      <article>
-        <h3>A reviewed fix that failed its first real run</h3>
-        <p><strong>What happened:</strong> <code>deploy.sh</code> pinned its rollout check to a revision number. Under the <code>Recreate</code> strategy, Kubernetes bumps that number only after the rollout starts, so the script read the old one and failed with <code>desired revision (12) is different from the running revision (13)</code>. The deploy itself was healthy.</p>
-        <p><strong>Caught by:</strong> the script's own verification gate, on production.</p>
-        <p><strong>What changed:</strong> the script now verifies by generation, and a regression test reproduces the exact error (PR #97).</p>
-      </article>
+      <h2 id="s9" tabindex="-1"><span lang="en">How I built it</span><span lang="ko" hidden>어떻게 만들었는가</span></h2>
+      <div lang="en">
+        <p>Claude Code was the implementer. I held the product and architecture decisions. During the restoration, every PR got an independent review before it opened, and every code change started with a failing test, recorded before the fix.</p>
+        <p>The failures I recorded share one shape: <strong>rigorous checking aimed one step to the side of the claim it was meant to support.</strong> Here are two, and what caught them.</p>
+        <article>
+          <h3>The forward that couldn't carry its own label</h3>
+          <p><strong>What happened:</strong> an AI-written plan put provenance and the forward into one archive post.</p>
+          <p><strong>Caught by:</strong> a documentation check before any code. Discord returns <code>160011</code> for a forward with content, and snapshots have no author.</p>
+          <p><strong>What changed:</strong> every archive entry is two messages, and provenance comes from Clip's own records.</p>
+        </article>
+        <article>
+          <h3>A reviewed fix that failed its first real run</h3>
+          <p><strong>What happened:</strong> <code>deploy.sh</code> pinned its rollout check to a revision number. Under the <code>Recreate</code> strategy, Kubernetes bumps that number only after the rollout starts, so the script read the old one and failed with <code>desired revision (12) is different from the running revision (13)</code>. The deploy itself was healthy.</p>
+          <p><strong>Caught by:</strong> the script's own verification gate, on production.</p>
+          <p><strong>What changed:</strong> the script now verifies by generation, and a regression test reproduces the exact error (PR #97).</p>
+        </article>
+      </div>
+      <div lang="ko" hidden>
+        <p>구현은 Claude Code가 했습니다. 제품과 아키텍처 결정은 제가 쥐었습니다. 복원 기간 동안 모든 PR은 열리기 전에 독립 리뷰를 받았고, 모든 코드 변경은 수정 전에 기록한 실패 테스트로 시작했습니다.</p>
+        <p>제가 기록한 실패들은 한 가지 형태를 공유합니다. <strong>엄격한 검증이, 그것이 뒷받침해야 할 주장에서 한 걸음 옆을 겨누고 있었다는 것.</strong> 그중 두 가지와, 무엇이 그것을 잡았는지 소개합니다.</p>
+        <article>
+          <h3>자기 라벨을 담을 수 없었던 전달</h3>
+          <p><strong>무슨 일이 있었나:</strong> AI가 쓴 계획이 출처와 전달을 아카이브 게시물 하나에 넣었습니다.</p>
+          <p><strong>무엇이 잡았나:</strong> 코드를 쓰기 전의 문서 확인. 디스코드는 내용이 담긴 전달에 <code>160011</code>을 반환하고, 스냅샷에는 작성자가 없습니다.</p>
+          <p><strong>무엇이 바뀌었나:</strong> 모든 아카이브 항목은 메시지 두 개이고, 출처는 Clip 자신의 기록에서 옵니다.</p>
+        </article>
+        <article>
+          <h3>리뷰를 거친 수정이 첫 실전에서 실패하다</h3>
+          <p><strong>무슨 일이 있었나:</strong> <code>deploy.sh</code>가 롤아웃 확인을 리비전 번호에 고정했습니다. <code>Recreate</code> 전략에서 쿠버네티스는 롤아웃이 시작된 뒤에야 그 번호를 올리므로, 스크립트는 예전 번호를 읽고 <code>desired revision (12) is different from the running revision (13)</code>로 실패했습니다. 배포 자체는 정상이었습니다.</p>
+          <p><strong>무엇이 잡았나:</strong> 프로덕션에서 돌아간 스크립트 자신의 검증 게이트.</p>
+          <p><strong>무엇이 바뀌었나:</strong> 이제 스크립트는 generation으로 검증하고, 회귀 테스트가 바로 그 오류를 재현합니다(PR #97).</p>
+        </article>
+      </div>
     </section>
     <section aria-labelledby="s10">
-      <h2 id="s10" tabindex="-1">Proof it ships</h2>
-      <dl class="facts">
-        <dt>Running</dt>
-        <dd>self-hosted on k3s behind Traefik, image <code>sha-3ed1d60</code> <span class="muted">(2026-10-14)</span></dd>
-        <dt>Tests</dt>
-        <dd>718 tests in 49 files; the database tests run against real PostgreSQL. <code>main</code> at <code>3ed1d60</code> <span class="muted">(2026-10-14)</span></dd>
-        <dt>End to end</dt>
-        <dd>Playwright 8/8 against production, <code>sha-3ed1d60</code> <span class="muted">(2026-10-14)</span></dd>
-        <dt>Permissions</dt>
-        <dd>measured one at a time on a fresh test server, <code>sha-cdcabaf</code> <span class="muted">(2026-10-13)</span>. The source-channel <code>50001</code> and Message Content <code>160014</code> refusals were confirmed from logs on <code>sha-3ed1d60</code> <span class="muted">(2026-10-14)</span>.</dd>
-        <dt>Footprint</dt>
-        <dd>idle at 3 millicores of CPU and 88 MiB on <code>sha-b845a59</code> <span class="muted">(2026-10-14)</span>. Load was never measured.</dd>
-        <dt>Cost</dt>
-        <dd>USD 8 a year for the domain. The existing home cluster absorbs electricity, hardware and operator time, and those are real costs.</dd>
-      </dl>
+      <h2 id="s10" tabindex="-1"><span lang="en">Proof it ships</span><span lang="ko" hidden>출시의 증거</span></h2>
+      <div lang="en">
+        <dl class="facts">
+          <dt>Running</dt>
+          <dd>self-hosted on k3s behind Traefik, image <code>sha-3ed1d60</code> <span class="muted">(2026-10-14)</span></dd>
+          <dt>Tests</dt>
+          <dd>718 tests in 49 files; the database tests run against real PostgreSQL. <code>main</code> at <code>3ed1d60</code> <span class="muted">(2026-10-14)</span></dd>
+          <dt>End to end</dt>
+          <dd>Playwright 8/8 against production, <code>sha-3ed1d60</code> <span class="muted">(2026-10-14)</span></dd>
+          <dt>Permissions</dt>
+          <dd>measured one at a time on a fresh test server, <code>sha-cdcabaf</code> <span class="muted">(2026-10-13)</span>. The source-channel <code>50001</code> and Message Content <code>160014</code> refusals were confirmed from logs on <code>sha-3ed1d60</code> <span class="muted">(2026-10-14)</span>.</dd>
+          <dt>Footprint</dt>
+          <dd>idle at 3 millicores of CPU and 88 MiB on <code>sha-b845a59</code> <span class="muted">(2026-10-14)</span>. Load was never measured.</dd>
+          <dt>Cost</dt>
+          <dd>USD 8 a year for the domain. The existing home cluster absorbs electricity, hardware and operator time, and those are real costs.</dd>
+        </dl>
+      </div>
+      <div lang="ko" hidden>
+        <dl class="facts">
+          <dt>실행 중</dt>
+          <dd>Traefik 뒤의 k3s에서 자체 호스팅, 이미지 <code>sha-3ed1d60</code> <span class="muted">(2026-10-14)</span></dd>
+          <dt>테스트</dt>
+          <dd>49개 파일 718개 테스트. 데이터베이스 테스트는 실제 PostgreSQL에 대해 실행합니다. <code>main</code>은 <code>3ed1d60</code> <span class="muted">(2026-10-14)</span></dd>
+          <dt>E2E</dt>
+          <dd>프로덕션에 대해 Playwright 8/8, <code>sha-3ed1d60</code> <span class="muted">(2026-10-14)</span></dd>
+          <dt>권한</dt>
+          <dd>새 테스트 서버에서 권한을 하나씩 회수하며 실측, <code>sha-cdcabaf</code> <span class="muted">(2026-10-13)</span>. 원본 채널 <code>50001</code>과 Message Content <code>160014</code> 거부는 <code>sha-3ed1d60</code>에서 로그로 확인 <span class="muted">(2026-10-14)</span>.</dd>
+          <dt>사용량</dt>
+          <dd>유휴 시 CPU 3밀리코어, 메모리 88 MiB, <code>sha-b845a59</code> <span class="muted">(2026-10-14)</span>. 부하는 측정하지 않았습니다.</dd>
+          <dt>비용</dt>
+          <dd>도메인 비용 연 USD 8. 전기, 하드웨어, 운영자 시간은 기존 홈 클러스터가 흡수하며, 이것들도 실제 비용입니다.</dd>
+        </dl>
+      </div>
     </section>
     <section aria-labelledby="s11">
-      <h2 id="s11" tabindex="-1">Try it</h2>
-      <p><a href="https://discord.com/oauth2/authorize?client_id=1539212298600718416&amp;scope=bot+applications.commands&amp;permissions=68688&amp;integration_type=0" target="_blank" rel="noopener noreferrer">Add Clip to a test server</a>. It's a demo hosted on my home server: use a test server, and expect no uptime guarantee.</p>
-      <p>Source code: <a href="https://github.com/cgm-16/clip" target="_blank" rel="noopener noreferrer">github.com/cgm-16/clip</a>. MIT licence.</p>
+      <h2 id="s11" tabindex="-1"><span lang="en">Try it</span><span lang="ko" hidden>직접 써 보기</span></h2>
+      <div lang="en">
+        <p><a href="https://discord.com/oauth2/authorize?client_id=1539212298600718416&amp;scope=bot+applications.commands&amp;permissions=68688&amp;integration_type=0" target="_blank" rel="noopener noreferrer">Add Clip to a test server</a>. It's a demo hosted on my home server: use a test server, and expect no uptime guarantee.</p>
+        <p>Source code: <a href="https://github.com/cgm-16/clip" target="_blank" rel="noopener noreferrer">github.com/cgm-16/clip</a>. MIT licence.</p>
+      </div>
+      <div lang="ko" hidden>
+        <p><a href="https://discord.com/oauth2/authorize?client_id=1539212298600718416&amp;scope=bot+applications.commands&amp;permissions=68688&amp;integration_type=0" target="_blank" rel="noopener noreferrer">테스트 서버에 Clip 추가하기</a>. 제 홈 서버에서 호스팅하는 데모입니다. 테스트 서버에서 사용하시고, 가동 시간은 보장하지 않습니다.</p>
+        <p>소스 코드: <a href="https://github.com/cgm-16/clip" target="_blank" rel="noopener noreferrer">github.com/cgm-16/clip</a>. MIT 라이선스.</p>
+      </div>
     </section>
   </main>
-  <nav class="controls" aria-label="Slides">
-    <button type="button" id="prev">Previous</button>
+  <nav class="controls" aria-label="Slides" data-label-en="Slides" data-label-ko="슬라이드">
+    <button type="button" id="prev"><span lang="en">Previous</span><span lang="ko" hidden>이전</span></button>
     <span id="counter" aria-live="polite"></span>
-    <button type="button" id="next">Next</button>
+    <button type="button" id="next"><span lang="en">Next</span><span lang="ko" hidden>다음</span></button>
+    <button type="button" id="lang"><span lang="ko">한국어</span><span lang="en" hidden>English</span></button>
   </nav>
   <script src="deck.js"></script>
