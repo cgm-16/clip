@@ -81,3 +81,27 @@ test('index.html has no inline styles and loads only the published asset names',
   }
   expect(existsSync('tokens.css')).toBe(true);
 });
+
+test('every image has alt text and a source in docs/evidence/wave-6', () => {
+  const images = Array.from(document.querySelectorAll('img'));
+  expect(images.length).toBeGreaterThanOrEqual(3);
+  for (const image of images) {
+    expect(image.getAttribute('alt')?.trim()).toBeTruthy();
+    const src = image.getAttribute('src')!;
+    expect(src.startsWith('img/')).toBe(true);
+    expect(existsSync(`docs/evidence/wave-6/${src.slice('img/'.length)}`)).toBe(true);
+  }
+});
+
+test("the invite link is the README's", () => {
+  const readme = readFileSync('README.md', 'utf8');
+  const invite = /<(https:\/\/discord\.com\/oauth2\/authorize\?[^>]+)>/.exec(readme)![1];
+  const links = Array.from(document.querySelectorAll('a')).map((a) => a.getAttribute('href'));
+  expect(links).toContain(invite);
+  expect(links).toContain('https://github.com/cgm-16/clip');
+  expect(links).toContain('https://github.com/cgm-16');
+});
+
+test('names the author only as cgm-16', () => {
+  expect(document.querySelector('main > section')!.textContent).toContain('cgm-16');
+});

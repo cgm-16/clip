@@ -59,3 +59,21 @@ section h2:focus-visible {
   outline-offset: 2px;
 }
 #counter { font-family: var(--font-mono); color: var(--muted); }
+.lead { font-size: 1.25rem; color: var(--text); }
+.positioning { overflow-x: auto; }
+.positioning table { border-collapse: collapse; }
+.positioning th,
+.positioning td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; vertical-align: top; }
+.diagram { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.diagram > div { border: 1px solid var(--border); border-radius: 2px; padding: 16px; }
+.shots { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.shots img,
+section > img { max-width: 100%; height: auto; border: 1px solid var(--border); border-radius: 2px; }
+figure { margin: 0; }
+figcaption { color: var(--muted); }
+.facts dt { color: var(--text); font-weight: 600; }
+.facts dd { margin: 0 0 12px; color: var(--text-2); }
+@media (max-width: 640px) {
+  .diagram,
+  .shots { grid-template-columns: 1fr; }
+}
