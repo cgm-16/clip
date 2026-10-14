@@ -422,7 +422,7 @@ Fixed:
 
 Not fixed:
 
-- **Orphaned pair after a failed cleanup delete:** a declined publish whose cleanup delete fails (`deleteArchiveQuietly`) leaves an orphaned pair in the old channel with only a log line, and the row stays PENDING (no `recordArchiveFailure`). Reachable for PENDING only when the creator stalls past the 5-minute lease while a repoint commits.
-- **Stale DELETING row blocks a repoint:** a stale DELETING row holding no archive ids blocks a repoint indefinitely as `ARCHIVED` (it shows the "remove archived messages" copy). Predates #106. Copying the PENDING lease rule is not safe: `finalizeDeletion`'s loop relies on DELETING blocking.
+- **Orphaned pair after a failed cleanup delete:** a declined publish whose cleanup delete fails (`deleteArchiveQuietly`) leaves an orphaned pair in the old channel with only a log line. A FAILED re-clip reaches it whenever a repoint commits during its Discord round-trip, and the row stays FAILED. A PENDING creator reaches it only by stalling past the 5-minute lease while a repoint commits, and the row stays PENDING (no `recordArchiveFailure`).
+- **Stale DELETING row blocks a repoint:** a stale DELETING row holding no archive ids blocks a repoint as `ARCHIVED` until a re-clip of that message takes it over (it shows the "remove archived messages" copy). Predates #106. Copying the PENDING lease rule is not safe: `finalizeDeletion`'s loop relies on DELETING blocking.
 - **Blocker queries:** `findArchiveChangeBlocker` runs two sequential queries, twice per save, one inside the guild lock. Performance only.
 - **Declined:** an unreadable 409 in `setup-client.ts` falls back to the `live-clips` copy; that is the approved #106 design.
