@@ -426,3 +426,10 @@ Not fixed:
 - **Stale DELETING row blocks a repoint:** a stale DELETING row holding no archive ids blocks a repoint as `ARCHIVED` until a re-clip of that message takes it over (it shows the "remove archived messages" copy). Predates #106. Copying the PENDING lease rule is not safe: `finalizeDeletion`'s loop relies on DELETING blocking.
 - **Blocker queries:** `findArchiveChangeBlocker` runs two sequential queries, twice per save, one inside the guild lock. Performance only.
 - **Declined:** an unreadable 409 in `setup-client.ts` falls back to the `live-clips` copy; that is the approved #106 design.
+
+## 2026-10-15 — `sha-f661507`: #112 deployed, e2e 8/8
+
+- **What shipped:** #112, the stale-PENDING takeover channel check, plus the follow-up from Codex's review of it. A confirmed-gone-channel repoint skips the blocker, so it could land between a brand-new claim and the joined lock and leave a fresh `PENDING` row that refused retries for the lease. When the request created the row, the discarded-lock branch now calls `recordArchiveFailure`. Both races are covered by `tests/clip/takeover-repoint.test.ts`; neither window is practical to trigger by hand.
+- **Deploy:** Ori pulled main to `f661507` after its release run succeeded and ran `bash scripts/deploy.sh`, which printed `deployed ghcr.io/cgm-16/clip:sha-f661507`. Ori read the image back: `ghcr.io/cgm-16/clip:sha-f661507`.
+- **e2e:** `bash scripts/e2e-prod.sh 1559501336641404960`: 8 of 8 in 10.5s. The archive list took 2.5s and setup with a save 3.6s.
+- **Setup timing:** 3.6s is back in line with the 3.7s and 4.1s of the `sha-9b9d0eb` runs. The 5.6s on `sha-55602c3` stays unexplained but did not repeat; treat it as a one-off unless it returns.
