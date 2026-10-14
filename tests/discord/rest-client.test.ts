@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createDiscordRestClient,
   describeDiscordFailure,
+  discordErrorCode,
   DiscordApiError,
   discordRouteTemplate,
 } from '@/lib/discord/rest-client';
@@ -298,6 +299,21 @@ describe('discordRouteTemplate', () => {
     expect(discordRouteTemplate('/interactions/1234567890123456789/SENTINEL.Token-value_x/callback')).toBe(
       '/interactions/{id}/{value}/callback',
     );
+  });
+});
+
+describe('discordErrorCode', () => {
+  it('is the Discord code when the response carried one', () => {
+    expect(discordErrorCode(new DiscordApiError('x', { status: 403, code: 50013 }))).toBe('50013');
+  });
+
+  it('is the HTTP status when the response carried no Discord code', () => {
+    expect(discordErrorCode(new DiscordApiError('x', { status: 503, code: null }))).toBe('503');
+  });
+
+  it('is UNKNOWN for anything that is not a Discord API error', () => {
+    expect(discordErrorCode(new TypeError('fetch failed'))).toBe('UNKNOWN');
+    expect(discordErrorCode('not an error')).toBe('UNKNOWN');
   });
 });
 

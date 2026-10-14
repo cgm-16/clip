@@ -27,6 +27,7 @@ import {
   describeDiscordFailure,
   DISCORD_ERROR,
   DiscordApiError,
+  discordErrorCode,
 } from '@/lib/discord/rest-client';
 import { parseEnv } from '@/lib/env';
 import { logClipEvent } from '@/lib/logging/safe-log';
@@ -321,10 +322,7 @@ export async function POST(request: NextRequest) {
       logClipEvent({
         event: 'setup.archive-channel-cleanup-failed',
         guildId,
-        errorCode:
-          error instanceof DiscordApiError
-            ? String(error.code ?? error.status)
-            : 'UNKNOWN',
+        errorCode: discordErrorCode(error),
       });
     }
   }

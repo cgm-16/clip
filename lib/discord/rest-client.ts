@@ -77,6 +77,17 @@ export type DiscordFailureFacts = {
 };
 
 /**
+ * The error code for a log line, never the message: `DiscordApiError`'s
+ * message interpolates the request path, and a follow-up path carries the
+ * interaction token -- a live 15-minute credential that must not end up in
+ * logs (spec §12). Falls back to the HTTP status when the response carried no
+ * Discord code, and to `UNKNOWN` for anything that is not a Discord API error.
+ */
+export function discordErrorCode(error: unknown): string {
+  return error instanceof DiscordApiError ? String(error.code ?? error.status) : 'UNKNOWN';
+}
+
+/**
  * Classes a failed Discord call by its type and name alone. `TimeoutError` is
  * what `AbortSignal.timeout` raises; `AbortError` is the same abort reported
  * by a runtime that does not distinguish the two.

@@ -20,7 +20,7 @@ import {
 import { createArchiveMarker } from '@/lib/discord/marker';
 import { handleRemoveButtonInteraction, notifyAuthorOfFirstArchival, parseRemoveFromArchiveCustomId } from '@/lib/discord/notifications';
 import { hasManageGuild } from '@/lib/discord/permissions';
-import { createDiscordRestClient, DiscordApiError } from '@/lib/discord/rest-client';
+import { createDiscordRestClient, discordErrorCode } from '@/lib/discord/rest-client';
 import { verifyInteractionRequest } from '@/lib/discord/verify-interaction';
 import { createClipService } from '@/lib/clip/service';
 import type { Env } from '@/lib/env';
@@ -203,16 +203,6 @@ async function sendFollowupSafely(env: Env, interactionToken: string, content: s
       errorCode: discordErrorCode(error),
     });
   }
-}
-
-/**
- * The error code for a log line, never the message: `DiscordApiError`'s
- * message interpolates the request path, and the follow-up path carries the
- * interaction token -- a live 15-minute credential that must not end up in
- * logs (spec §12). Mirrors `lib/discord/marker.ts`'s own `errorCode` logging.
- */
-function discordErrorCode(error: unknown): string {
-  return error instanceof DiscordApiError ? String(error.code ?? error.status) : 'unknown';
 }
 
 /**
