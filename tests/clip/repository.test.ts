@@ -13,7 +13,8 @@ import {
   deleteClippers,
   finalizeGuildArchiveConfig,
   findGuildArchiveConfig,
-  hasLiveClips,
+  findArchiveChangeBlocker,
+  STALE_CONTROL_STATE_MS,
   lockClip,
   lockGuildConfig,
   markActive,
@@ -717,7 +718,7 @@ describe('clip repository', () => {
     const persistedConfig = await prisma.guildConfig.findUniqueOrThrow({ where: { guildId } });
 
     expect(claim?.created).toBe(true);
-    expect(finalize).toEqual({ kind: 'CONFLICT' });
+    expect(finalize).toEqual({ kind: 'CONFLICT', blocker: 'IN_PROGRESS' });
     expect(persistedConfig.archiveChannelId).toBe(oldChannelId);
     expect(await prisma.clip.count({ where: { guildId } })).toBe(1);
   });
@@ -844,13 +845,14 @@ describe('clip repository', () => {
 
   // Finding C3: `/setup/save` must refuse to repoint a guild's archive
   // channel while any Clip could still be addressed through the old one --
-  // `hasLiveClips` is that guard's whole basis, so tombstones stop counting
+  // `findArchiveChangeBlocker` is that guard's whole basis, so tombstones stop counting
   // only after Discord cleanup has cleared both archive ids.
-  describe('hasLiveClips', () => {
+  describe('findArchiveChangeBlocker', () => {
     async function makeClip(
       guildId: string,
       status: ClipStatus,
       archiveIds: { archiveProvenanceMessageId?: string; archiveForwardMessageId?: string } = {},
+      updatedAt?: Date,
     ) {
       await prisma.clip.create({
         data: {
@@ -862,9 +864,12 @@ describe('clip repository', () => {
           archiveProvenanceMessageId: status === 'ACTIVE' ? fakeSnowflake() : null,
           archiveForwardMessageId: status === 'ACTIVE' ? fakeSnowflake() : null,
           ...archiveIds,
+          ...(updatedAt && { updatedAt }),
         },
       });
     }
+
+    const PAST_LEASE = new Date(Date.now() - STALE_CONTROL_STATE_MS - 60_000);
 
     async function repoint(guildId: string) {
       return finalizeGuildArchiveConfig({
@@ -888,7 +893,7 @@ describe('clip repository', () => {
     }
 
     test('false for a guild with no Clip rows at all', async () => {
-      expect(await hasLiveClips(trackedGuildId())).toBe(false);
+      expect(await findArchiveChangeBlocker(trackedGuildId())).toBeNull();
     });
 
     test('false when every Clip is tombstoned (REMOVED_BY_AUTHOR / REMOVED_BY_ADMIN)', async () => {
@@ -896,31 +901,31 @@ describe('clip repository', () => {
       await makeClip(guildId, 'REMOVED_BY_AUTHOR');
       await makeClip(guildId, 'REMOVED_BY_ADMIN');
 
-      expect(await hasLiveClips(guildId)).toBe(false);
+      expect(await findArchiveChangeBlocker(guildId)).toBeNull();
     });
 
-    test.each<ClipStatus>(['PENDING', 'ACTIVE', 'DELETING'])(
-      'true when a %s Clip exists',
+    test.each<ClipStatus>(['ACTIVE', 'DELETING'])(
+      'ARCHIVED when a %s Clip exists',
       async (status) => {
         const guildId = trackedGuildId();
         await makeClip(guildId, status);
 
-        expect(await hasLiveClips(guildId)).toBe(true);
+        expect(await findArchiveChangeBlocker(guildId)).toBe('ARCHIVED');
       },
     );
 
-    test('false when the only Clip is FAILED and holds no archive id', async () => {
+    test('null when the only Clip is FAILED and holds no archive id', async () => {
       const guildId = trackedGuildId();
       await makeClip(guildId, 'FAILED');
 
-      expect(await hasLiveClips(guildId)).toBe(false);
+      expect(await findArchiveChangeBlocker(guildId)).toBeNull();
     });
 
-    test('true when a FAILED Clip retains an archive id', async () => {
+    test('ARCHIVED when a FAILED Clip retains an archive id', async () => {
       const guildId = trackedGuildId();
       await makeClip(guildId, 'FAILED', { archiveProvenanceMessageId: fakeSnowflake() });
 
-      expect(await hasLiveClips(guildId)).toBe(true);
+      expect(await findArchiveChangeBlocker(guildId)).toBe('ARCHIVED');
     });
 
     test('repointing is allowed when the only Clip is FAILED and holds no archive id', async () => {
@@ -934,14 +939,50 @@ describe('clip repository', () => {
       const guildId = await configuredGuildId();
       await makeClip(guildId, 'FAILED', { archiveForwardMessageId: fakeSnowflake() });
 
-      expect(await repoint(guildId)).toEqual({ kind: 'CONFLICT' });
+      expect(await repoint(guildId)).toEqual({ kind: 'CONFLICT', blocker: 'ARCHIVED' });
     });
 
-    test('repointing is refused while a PENDING Clip exists', async () => {
+    test('IN_PROGRESS for a PENDING Clip holding no archive id inside the lease', async () => {
+      const guildId = trackedGuildId();
+      await makeClip(guildId, 'PENDING');
+
+      expect(await findArchiveChangeBlocker(guildId)).toBe('IN_PROGRESS');
+    });
+
+    test('null for a PENDING Clip holding no archive id past the lease', async () => {
+      const guildId = trackedGuildId();
+      await makeClip(guildId, 'PENDING', {}, PAST_LEASE);
+
+      expect(await findArchiveChangeBlocker(guildId)).toBeNull();
+    });
+
+    test('ARCHIVED when a PENDING Clip past the lease holds an archive id', async () => {
+      const guildId = trackedGuildId();
+      await makeClip(guildId, 'PENDING', { archiveForwardMessageId: fakeSnowflake() }, PAST_LEASE);
+
+      expect(await findArchiveChangeBlocker(guildId)).toBe('ARCHIVED');
+    });
+
+    test('ARCHIVED when a PENDING Clip inside the lease sits beside an ACTIVE one', async () => {
+      const guildId = trackedGuildId();
+      await makeClip(guildId, 'PENDING');
+      await makeClip(guildId, 'ACTIVE');
+
+      expect(await findArchiveChangeBlocker(guildId)).toBe('ARCHIVED');
+    });
+
+    test('repointing is refused with IN_PROGRESS while a PENDING Clip is inside the lease', async () => {
       const guildId = await configuredGuildId();
       await makeClip(guildId, 'PENDING');
 
-      expect(await repoint(guildId)).toEqual({ kind: 'CONFLICT' });
+      expect(await repoint(guildId)).toEqual({ kind: 'CONFLICT', blocker: 'IN_PROGRESS' });
+    });
+
+    test('repointing is allowed past the lease of an id-less PENDING Clip', async () => {
+      const guildId = await configuredGuildId();
+      await makeClip(guildId, 'PENDING', {}, PAST_LEASE);
+
+      expect(await repoint(guildId)).toEqual({ kind: 'SAVED' });
     });
   });
 
@@ -1081,7 +1122,7 @@ describe('clip repository', () => {
       goneArchiveChannelId: fakeSnowflake(),
     });
 
-    expect(outcome).toEqual({ kind: 'CONFLICT' });
+    expect(outcome).toEqual({ kind: 'CONFLICT', blocker: 'IN_PROGRESS' });
   });
 
   test('first setup leaves no configuration row when the role write fails', async () => {

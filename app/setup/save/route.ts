@@ -3,10 +3,11 @@ import { z } from 'zod';
 import { authenticateAdminSession, sessionTokenHash } from '@/lib/admin-session/service';
 import { ADMIN_SESSION_COOKIE_NAME } from '@/lib/admin-session/tokens';
 import {
+  type ArchiveChangeBlocker,
   countArchivedClips,
   finalizeGuildArchiveConfig,
   findGuildArchiveConfig,
-  hasLiveClips,
+  findArchiveChangeBlocker,
 } from '@/lib/clip/repository';
 import {
   createDiscordGuildLookup,
@@ -136,7 +137,7 @@ export async function POST(request: NextRequest) {
   // Finding C3: `Clip` rows carry no archive channel id of their own, only
   // `GuildConfig.archiveChannelId` does -- so repointing that field while a
   // live Clip still depends on the old channel strands its archive there
-  // with nothing left able to address it (see `hasLiveClips`'s doc comment
+  // with nothing left able to address it (see `findArchiveChangeBlocker`'s doc comment
   // in `lib/clip/repository.ts`). Setting the channel for the first time
   // (`existingConfig === null`) is always allowed; re-selecting the guild's
   // already-configured channel is a no-op, not a reconfigure, so it is
@@ -152,12 +153,15 @@ export async function POST(request: NextRequest) {
     existingConfig !== null &&
     (destination === 'create' || existingConfig.archiveChannelId !== channelId);
   let goneArchiveChannelId: string | undefined;
-  if (isReconfigure && (await hasLiveClips(guildId))) {
-    const lookup = createDiscordGuildLookup({ botToken: env.DISCORD_BOT_TOKEN, fetchImpl: fetch });
-    if (!(await lookup.isChannelGone(existingConfig.archiveChannelId))) {
-      return liveClipsConflict();
+  if (isReconfigure) {
+    const blocker = await findArchiveChangeBlocker(guildId);
+    if (blocker !== null) {
+      const lookup = createDiscordGuildLookup({ botToken: env.DISCORD_BOT_TOKEN, fetchImpl: fetch });
+      if (!(await lookup.isChannelGone(existingConfig.archiveChannelId))) {
+        return archiveChangeConflict(blocker);
+      }
+      goneArchiveChannelId = existingConfig.archiveChannelId;
     }
-    goneArchiveChannelId = existingConfig.archiveChannelId;
   }
 
   let archiveChannelId: string;
@@ -341,7 +345,7 @@ export async function POST(request: NextRequest) {
     if (destination === 'create') {
       await deleteCreatedChannel();
     }
-    return liveClipsConflict();
+    return archiveChangeConflict(finalized.blocker);
   }
   if (finalized.kind === 'SESSION_REVOKED') {
     // A guild-data deletion revoked this session after it was authenticated;
@@ -362,7 +366,12 @@ export async function POST(request: NextRequest) {
   });
 }
 
-/** Live Clips depend on the current archive channel (finding C3). */
-function liveClipsConflict(): Response {
-  return Response.json({ reason: 'LIVE_CLIPS' }, { status: 409 });
+/**
+ * The current archive channel cannot change yet (finding C3): live Clips depend
+ * on it (`LIVE_CLIPS`), or a Clip is still being posted into it
+ * (`CLIP_IN_PROGRESS`).
+ */
+function archiveChangeConflict(blocker: ArchiveChangeBlocker): Response {
+  const reason = blocker === 'ARCHIVED' ? 'LIVE_CLIPS' : 'CLIP_IN_PROGRESS';
+  return Response.json({ reason }, { status: 409 });
 }

@@ -17,6 +17,7 @@ import {
   markRemovedByAuthor,
   removeClipper,
   replaceArchiveMessageIds,
+  leaseExpiredBefore,
   takeOverStaleClip,
   type ClipRecord,
   type TxClient,
@@ -37,24 +38,6 @@ import {
 import { logClipEvent, type SafeClipLog } from '@/lib/logging/safe-log';
 
 /**
- * How long a `PENDING` or `DELETING` Clip may go unwritten before a later clip
- * or unclip takes over the work its owner left unfinished (§9.8, §9.10).
- *
- * The longest live owner is a Discord round-trip: about 2 minutes at worst (3
- * calls x 3 attempts x 10 s timeout, plus capped 5 s rate-limit waits). A row
- * untouched for longer than this has no owner left to finish it.
- *
- * ponytail: a wall-clock lease, not a heartbeat. An owner stalled past it races
- * the taker; `publishArchive`'s conditional `markActive` and the loser's
- * pair cleanup settle that race. Add a heartbeat if owners can outlive it.
- */
-const STALE_CONTROL_STATE_MS = 5 * 60_000;
-
-function staleBefore(): Date {
-  return new Date(Date.now() - STALE_CONTROL_STATE_MS);
-}
-
-/**
  * Takes over a `PENDING` or `DELETING` Clip whose owner is past the lease. See
  * `takeOverStaleClip`; any other status is never taken over.
  */
@@ -67,7 +50,7 @@ async function takeOverIfStale(tx: TxClient, clip: ClipRecord): Promise<boolean>
     clip.guildId,
     clip.sourceMessageId,
     clip.status,
-    staleBefore(),
+    leaseExpiredBefore(),
   );
   return taken;
 }
@@ -339,8 +322,9 @@ export function createClipService(gateway: DiscordArchiveGateway) {
    * ACTIVE state §17 case 7 forbids.
    *
    * `archiveChannelId` is the channel the pair was posted into. A FAILED Clip
-   * holding no ids does not block a repoint (`hasLiveClips`), so the guild may
-   * have moved off that channel during the post; the publish is then declined.
+   * holding no ids, or a PENDING one past its lease, does not block a repoint
+   * (`findArchiveChangeBlocker`), so the guild may have moved off that channel
+   * during the post; the publish is then declined.
    */
   async function publishArchive(
     key: ClipKey,
