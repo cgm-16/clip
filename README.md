@@ -54,6 +54,8 @@ Clip은 무제한 핀 유틸리티도 아니고 Starboard도 아닙니다. 이�
 |---|---|---|
 | ![화면 B](docs/evidence/wave-6/p6-form.png) | ![#clip-archive](docs/evidence/wave-6/p2-archive.png) | ![화면 D](docs/evidence/wave-6/burst-screen-d.png) |
 
+스크린샷은 전용 테스트 서버에서 찍었으며, 화면에 나온 테스터는 공개에 동의했습니다.
+
 ## 아키텍처
 
 상태 없는(stateless) Next.js 배포물 하나가 디스코드 인터랙션 엔드포인트와 관리자 웹 UI를 함께 서빙합니다. P0에는 상시 Gateway 워커가 없습니다 — 모든 제품 입력이 명시적인 명령이나 버튼이고, 그것은 HTTP 인터랙션으로 전달되기 때문입니다.
