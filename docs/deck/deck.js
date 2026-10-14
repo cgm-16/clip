@@ -2,6 +2,7 @@
 // with focus on the shown slide's heading so a keyboard or screen-reader user
 // lands on the new content.
 (function () {
+  document.documentElement.lang = 'en';
   var slides = Array.prototype.slice.call(document.querySelectorAll('main > section'));
   var counter = document.getElementById('counter');
   var prev = document.getElementById('prev');

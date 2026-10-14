@@ -121,3 +121,22 @@ test('slide 10 attributes its figures to the shas they were measured on', () => 
   )!;
   expect(testsTerm.nextElementSibling!.textContent).toContain('3ed1d60');
 });
+
+test('index.html is page content only, with the title near the top', () => {
+  expect(html).not.toMatch(/<!doctype|<html|<head|<body/i);
+  expect(html.slice(0, 8192)).toContain('<title>Clip Pitch Deck</title>');
+});
+
+test('deck.js sets the document language', () => {
+  expect(document.documentElement.lang).toBe('en');
+});
+
+test('every font url in deck.css names a published path whose source exists', () => {
+  const css = readFileSync('docs/deck/deck.css', 'utf8');
+  const urls = [...css.matchAll(/url\("([^"]+)"\)/g)].map((m) => m[1]);
+  expect(urls.length).toBeGreaterThan(0);
+  for (const url of urls) {
+    expect(url.startsWith('fonts/')).toBe(true);
+    expect(existsSync(`app/fonts/${url.slice('fonts/'.length)}`)).toBe(true);
+  }
+});
