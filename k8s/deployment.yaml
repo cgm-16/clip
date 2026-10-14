@@ -38,14 +38,12 @@ spec:
           # image values, keeping migrations and application code on one build.
           #
           # The tag must also name an image built from a commit that already
-          # contains this Dockerfile's `migrate-deps` stage (this branch adds
-          # it). An image built from an earlier commit has no /migrate path
-          # at all, and this initContainer's `command` below fails to find
-          # it, landing the pod in Init:CrashLoopBackOff before the app
-          # container ever starts. See finding C1: this repo was caught
-          # pinned to `sha-63a0ce1`, the wave base commit, for exactly this
-          # reason -- confirm the image was built from a commit with
-          # `/migrate` before bumping either tag.
+          # contains this Dockerfile's `migrate-deps` stage. An image built
+          # from an earlier commit has no /migrate path at all, and this
+          # initContainer's `command` below fails to find it, landing the pod
+          # in Init:CrashLoopBackOff before the app container ever starts.
+          # Confirm the image was built from a commit with `/migrate` before
+          # bumping either tag.
           image: __CLIP_RELEASE_IMAGE__
           # Everything the migration needs lives under /migrate, away from the
           # standalone server's own traced node_modules. Running from /app fails

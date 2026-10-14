@@ -21,7 +21,7 @@ const BUTTON_STYLE_LINK = 5;
 const ACTION_ROW = 1;
 const BUTTON = 2;
 
-// Stable prefix the future interaction router matches `custom_id` against,
+// Stable prefix `app/api/discord/interactions/route.ts` matches `custom_id` against,
 // named as a constant so it is retyped nowhere (mirrors `SETUP_COMMAND_NAME`
 // in `lib/discord/commands.ts`).
 export const REMOVE_FROM_ARCHIVE_CUSTOM_ID_PREFIX = 'clip_remove_from_dm';
