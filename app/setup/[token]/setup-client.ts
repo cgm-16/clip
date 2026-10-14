@@ -138,7 +138,8 @@ export function parseSaveResult(value: unknown): SaveResult | null {
 /** Maps `/setup/save`'s refusal statuses (see its route) to what Screen B shows. */
 export async function saveOutcomeOf(response: Response): Promise<SaveOutcome> {
   if (response.status === 409) {
-    return { kind: 'live-clips' };
+    const body = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+    return body?.reason === 'CLIP_IN_PROGRESS' ? { kind: 'clip-in-progress' } : { kind: 'live-clips' };
   }
   if (response.status === 422) {
     const body = (await response.json().catch(() => null)) as Record<string, unknown> | null;
