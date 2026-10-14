@@ -612,11 +612,11 @@ describe('POST /setup/save', () => {
       expect(isChannelGone).toHaveBeenCalledWith('111');
     });
 
-    test('moving off a current channel Discord confirms deleted is allowed despite live Clips (#58)', async () => {
+    test.each(['ARCHIVED', 'IN_PROGRESS'] as const)('moving off a current channel Discord confirms deleted is allowed despite a %s blocker (#58)', async (blocker) => {
       stubEnv();
       authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
       findGuildArchiveConfig.mockResolvedValue({ archiveChannelId: 'gone', allowedRoleIds: [] });
-      findArchiveChangeBlocker.mockResolvedValue('ARCHIVED');
+      findArchiveChangeBlocker.mockResolvedValue(blocker);
       isChannelGone.mockResolvedValue(true);
       countArchivedClips.mockResolvedValue(4);
 

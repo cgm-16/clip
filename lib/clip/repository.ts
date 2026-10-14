@@ -543,8 +543,6 @@ export async function deleteClipWithClippers(
  * screen), and this must update the one row rather than duplicate or crash on
  * the primary key.
  */
-export type ArchiveChangeBlocker = 'ARCHIVED' | 'IN_PROGRESS';
-
 type UpsertGuildArchiveConfigInput = {
   guildId: string;
   archiveChannelId: string;
@@ -614,6 +612,8 @@ export function upsertGuildArchiveConfig(input: UpsertGuildArchiveConfigInput): 
  * orphan an existing one at all, is the real long-term fix; it is out of
  * scope today.
  */
+export type ArchiveChangeBlocker = 'ARCHIVED' | 'IN_PROGRESS';
+
 async function findArchiveChangeBlockerWithClient(
   client: Pick<TxClient, 'clip'>,
   guildId: string,
