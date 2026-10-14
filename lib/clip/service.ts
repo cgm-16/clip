@@ -95,6 +95,16 @@ function logTransition(key: ClipKey, from: ClipStatus, to: ClipStatus): void {
   });
 }
 
+function logClipRejected(input: ClipInput, errorCode: string): void {
+  logClipEvent({
+    event: 'clip.rejected',
+    guildId: input.guildId,
+    sourceMessageId: input.sourceMessageId,
+    userId: input.clipperUserId,
+    errorCode,
+  });
+}
+
 /**
  * The error code for a log line. Never the message: an exception raised by the
  * Discord client can carry a response body, and a response body can carry
@@ -380,24 +390,12 @@ export function createClipService(gateway: DiscordArchiveGateway) {
     if (claim === null) {
       // §17 case 12: clipping fails safely until an admin configures the guild.
       // No DB write -- an unconfigured guild has nowhere to put the archive.
-      logClipEvent({
-        event: 'clip.rejected',
-        guildId: input.guildId,
-        sourceMessageId: input.sourceMessageId,
-        userId: input.clipperUserId,
-        errorCode: 'GUILD_NOT_CONFIGURED',
-      });
+      logClipRejected(input, 'GUILD_NOT_CONFIGURED');
       return { kind: 'FAILED', retryable: false };
     }
 
     if (claim.kind === 'NOT_AUTHORIZED') {
-      logClipEvent({
-        event: 'clip.rejected',
-        guildId: input.guildId,
-        sourceMessageId: input.sourceMessageId,
-        userId: input.clipperUserId,
-        errorCode: 'NOT_AUTHORIZED',
-      });
+      logClipRejected(input, 'NOT_AUTHORIZED');
       return { kind: 'NOT_AUTHORIZED' };
     }
 
@@ -410,12 +408,13 @@ export function createClipService(gateway: DiscordArchiveGateway) {
       // §7.4: the tombstone blocks recreation, and no preservation signal is
       // recorded against it -- recording one would resurrect the harassment
       // loop the moment the tombstone were ever lifted.
+      logClipRejected(input, claimed.status);
       return { kind: 'REMOVED_BY_AUTHOR_OR_ADMIN' };
     }
 
     const joined = await lockClip(input.guildId, input.sourceMessageId, async (tx, locked) => {
       if (isTerminalStatus(locked.status)) {
-        return { tombstoned: true as const };
+        return { tombstoned: true as const, status: locked.status };
       }
       const { added } = await addClipper(tx, {
         guildId: input.guildId,
@@ -445,6 +444,7 @@ export function createClipService(gateway: DiscordArchiveGateway) {
       return { kind: 'FAILED', retryable: true };
     }
     if (joined.tombstoned) {
+      logClipRejected(input, joined.status);
       return { kind: 'REMOVED_BY_AUTHOR_OR_ADMIN' };
     }
 
