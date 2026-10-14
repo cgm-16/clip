@@ -370,3 +370,9 @@ error: desired revision (12) is different from the running revision (13)
 
 - Ori deployed `sha-9b9d0eb` (#106) with `scripts/deploy.sh`, which ran green, then ran `bash scripts/e2e-prod.sh 1559501336641404960`: 8 of 8 in 9.5s, the archive list in 2.4s, and setup with a save in 3.7s.
 - This proves that the Screen B save path still works on the deployed fix. It does not exercise the new `CLIP_IN_PROGRESS` refusal, which needs a Clip mid-post during the save. The real-Postgres tests in #106 cover that refusal.
+
+## 2026-10-14 — Test output was not pristine; the agent shell hid it
+
+- **Instrument gap:** inside a Claude Code shell, Vitest 4 picks a reporter that hides what passing tests print. `pnpm test` looked clean there, but `pnpm exec vitest run --reporter=default` printed 33 `logClipEvent` lines, and CI showed them too. Any earlier "output pristine" claim produced in that shell is unverified. Check with `--reporter=default`, or read the CI log.
+- **A real test defect behind the noise:** two `tests/setup/save-route.test.ts` tests say the auto-created channel is deleted, but the stub threw on `DELETE /channels/222`. The route took its cleanup-failure path, and the tests passed because they only checked that the call was made. The stub now answers the delete, and both tests assert that no `setup.archive-channel-cleanup-failed` line is logged. The failure path keeps its own test.
+- The other leaks now capture `console.log` like their neighbours do, and they assert the line where it is an expected error.
