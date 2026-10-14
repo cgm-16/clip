@@ -377,6 +377,13 @@ error: desired revision (12) is different from the running revision (13)
 - **A real test defect behind the noise:** two `tests/setup/save-route.test.ts` tests say the auto-created channel is deleted, but the stub threw on `DELETE /channels/222`. The route took its cleanup-failure path, and the tests passed because they only checked that the call was made. The stub now answers the delete, and both tests assert that no `setup.archive-channel-cleanup-failed` line is logged. The failure path keeps its own test.
 - The other leaks now capture `console.log` like their neighbours do, and they assert the line where it is an expected error.
 
+## 2026-10-14 — Review follow-up: test guards and a pinned reporter
+
+- **A gap the stub fix opened:** once the `beforeEach` stub answered `DELETE /channels/222`, a regression that deleted the new channel after a successful save passed silently. The review proved it by mutation: 47 of 47 passed with no output. Every successful create-destination save test now asserts that no `DELETE` was sent. Under the same mutation, 5 tests fail.
+- The two auto-create cleanup tests now assert that nothing is logged at all, not just that one event name is absent.
+- **The instrument gap is fixed at its root:** `vitest.config.mts` pins `reporters` to `default` (plus `github-actions` on CI, which Vitest adds there anyway). A plain `pnpm test` now shows passing-test output in every shell, so the `--reporter=default` workaround in the entry above is no longer needed.
+- **Left as is:** `tests/discord/context-commands.test.ts` and `tests/discord/remove-button-interaction.test.ts` mute every `console.log` line before each test, as `tests/clip/service.test.ts` does. Every line muted today is informational, but a future error line in those 13 tests would pass silently.
+
 ## 2026-10-14 — Full-codebase review follow-up
 
 Fixed:

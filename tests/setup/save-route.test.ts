@@ -242,6 +242,7 @@ describe('POST /setup/save', () => {
       configuredByUserId: USER_ID,
       allowedRoleIds: [],
     });
+    expect(discordRequest).not.toHaveBeenCalledWith('DELETE', expect.anything());
   });
 
   test('returns 409 and deletes a newly created channel when final reconfiguration conflicts', async () => {
@@ -258,7 +259,7 @@ describe('POST /setup/save', () => {
     expect(discordRequest).toHaveBeenCalledTimes(3);
     expect(discordRequest).toHaveBeenNthCalledWith(3, 'DELETE', '/channels/222');
     expect(upsertGuildArchiveConfig).not.toHaveBeenCalled();
-    expect(logged).not.toHaveBeenCalledWith(expect.stringContaining('setup.archive-channel-cleanup-failed'));
+    expect(logged).not.toHaveBeenCalled();
   });
 
   test('a session revoked during an auto-create save deletes the new channel and returns 401', async () => {
@@ -271,7 +272,7 @@ describe('POST /setup/save', () => {
 
     expect(response.status).toBe(401);
     expect(discordRequest).toHaveBeenLastCalledWith('DELETE', '/channels/222');
-    expect(logged).not.toHaveBeenCalledWith(expect.stringContaining('setup.archive-channel-cleanup-failed'));
+    expect(logged).not.toHaveBeenCalled();
   });
 
   test('a session revoked during an existing-channel save returns 401 and deletes nothing', async () => {
@@ -396,6 +397,7 @@ describe('POST /setup/save', () => {
       allowedRoleIds: [],
     });
     expect(response.status).toBe(200);
+    expect(discordRequest).not.toHaveBeenCalledWith('DELETE', expect.anything());
   });
 
   test('names MANAGE_CHANNELS when Discord refuses channel creation with Missing Permissions, and logs it', async () => {
@@ -576,6 +578,7 @@ describe('POST /setup/save', () => {
         ]),
       }),
     );
+    expect(discordRequest).not.toHaveBeenCalledWith('DELETE', expect.anything());
   });
 
   // Finding C3: `Clip` rows carry no archive channel id of their own, only
@@ -634,6 +637,7 @@ describe('POST /setup/save', () => {
       expect(finalizeGuildArchiveConfig).toHaveBeenCalledWith(
         expect.objectContaining({ archiveChannelId: '222', goneArchiveChannelId: 'gone' }),
       );
+      expect(discordRequest).not.toHaveBeenCalledWith('DELETE', expect.anything());
     });
 
     test('a create-destination save is refused (409) when the guild already has a config and a live Clip', async () => {
