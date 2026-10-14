@@ -102,7 +102,7 @@ test("the invite link is the README's", () => {
   expect(links).toContain('https://github.com/cgm-16');
 });
 
-test('names the author only as cgm-16', () => {
+test('slide 1 names the author as cgm-16', () => {
   expect(document.querySelector('main > section')!.textContent).toContain('cgm-16');
 });
 
@@ -111,4 +111,10 @@ test('slides 4 and 6 note the tester consented to appear in the screenshots', ()
   for (const id of ['s4', 's6']) {
     expect(document.getElementById(id)!.closest('section')!.textContent).toContain(caption);
   }
+});
+
+test('slide 10 attributes its figures to the shas they were measured on', () => {
+  const text = document.getElementById('s10')!.closest('section')!.textContent;
+  expect(text).toContain('sha-b845a59');
+  expect(text).toContain('3ed1d60');
 });
