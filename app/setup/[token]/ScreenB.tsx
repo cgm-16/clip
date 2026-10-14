@@ -38,6 +38,7 @@ export type SaveOutcome =
   | { kind: 'missing-permissions'; missingPermissions: string[] }
   | { kind: 'create-channel-missing-permissions'; missingPermissions: string[] }
   | { kind: 'live-clips' }
+  | { kind: 'clip-in-progress' }
   | { kind: 'failed' };
 
 /** The guild's saved configuration, used to prefill an edit. */
@@ -307,6 +308,9 @@ export function ScreenB({
                 ))}
               </div>
             </>
+          )}
+          {saveOutcome?.kind === 'clip-in-progress' && (
+            <Callout variant="error">{WEB_COPY_AUTHORED.destinationChangeInProgress}</Callout>
           )}
           {saveOutcome?.kind === 'live-clips' && (
             <>

@@ -4,7 +4,7 @@ import {
   addClipper,
   claimClip,
   finalizeGuildArchiveConfig,
-  hasLiveClips,
+  findArchiveChangeBlocker,
   lockClip,
   markFailed,
 } from '@/lib/clip/repository';
@@ -408,7 +408,7 @@ describe('clip service', () => {
 
       expect(result).toEqual({ kind: 'REMOVED' });
       expect((await readClip(fixture))?.status).toBe('REMOVED_BY_AUTHOR');
-      expect(await hasLiveClips(fixture.guildId)).toBe(false);
+      expect(await findArchiveChangeBlocker(fixture.guildId)).toBeNull();
       expect(gateway.deleteCalls).toHaveLength(0);
       expect(await countClipperRows(fixture)).toBe(0);
     },
@@ -554,7 +554,7 @@ describe('clip service', () => {
         configuredByUserId: replacementConfiguredByUserId,
         allowedRoleIds: [],
       }),
-    ).toEqual({ kind: 'CONFLICT' });
+    ).toEqual({ kind: 'CONFLICT', blocker: 'ARCHIVED' });
     expect(
       (await prisma.guildConfig.findUniqueOrThrow({ where: { guildId: fixture.guildId } }))
         .archiveChannelId,
@@ -675,6 +675,51 @@ describe('clip service', () => {
       archiveProvenanceMessageId: 'provenance-2',
       archiveForwardMessageId: 'forward-2',
     });
+  });
+
+  // A PENDING Clip past the lease no longer blocks a repoint, so a creator that
+  // is merely slow can post into the old channel while the repoint commits. Its
+  // publish must be refused, the same as a re-clip's, or the Clip would go
+  // ACTIVE on ids nothing can address through the configured channel.
+  test('a first clip that posted into a channel repointed after its lease lapsed is taken down and never goes ACTIVE', async () => {
+    const fixture = await seedConfiguredGuild();
+    const repointedArchiveChannelId = fakeSnowflake();
+
+    let repoint: Awaited<ReturnType<typeof finalizeGuildArchiveConfig>> | undefined;
+    gateway.onNextCreate(async () => {
+      await prisma.clip.update({
+        where: {
+          guildId_sourceMessageId: {
+            guildId: fixture.guildId,
+            sourceMessageId: fixture.sourceMessageId,
+          },
+        },
+        data: { updatedAt: new Date(Date.now() - 6 * 60_000) },
+      });
+      repoint = await finalizeGuildArchiveConfig({
+        guildId: fixture.guildId,
+        sessionTokenHash: await liveSession(fixture.guildId),
+        archiveChannelId: repointedArchiveChannelId,
+        configuredByUserId: fakeSnowflake(),
+        allowedRoleIds: [fixture.allowedRoleId],
+      });
+    });
+    const raced = await service.clip(clipInput(fixture, fakeSnowflake()));
+
+    expect(repoint).toEqual({ kind: 'SAVED' });
+    expect(raced.kind).not.toBe('CREATED');
+    expect(await readClip(fixture)).toMatchObject({
+      archiveProvenanceMessageId: null,
+      archiveForwardMessageId: null,
+    });
+    expect((await readClip(fixture))?.status).not.toBe('ACTIVE');
+    expect(gateway.createCalls.at(-1)?.archiveChannelId).toBe(fixture.archiveChannelId);
+    expect(gateway.deleteCalls).toEqual([
+      {
+        archiveChannelId: fixture.archiveChannelId,
+        ids: { provenanceMessageId: 'provenance-1', forwardMessageId: 'forward-1' },
+      },
+    ]);
   });
 
   // The raw line for one event. The sentinel is asserted against the string
@@ -1250,7 +1295,7 @@ describe('clip service', () => {
     // Pair 1 came down and no other pair was ever posted.
     expect(gateway.createCalls).toHaveLength(1);
     expect(gateway.deleteCalls).toHaveLength(1);
-    expect(await hasLiveClips(fixture.guildId)).toBe(false);
+    expect(await findArchiveChangeBlocker(fixture.guildId)).toBeNull();
   });
 
   test('a revival whose reviver withdraws during the rebuild publishes nothing', async () => {

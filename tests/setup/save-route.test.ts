@@ -35,13 +35,13 @@ const upsertGuildArchiveConfig = vi.hoisted(() => vi.fn());
 const finalizeGuildArchiveConfig = vi.hoisted(() => vi.fn());
 const countArchivedClips = vi.hoisted(() => vi.fn());
 const findGuildArchiveConfig = vi.hoisted(() => vi.fn());
-const hasLiveClips = vi.hoisted(() => vi.fn());
+const findArchiveChangeBlocker = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/clip/repository', () => ({
   upsertGuildArchiveConfig,
   finalizeGuildArchiveConfig,
   countArchivedClips,
   findGuildArchiveConfig,
-  hasLiveClips,
+  findArchiveChangeBlocker,
 }));
 
 const { POST } = await import('@/app/setup/save/route');
@@ -88,7 +88,7 @@ describe('POST /setup/save', () => {
     // have to restate it -- `vi.resetAllMocks()` below wipes these between
     // tests, so they are reinstated on every run rather than set once.
     findGuildArchiveConfig.mockResolvedValue(null);
-    hasLiveClips.mockResolvedValue(false);
+    findArchiveChangeBlocker.mockResolvedValue(null);
     finalizeGuildArchiveConfig.mockResolvedValue({ kind: 'SAVED' });
     // Default: a bot whose managed role can use any channel without overwrites.
     getGuildRoles.mockResolvedValue([
@@ -175,7 +175,7 @@ describe('POST /setup/save', () => {
     expect(createDiscordRestClient).not.toHaveBeenCalled();
     expect(discordRequest).not.toHaveBeenCalled();
     expect(findGuildArchiveConfig).not.toHaveBeenCalled();
-    expect(hasLiveClips).not.toHaveBeenCalled();
+    expect(findArchiveChangeBlocker).not.toHaveBeenCalled();
     expect(finalizeGuildArchiveConfig).not.toHaveBeenCalled();
   });
 
@@ -245,7 +245,7 @@ describe('POST /setup/save', () => {
     stubEnv();
     authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
     findGuildArchiveConfig.mockResolvedValue({ archiveChannelId: '111', allowedRoleIds: [] });
-    finalizeGuildArchiveConfig.mockResolvedValue({ kind: 'CONFLICT' });
+    finalizeGuildArchiveConfig.mockResolvedValue({ kind: 'CONFLICT', blocker: 'ARCHIVED' });
     countArchivedClips.mockResolvedValue(0);
 
     const response = await POST(postJson({ destination: 'create', channelId: null, allowedRoleIds: [], guildId: GUILD_ID }));
@@ -284,7 +284,7 @@ describe('POST /setup/save', () => {
     authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
     findGuildArchiveConfig.mockResolvedValue({ archiveChannelId: '111', allowedRoleIds: [] });
     getGuildSetupChannels.mockResolvedValue([{ id: '222', name: 'selected-existing-channel', type: 0 }]);
-    finalizeGuildArchiveConfig.mockResolvedValue({ kind: 'CONFLICT' });
+    finalizeGuildArchiveConfig.mockResolvedValue({ kind: 'CONFLICT', blocker: 'ARCHIVED' });
 
     const response = await POST(postJson({ destination: 'existing', channelId: '222', allowedRoleIds: [], guildId: GUILD_ID }));
 
@@ -320,7 +320,7 @@ describe('POST /setup/save', () => {
       }
       return { id: '222', name: 'clip-archive', type: 0 };
     });
-    finalizeGuildArchiveConfig.mockResolvedValue({ kind: 'CONFLICT' });
+    finalizeGuildArchiveConfig.mockResolvedValue({ kind: 'CONFLICT', blocker: 'ARCHIVED' });
     countArchivedClips.mockResolvedValue(0);
     const logged = vi.spyOn(console, 'log').mockImplementation(() => {});
 
@@ -583,7 +583,7 @@ describe('POST /setup/save', () => {
       stubEnv();
       authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
       findGuildArchiveConfig.mockResolvedValue({ archiveChannelId: '111', allowedRoleIds: [] });
-      hasLiveClips.mockResolvedValue(true);
+      findArchiveChangeBlocker.mockResolvedValue('ARCHIVED');
       getGuildSetupChannels.mockResolvedValue([
         { id: '111', name: 'general', type: 0 },
         { id: '222', name: 'new-channel', type: 0 },
@@ -603,7 +603,7 @@ describe('POST /setup/save', () => {
       stubEnv();
       authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
       findGuildArchiveConfig.mockResolvedValue({ archiveChannelId: '111', allowedRoleIds: [] });
-      hasLiveClips.mockResolvedValue(true);
+      findArchiveChangeBlocker.mockResolvedValue('ARCHIVED');
       isChannelGone.mockResolvedValue(false);
 
       const response = await POST(postJson({ destination: 'existing', channelId: '222', allowedRoleIds: [], guildId: GUILD_ID }));
@@ -612,11 +612,11 @@ describe('POST /setup/save', () => {
       expect(isChannelGone).toHaveBeenCalledWith('111');
     });
 
-    test('moving off a current channel Discord confirms deleted is allowed despite live Clips (#58)', async () => {
+    test.each(['ARCHIVED', 'IN_PROGRESS'] as const)('moving off a current channel Discord confirms deleted is allowed despite a %s blocker (#58)', async (blocker) => {
       stubEnv();
       authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
       findGuildArchiveConfig.mockResolvedValue({ archiveChannelId: 'gone', allowedRoleIds: [] });
-      hasLiveClips.mockResolvedValue(true);
+      findArchiveChangeBlocker.mockResolvedValue(blocker);
       isChannelGone.mockResolvedValue(true);
       countArchivedClips.mockResolvedValue(4);
 
@@ -633,7 +633,7 @@ describe('POST /setup/save', () => {
       stubEnv();
       authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
       findGuildArchiveConfig.mockResolvedValue({ archiveChannelId: '111', allowedRoleIds: [] });
-      hasLiveClips.mockResolvedValue(true);
+      findArchiveChangeBlocker.mockResolvedValue('ARCHIVED');
 
       const response = await POST(postJson({ destination: 'create', channelId: null, allowedRoleIds: [], guildId: GUILD_ID }));
 
@@ -642,7 +642,7 @@ describe('POST /setup/save', () => {
       expect(discordRequest).not.toHaveBeenCalled();
     });
 
-    test('setting the archive channel for the first time is never refused, even though hasLiveClips is never asked', async () => {
+    test('setting the archive channel for the first time is never refused, even though findArchiveChangeBlocker is never asked', async () => {
       stubEnv();
       authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
       findGuildArchiveConfig.mockResolvedValue(null); // no prior setup
@@ -652,14 +652,14 @@ describe('POST /setup/save', () => {
       const response = await POST(postJson({ destination: 'existing', channelId: '111', allowedRoleIds: [], guildId: GUILD_ID }));
 
       expect(response.status).toBe(200);
-      expect(hasLiveClips).not.toHaveBeenCalled();
+      expect(findArchiveChangeBlocker).not.toHaveBeenCalled();
     });
 
     test('re-saving the same existing channel is never refused, even with live Clips', async () => {
       stubEnv();
       authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
       findGuildArchiveConfig.mockResolvedValue({ archiveChannelId: '111', allowedRoleIds: [] });
-      hasLiveClips.mockResolvedValue(true);
+      findArchiveChangeBlocker.mockResolvedValue('ARCHIVED');
       getGuildSetupChannels.mockResolvedValue([{ id: '111', name: 'general', type: 0 }]);
       countArchivedClips.mockResolvedValue(5);
 
@@ -800,7 +800,7 @@ describe('POST /setup/save', () => {
 
     test('a destination change blocked by live Clips explains itself', async () => {
       findGuildArchiveConfig.mockResolvedValue({ archiveChannelId: 'old-channel', allowedRoleIds: [] });
-      hasLiveClips.mockResolvedValue(true);
+      findArchiveChangeBlocker.mockResolvedValue('ARCHIVED');
 
       const response = await POST(postJson({ destination: 'existing', channelId: '111', allowedRoleIds: [], guildId: GUILD_ID }));
 
@@ -809,7 +809,7 @@ describe('POST /setup/save', () => {
     });
 
     test('a final-recheck conflict explains itself the same way', async () => {
-      finalizeGuildArchiveConfig.mockResolvedValue({ kind: 'CONFLICT' });
+      finalizeGuildArchiveConfig.mockResolvedValue({ kind: 'CONFLICT', blocker: 'ARCHIVED' });
 
       const response = await POST(postJson({ destination: 'existing', channelId: '111', allowedRoleIds: [], guildId: GUILD_ID }));
 
@@ -817,9 +817,28 @@ describe('POST /setup/save', () => {
       expect(await response.json()).toEqual({ reason: 'LIVE_CLIPS' });
     });
 
+    test('a destination change blocked by a Clip still being archived answers CLIP_IN_PROGRESS', async () => {
+      findGuildArchiveConfig.mockResolvedValue({ archiveChannelId: 'old-channel', allowedRoleIds: [] });
+      findArchiveChangeBlocker.mockResolvedValue('IN_PROGRESS');
+
+      const response = await POST(postJson({ destination: 'existing', channelId: '111', allowedRoleIds: [], guildId: GUILD_ID }));
+
+      expect(response.status).toBe(409);
+      expect(await response.json()).toEqual({ reason: 'CLIP_IN_PROGRESS' });
+    });
+
+    test('a final-recheck conflict from a Clip still being archived answers CLIP_IN_PROGRESS', async () => {
+      finalizeGuildArchiveConfig.mockResolvedValue({ kind: 'CONFLICT', blocker: 'IN_PROGRESS' });
+
+      const response = await POST(postJson({ destination: 'existing', channelId: '111', allowedRoleIds: [], guildId: GUILD_ID }));
+
+      expect(response.status).toBe(409);
+      expect(await response.json()).toEqual({ reason: 'CLIP_IN_PROGRESS' });
+    });
+
     test('a role-only edit with live Clips is saved', async () => {
       findGuildArchiveConfig.mockResolvedValue({ archiveChannelId: '111', allowedRoleIds: [] });
-      hasLiveClips.mockResolvedValue(true);
+      findArchiveChangeBlocker.mockResolvedValue('ARCHIVED');
 
       const response = await POST(
         postJson({ destination: 'existing', channelId: '111', allowedRoleIds: [MOD_ROLE_ID], guildId: GUILD_ID }),

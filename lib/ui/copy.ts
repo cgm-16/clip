@@ -233,6 +233,14 @@ export const WEB_COPY_AUTHORED = {
   destinationChangeBlocked:
     '보관 중인 메시지가 있어 아카이브 채널을 변경할 수 없습니다. 기존 메시지를 보관에서 제거한 뒤 다시 시도해 주세요.',
   /**
+   * Screen B refusal — `/setup/save` answered 409 `CLIP_IN_PROGRESS` because a
+   * Clip is still being posted into the current archive channel, so there is
+   * nothing to remove: wait. Supplied/approved by Ori on 2026-10-14; see
+   * `docs/DESIGN_RATIONALE_APPEND.md` §20.
+   */
+  destinationChangeInProgress:
+    '지금 보관 처리 중인 메시지가 있어 아카이브 채널을 변경할 수 없습니다. 몇 분 뒤 다시 시도해 주세요.',
+  /**
    * Role multi-select — the polite live-region announcement when a chip is
    * removed (chip click or Backspace). `{role}` is the role exactly as its
    * chip shows it. Supplied by Ori on 2026-10-08 in the PR #55 review; see

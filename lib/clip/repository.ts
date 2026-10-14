@@ -288,6 +288,25 @@ export function countClippers(
 const TOMBSTONE_STATUSES: ClipStatus[] = ['REMOVED_BY_AUTHOR', 'REMOVED_BY_ADMIN'];
 
 /**
+ * How long a `PENDING` or `DELETING` Clip may go unwritten before a later clip
+ * or unclip takes over the work its owner left unfinished (§9.8, §9.10).
+ *
+ * The longest live owner is a Discord round-trip: about 2 minutes at worst (3
+ * calls x 3 attempts x 10 s timeout, plus capped 5 s rate-limit waits). A row
+ * untouched for longer than this has no owner left to finish it.
+ *
+ * ponytail: a wall-clock lease, not a heartbeat. An owner stalled past it races
+ * the taker; `publishArchive`'s conditional `markActive` and the loser's
+ * pair cleanup settle that race. Add a heartbeat if owners can outlive it.
+ */
+export const STALE_CONTROL_STATE_MS = 5 * 60_000;
+
+/** The `updatedAt` cutoff: a `PENDING` or `DELETING` Clip last written before it is past the lease. */
+export function leaseExpiredBefore(): Date {
+  return new Date(Date.now() - STALE_CONTROL_STATE_MS);
+}
+
+/**
  * Advances a live Clip's workflow state, reporting whether it applied.
  *
  * The tombstone predicate lives in the UPDATE, never in a preceding read. Each
@@ -557,11 +576,13 @@ export function upsertGuildArchiveConfig(input: UpsertGuildArchiveConfigInput): 
 }
 
 /**
- * True if the guild has any live Clip or any Clip retaining an archive id --
- * one whose workflow or Discord cleanup a channel reconfiguration could orphan.
+ * What stops the guild's archive channel from being repointed: `'ARCHIVED'`
+ * if any Clip is live or retains an archive id -- one whose workflow or Discord
+ * cleanup a channel reconfiguration could orphan -- else `'IN_PROGRESS'` if a
+ * Clip is still being posted, else null.
  *
  * `/setup/save` uses this to refuse repointing `archiveChannelId` while it
- * is true (finding C3): the `Clip` row stores no archive channel id of its
+ * is non-null (finding C3): the `Clip` row stores no archive channel id of its
  * own, only `GuildConfig.archiveChannelId` at the guild level, so once that
  * is repointed a live Clip's archive messages are still sitting in the old
  * channel with nothing in the database able to address them -- author
@@ -574,9 +595,14 @@ export function upsertGuildArchiveConfig(input: UpsertGuildArchiveConfigInput): 
  * exactly the statuses whose rows stop blocking once both archive ids are
  * clear.
  *
- * A PENDING Clip blocks even though it holds no archive id: its creator may
- * be mid-post into the old channel, and a brand-new Clip's PENDING row is
- * created in the same transaction that reads the channel it will post into.
+ * A PENDING Clip holding no archive id blocks only inside the lease
+ * (`STALE_CONTROL_STATE_MS`): its creator may be mid-post into the old channel,
+ * and a brand-new Clip's PENDING row is created in the same transaction that
+ * reads the channel it will post into. Past the lease no creator is presumed
+ * left to finish it (a crash can strand the row, and only a re-clip of the same
+ * message would take it over), so it does not block; a creator that is merely
+ * slow is refused at publish like a FAILED re-clip, below. A PENDING Clip
+ * holding either archive id blocks through the id conditions, as ARCHIVED.
  * A FAILED Clip holding neither id does not block: it has nothing in the old
  * channel to strand, and a re-clip that posted into the old channel while a
  * repoint committed is refused at publish, where the channel it posted into
@@ -586,26 +612,35 @@ export function upsertGuildArchiveConfig(input: UpsertGuildArchiveConfigInput): 
  * orphan an existing one at all, is the real long-term fix; it is out of
  * scope today.
  */
-async function hasLiveClipsWithClient(
+export type ArchiveChangeBlocker = 'ARCHIVED' | 'IN_PROGRESS';
+
+async function findArchiveChangeBlockerWithClient(
   client: Pick<TxClient, 'clip'>,
   guildId: string,
-): Promise<boolean> {
-  const clip = await client.clip.findFirst({
+): Promise<ArchiveChangeBlocker | null> {
+  const archived = await client.clip.findFirst({
     where: {
       guildId,
       OR: [
-        { status: { notIn: [...TOMBSTONE_STATUSES, 'FAILED'] } },
+        { status: { notIn: [...TOMBSTONE_STATUSES, 'FAILED', 'PENDING'] } },
         { archiveProvenanceMessageId: { not: null } },
         { archiveForwardMessageId: { not: null } },
       ],
     },
     select: { guildId: true },
   });
-  return clip !== null;
+  if (archived !== null) {
+    return 'ARCHIVED';
+  }
+  const inProgress = await client.clip.findFirst({
+    where: { guildId, status: 'PENDING', updatedAt: { gte: leaseExpiredBefore() } },
+    select: { guildId: true },
+  });
+  return inProgress === null ? null : 'IN_PROGRESS';
 }
 
-export function hasLiveClips(guildId: string): Promise<boolean> {
-  return hasLiveClipsWithClient(getPrismaClient(), guildId);
+export function findArchiveChangeBlocker(guildId: string): Promise<ArchiveChangeBlocker | null> {
+  return findArchiveChangeBlockerWithClient(getPrismaClient(), guildId);
 }
 
 /**
@@ -628,7 +663,9 @@ export async function finalizeGuildArchiveConfig(
      */
     goneArchiveChannelId?: string;
   },
-): Promise<{ kind: 'SAVED' } | { kind: 'CONFLICT' } | { kind: 'SESSION_REVOKED' }> {
+): Promise<
+  { kind: 'SAVED' } | { kind: 'CONFLICT'; blocker: ArchiveChangeBlocker } | { kind: 'SESSION_REVOKED' }
+> {
   const { sessionTokenHash, now = new Date(), goneArchiveChannelId, ...config } = input;
   return withGuildLock(config.guildId, async (tx) => {
     if (!(await isAdminSessionLive(tx, sessionTokenHash, config.guildId, now))) {
@@ -641,10 +678,12 @@ export async function finalizeGuildArchiveConfig(
     if (
       existing !== null &&
       existing.archiveChannelId !== config.archiveChannelId &&
-      existing.archiveChannelId !== goneArchiveChannelId &&
-      (await hasLiveClipsWithClient(tx, config.guildId))
+      existing.archiveChannelId !== goneArchiveChannelId
     ) {
-      return { kind: 'CONFLICT' as const };
+      const blocker = await findArchiveChangeBlockerWithClient(tx, config.guildId);
+      if (blocker !== null) {
+        return { kind: 'CONFLICT' as const, blocker };
+      }
     }
     await upsertGuildArchiveConfigWithClient(tx, config);
     return { kind: 'SAVED' as const };

@@ -1667,6 +1667,21 @@ describe('Wave 4 — clipping roles and refused destinations', () => {
     );
   });
 
+  it('the in-progress refusal shows its own copy and no archive link', async () => {
+    const user = userEvent.setup();
+    render(
+      <ScreenB
+        channels={CHANNELS}
+        archiveHref="/admin/g1/archive"
+        onSubmit={vi.fn().mockResolvedValue({ kind: 'clip-in-progress' } satisfies SaveOutcome)}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: WEB_COPY.setup.save }));
+    expect(await screen.findByText(WEB_COPY_AUTHORED.destinationChangeInProgress)).toBeInTheDocument();
+    expect(screen.queryByText(WEB_COPY_AUTHORED.destinationChangeBlocked)).toBeNull();
+    expect(screen.queryByRole('link', { name: WEB_COPY.setupComplete.openArchive })).toBeNull();
+  });
+
   it('a deleted configured channel is called out with 누락 (#58)', async () => {
     render(
       <ScreenB
