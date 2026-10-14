@@ -63,3 +63,15 @@ Checklist: `docs/tasks/wave-6-manual-checklist.md`. Run by Ori, recorded by Clau
 | S15 | pass | ~21:15 | s15-page1-*.png, s15-page2.png, s15-filter-second-errors.png, s15-filter-general.png | Re-clipped 7 earlier #일반 messages (pears, lemons, this is X, bananas, food is good, I like food, I really like food — all PENDING→ACTIVE, re-clip after unclip works) → 21. Page 1 "1–20 / 21" (이전 disabled), page 2 "21–21 / 21" (다음 disabled). Filter #second → 3, #일반 → 18. URL bar not in shots; e2e run 3 (journal) asserted before=/after=/channel= in the URL. |
 | Screen D 429 | FINDING (user-visible) | ~21:15 | s15-page1-top-error.png, s15-filter-second-errors.png, s15-filter-general.png | Rows render 오류 "보관된 내용을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요." + 다시 시도. Happens even on a 3-row filtered page (2 of 3 errored) after a few navigations: the archive-channel GET bucket is shared across loads, so normal browsing (filter, page, back) exhausts it. ~45 forward_read/source_read 429 lines over a few minutes of clicking. Content reads per row, no cache (spec), MAX_ATTEMPTS=3 with retry_after, CONTENT_FETCH_CONCURRENCY=4. |
 | S16 | pass | ~21:20 | s16-session-expired.png | Action in an admin tab >30 min after its /setup link → 관리자 세션이 만료되었습니다 + NOTE /setup 재실행 안내. Session is a fixed 30 min (ADMIN_SESSION_TTL_MS), not sliding. |
+
+## Re-run 2026-10-14: R1, R2, R6 codes from the log (`sha-3ed1d60`)
+
+The R1, R2 and R6 rows above could not name the failing step or Discord code, because `clip.archive_failed` carried neither (#86). Ori re-ran the three in `test2` on `sha-3ed1d60`, which logs `step`, `httpStatus` and `discordCode`, while `kubectl logs -f --timestamps | grep clip.archive_failed` captured the lines. Each permission was restored before the next run.
+
+| Run | Change | Time (KST) | sourceMessageId | Logged |
+|---|---|---|---|---|
+| R1 | `#일반` Clip-role VIEW_CHANNEL deny | 12:29:48 | 1559770152336363581 | `step=source_read`, `403`, `50001` |
+| R2 | `#일반` Clip-role READ_MESSAGE_HISTORY deny | 12:30:40 | 1559770366736343081 | `step=source_read`, `403`, `50001` |
+| R6 | Message Content Intent off (live app) | 12:31:35 | 1559770398252335180 | `step=forward_post`, `403`, `160014` |
+
+All three logged `errorCode=ARCHIVE_TARGET_UNAVAILABLE`. With the intent off, the source read succeeds and the forward is refused with `160014`, as the README claimed. A missing READ_MESSAGE_HISTORY returns the same `50001` (Missing Access) on the single-message read as a missing VIEW_CHANNEL. The reply text was not re-captured in this run.

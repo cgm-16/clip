@@ -349,3 +349,13 @@ error: desired revision (12) is different from the running revision (13)
 - The log had two matching lines, both from one archive-channel history read: a 429 asking for 661ms, retried once, then 200 after 1300ms. On `sha-43fc2df` the same patterns matched 181 retried 429s, 93 slow requests and 81 failed source reads. There were no give-ups and no `destination stream closed early`.
 
 **Process slip:** #38 had already been closed on 2026-10-13 by the merge of #89, whose PR body linked it as closed, before its 8/8 gate was met. The gate is met now, and the evidence is on #38. Link the gate issue with "Refs" until the gate is met.
+
+## 2026-10-14 — `sha-3ed1d60`: deploy.sh green, e2e 8/8, R1/R2/R6 codes measured
+
+- `bash scripts/deploy.sh` ran clean end to end for the first time on `sha-3ed1d60` (#98, #99): apply, plain rollout status, generation re-check, image read-back, `deployed`. The #97 fix held under `Recreate`.
+- `bash scripts/e2e-prod.sh 1559501336641404960`: 8 of 8 in 9.4s, the archive list in 2.4s. This is the second clean run in a row after #96.
+- The R1, R2 and R6 re-runs give logged codes for the first time (`docs/evidence/wave-6/RESULTS.md`, "Re-run 2026-10-14"):
+  - Source-channel VIEW_CHANNEL and READ_MESSAGE_HISTORY denies both fail `source_read` with `403`/`50001`.
+  - Message Content Intent off fails `forward_post` with `403`/`160014`, after a successful source read.
+  - The README's permission table and the note under it now cite these runs.
+- The local test Postgres is recreated as `clip-pg` with `--tmpfs /var/lib/postgresql`, after Docker storage pressure removed the old container. It holds no data across restarts, so run `prisma migrate deploy` after each one.
