@@ -91,7 +91,7 @@ describe('createArchiveMarker', () => {
     const marker = createArchiveMarker({ botToken: BOT_TOKEN, fetchImpl });
 
     await expect(marker.add(SOURCE_CHANNEL_ID, SOURCE_MESSAGE_ID)).resolves.toBeUndefined();
-    expect(log).toHaveBeenCalledWith(expect.stringContaining('archive_marker_add_failed'));
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('clip.marker_add_failed'));
   });
 
   test('remove() never throws, even when Discord rejects the call', async () => {
@@ -100,7 +100,7 @@ describe('createArchiveMarker', () => {
     const marker = createArchiveMarker({ botToken: BOT_TOKEN, fetchImpl });
 
     await expect(marker.remove(SOURCE_CHANNEL_ID, SOURCE_MESSAGE_ID)).resolves.toBeUndefined();
-    expect(log).toHaveBeenCalledWith(expect.stringContaining('archive_marker_remove_failed'));
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('clip.marker_remove_failed'));
   });
 
   test('add() never throws even when fetch itself rejects (network failure)', async () => {
@@ -111,7 +111,7 @@ describe('createArchiveMarker', () => {
     const marker = createArchiveMarker({ botToken: BOT_TOKEN, fetchImpl });
 
     await expect(marker.add(SOURCE_CHANNEL_ID, SOURCE_MESSAGE_ID)).resolves.toBeUndefined();
-    expect(log).toHaveBeenCalledWith(expect.stringContaining('archive_marker_add_failed'));
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('clip.marker_add_failed'));
   });
 
   test('a failure is logged with the identifiers and an error code, never a message body', async () => {
