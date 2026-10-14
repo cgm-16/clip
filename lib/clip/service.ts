@@ -433,10 +433,11 @@ export function createClipService(gateway: DiscordArchiveGateway) {
         takenOver,
         archive: archiveOf(locked),
       };
-    }, { configurationId });
+    }, { ...configurationOptions(configurationId), archiveChannelId: config.archiveChannelId });
     if (joined === null) {
-      // The Clip was deleted between the claim and the lock, so this request's
-      // signal never landed. Retrying re-claims it from scratch.
+      // The Clip was deleted between the claim and the lock, or the archive
+      // channel was repointed in that gap, so this request's signal never
+      // landed and nothing was posted. Retrying re-claims it from scratch.
       return { kind: 'FAILED', retryable: true };
     }
     if (joined.tombstoned) {
