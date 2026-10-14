@@ -383,3 +383,19 @@ error: desired revision (12) is different from the running revision (13)
 - The two auto-create cleanup tests now assert that nothing is logged at all, not just that one event name is absent.
 - **The instrument gap is fixed at its root:** `vitest.config.mts` pins `reporters` to `default` (plus `github-actions` on CI, which Vitest adds there anyway). A plain `pnpm test` now shows passing-test output in every shell, so the `--reporter=default` workaround in the entry above is no longer needed.
 - **Left as is:** `tests/discord/context-commands.test.ts` and `tests/discord/remove-button-interaction.test.ts` mute every `console.log` line before each test, as `tests/clip/service.test.ts` does. Every line muted today is informational, but a future error line in those 13 tests would pass silently.
+
+## 2026-10-14 — Full-codebase review follow-up
+
+Fixed:
+
+1. The DM remove button now takes the source 📎 marker down: `RemoveResult`'s `REMOVED` carries the locked row's `sourceChannelId`, and `runRemoveButtonInteraction` calls `marker.remove` on it as `runRemoveCommand` does. The `custom_id` encoding is unchanged.
+2. `verifyInteractionRequest` rejects a validly signed request whose `X-Signature-Timestamp` is not an integer or is more than 300 seconds from now, so a captured request no longer replays forever.
+3. `/setup/save` and `/api/setup/exchange` use `rejectUnsafeMutation`, so a POST with no Origin must now be `application/json` (415 otherwise). Every real caller already sent it.
+4. One `discordErrorCode` helper in `lib/discord/rest-client.ts` replaces four copied snippets. The fallback is `UNKNOWN` (three of the five existing spellings, and the upper-case style the other codes use); no test asserted the old spellings.
+5. The first-archival DM's guild name goes through `createDiscordGuildLookup`'s `getGuildName`, which adds the 60s cache.
+6. Comments in `k8s/deployment.yaml`, `lib/discord/guild-lookup.ts` and `lib/discord/notifications.ts` no longer refer to a branch, a task or a future router.
+
+Not fixed:
+
+- **Unclip/re-clip race:** an Unclip whose `remaining === 0` removes the marker even if a concurrent Clip added a clipper during the delete window and `finalizeDeletion` rebuilt the archive (`ACTIVE`). A Clip adds the marker only on `CREATED`, not `CLIPPER_ADDED`. The result is an `ACTIVE` Clip with no marker. The marker is best-effort by design and the window is narrow; unverified by a test.
+- **`deleteArchiveMessage` treats any 404 as already gone.** Dropped: Unknown Channel (10003) arrives as HTTP 404, so it is already handled as gone, and a code-less 404 would have to come from Discord's own edge.

@@ -71,10 +71,8 @@ export class GuildLookupFailedError extends Error {
   }
 }
 
-// Not present in the shared `DISCORD_ERROR` map in `lib/discord/rest-client.ts`
-// as of this writing. Kept local rather than added there so this task's
-// commit does not touch a file another implementer owns concurrently; belongs
-// in the shared map alongside `UNKNOWN_CHANNEL` if a second caller needs it.
+// Not in the shared `DISCORD_ERROR` map in `lib/discord/rest-client.ts`; only
+// this module needs it. Move it there if a second caller does.
 const UNKNOWN_GUILD = 10004;
 
 /**

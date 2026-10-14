@@ -236,7 +236,7 @@ describe('clip service under concurrency', () => {
 
     const results = await Promise.all(users(N).map((user) => clipAs(fixture, user)));
 
-    expect(removal).toEqual({ kind: 'REMOVED' });
+    expect(removal).toEqual({ kind: 'REMOVED', sourceChannelId: fixture.sourceChannelId });
     expect(gateway.createCalls).toHaveLength(1);
     // The creator reports the tombstone; a racer reports either the signal it
     // recorded before the removal (which the removal then dropped) or the
@@ -276,7 +276,7 @@ describe('clip service under concurrency', () => {
       insideResults = await Promise.all(users(N).map((user) => clipAs(fixture, user)));
     });
 
-    expect(await removeAsAuthor(fixture)).toEqual({ kind: 'REMOVED' });
+    expect(await removeAsAuthor(fixture)).toEqual({ kind: 'REMOVED', sourceChannelId: fixture.sourceChannelId });
 
     expect(kinds(insideResults)).toEqual(Array(N).fill('REMOVED_BY_AUTHOR_OR_ADMIN'));
     expect(gateway.createCalls).toHaveLength(1);
@@ -350,7 +350,7 @@ describe('clip service under concurrency', () => {
 
     // Inside the lease, one retry path: removal retries the same delete and
     // clears the ids once Discord confirms it.
-    expect(await removeAsAuthor(fixture)).toEqual({ kind: 'REMOVED' });
+    expect(await removeAsAuthor(fixture)).toEqual({ kind: 'REMOVED', sourceChannelId: fixture.sourceChannelId });
     expect(gateway.deleteCalls.map((call) => call.ids)).toEqual([
       { provenanceMessageId: 'provenance-1', forwardMessageId: 'forward-1' },
       { provenanceMessageId: 'provenance-1', forwardMessageId: 'forward-1' },

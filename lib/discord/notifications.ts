@@ -11,7 +11,7 @@ import { createClipService } from '@/lib/clip/service';
 import { claimAuthorNotification, markAuthorNotificationDelivered } from '@/lib/clip/repository';
 import type { DiscordArchiveGateway, RemoveResult } from '@/lib/clip/types';
 import { DISCORD_COPY } from '@/lib/discord/copy';
-import { createDiscordRestClient, DiscordApiError } from '@/lib/discord/rest-client';
+import { createDiscordRestClient, DiscordApiError, discordErrorCode } from '@/lib/discord/rest-client';
 import { logClipEvent } from '@/lib/logging/safe-log';
 
 // Discord's message component style constants this module needs.
@@ -21,7 +21,7 @@ const BUTTON_STYLE_LINK = 5;
 const ACTION_ROW = 1;
 const BUTTON = 2;
 
-// Stable prefix the future interaction router matches `custom_id` against,
+// Stable prefix `app/api/discord/interactions/route.ts` matches `custom_id` against,
 // named as a constant so it is retyped nowhere (mirrors `SETUP_COMMAND_NAME`
 // in `lib/discord/commands.ts`).
 export const REMOVE_FROM_ARCHIVE_CUSTOM_ID_PREFIX = 'clip_remove_from_dm';
@@ -173,7 +173,7 @@ export async function notifyAuthorOfFirstArchival(
       event: 'clip.author_notification_undeliverable',
       guildId: input.guildId,
       sourceMessageId: input.sourceMessageId,
-      errorCode: error instanceof DiscordApiError ? String(error.code ?? error.status) : 'UNKNOWN',
+      errorCode: discordErrorCode(error),
     });
     return { kind: 'UNDELIVERABLE' };
   }

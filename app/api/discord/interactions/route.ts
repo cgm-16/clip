@@ -18,9 +18,10 @@ import {
   unclipResultCopy,
 } from '@/lib/discord/interaction-responses';
 import { createArchiveMarker } from '@/lib/discord/marker';
-import { handleRemoveButtonInteraction, notifyAuthorOfFirstArchival } from '@/lib/discord/notifications';
+import { handleRemoveButtonInteraction, notifyAuthorOfFirstArchival, parseRemoveFromArchiveCustomId } from '@/lib/discord/notifications';
 import { hasManageGuild } from '@/lib/discord/permissions';
-import { createDiscordRestClient, DiscordApiError } from '@/lib/discord/rest-client';
+import { createDiscordGuildLookup } from '@/lib/discord/guild-lookup';
+import { discordErrorCode } from '@/lib/discord/rest-client';
 import { verifyInteractionRequest } from '@/lib/discord/verify-interaction';
 import { createClipService } from '@/lib/clip/service';
 import type { Env } from '@/lib/env';
@@ -206,16 +207,6 @@ async function sendFollowupSafely(env: Env, interactionToken: string, content: s
 }
 
 /**
- * The error code for a log line, never the message: `DiscordApiError`'s
- * message interpolates the request path, and the follow-up path carries the
- * interaction token -- a live 15-minute credential that must not end up in
- * logs (spec §12). Mirrors `lib/discord/marker.ts`'s own `errorCode` logging.
- */
-function discordErrorCode(error: unknown): string {
-  return error instanceof DiscordApiError ? String(error.code ?? error.status) : 'unknown';
-}
-
-/**
  * The guild's display name for the first-archival DM, best-effort.
  *
  * Discord's interaction payload does not carry the guild's name (only `id`,
@@ -225,19 +216,8 @@ function discordErrorCode(error: unknown): string {
  * can degrade without becoming a failure.
  */
 async function lookupGuildName(env: Env, guildId: string): Promise<string> {
-  const client = createDiscordRestClient({ botToken: env.DISCORD_BOT_TOKEN, fetchImpl: fetch });
-  try {
-    const body = await client.request('GET', `/guilds/${guildId}`);
-    if (typeof body === 'object' && body !== null && 'name' in body) {
-      const name = (body as { name: unknown }).name;
-      if (typeof name === 'string' && name.length > 0) {
-        return name;
-      }
-    }
-  } catch {
-    // Best-effort: fall through to the id.
-  }
-  return guildId;
+  const lookup = createDiscordGuildLookup({ botToken: env.DISCORD_BOT_TOKEN, fetchImpl: fetch });
+  return (await lookup.getGuildName(guildId)) ?? guildId;
 }
 
 /**
@@ -356,11 +336,9 @@ async function runRemoveCommand(ctx: ContextCommandContext, env: Env): Promise<v
 
 /**
  * Runs the DM's `아카이브에서 제거` button after its deferred reply has
- * already gone out. Mirrors `runRemoveCommand`, but there is no marker
- * reaction to retract here: `custom_id` carries only the guild and source
- * message id (never the source channel), so this path has no source channel
- * id to remove the marker with. That is an existing limitation of the DM
- * button's encoding, not something this handler can fix.
+ * already gone out. Mirrors `runRemoveCommand`. `custom_id` carries only the
+ * guild and source message id, so the source channel for the marker removal
+ * comes from the removed Clip row (`REMOVED.sourceChannelId`).
  */
 async function runRemoveButtonInteraction(
   interactionToken: string,
@@ -376,6 +354,13 @@ async function runRemoveButtonInteraction(
   );
 
   await sendFollowupSafely(env, interactionToken, removeButtonResultCopy(result));
+
+  // REMOVED implies the custom_id parsed, so `parsed` is non-null here.
+  const parsed = parseRemoveFromArchiveCustomId(customId);
+  if (result.kind === 'REMOVED' && parsed !== null) {
+    const marker = createArchiveMarker({ botToken: env.DISCORD_BOT_TOKEN, fetchImpl: fetch });
+    await marker.remove(result.sourceChannelId, parsed.sourceMessageId);
+  }
 }
 
 /**

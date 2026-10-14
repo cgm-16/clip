@@ -330,7 +330,7 @@ describe('discord notifications', () => {
         { gateway },
       );
 
-      expect(result).toEqual({ kind: 'REMOVED' });
+      expect(result).toEqual({ kind: 'REMOVED', sourceChannelId: fixture.sourceChannelId });
       expect(gateway.deleteCalls).toHaveLength(1);
       const tombstone = await readClip(fixture);
       expect(tombstone?.status).toBe('REMOVED_BY_AUTHOR');

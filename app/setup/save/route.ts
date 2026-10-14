@@ -1,5 +1,6 @@
 import type { NextRequest } from 'next/server';
 import { z } from 'zod';
+import { rejectUnsafeMutation } from '@/lib/admin/auth';
 import { authenticateAdminSession, sessionTokenHash } from '@/lib/admin-session/service';
 import { ADMIN_SESSION_COOKIE_NAME } from '@/lib/admin-session/tokens';
 import {
@@ -26,6 +27,7 @@ import {
   describeDiscordFailure,
   DISCORD_ERROR,
   DiscordApiError,
+  discordErrorCode,
 } from '@/lib/discord/rest-client';
 import { parseEnv } from '@/lib/env';
 import { logClipEvent } from '@/lib/logging/safe-log';
@@ -96,16 +98,11 @@ function parseCreatedChannel(body: unknown): { id: string; name: string } | null
  * what the archive needs; that check reads Discord and never writes to it.
  */
 export async function POST(request: NextRequest) {
-  // Same CSRF reasoning as `app/api/setup/exchange/route.ts`: `request.json()`
-  // ignores Content-Type, so a cross-origin `text/plain` POST is a CORS
-  // *simple* request with no preflight, and the admin session cookie is sent
-  // regardless (`SameSite=Lax` governs cross-site *navigations*, not a
-  // same-site-classified simple POST). Without this check any site could
-  // reconfigure an admin's guild archive from their own browser session.
-  const origin = request.headers.get('Origin');
-  if (origin !== null && origin !== parseEnv(process.env).PUBLIC_BASE_URL) {
-    return new Response(null, { status: 403 });
-  }
+  // CSRF: the admin session cookie is sent on a cross-origin `text/plain`
+  // POST, so without this check any site could reconfigure an admin's guild
+  // archive from their own browser session.
+  const unsafe = rejectUnsafeMutation(request);
+  if (unsafe) return unsafe;
 
   const sessionToken = request.cookies.get(ADMIN_SESSION_COOKIE_NAME)?.value;
   if (!sessionToken) {
@@ -325,10 +322,7 @@ export async function POST(request: NextRequest) {
       logClipEvent({
         event: 'setup.archive-channel-cleanup-failed',
         guildId,
-        errorCode:
-          error instanceof DiscordApiError
-            ? String(error.code ?? error.status)
-            : 'UNKNOWN',
+        errorCode: discordErrorCode(error),
       });
     }
   }

@@ -22,7 +22,7 @@ export type UnclipResult =
   | { kind: 'FAILED'; retryable: boolean };
 
 export type RemoveResult =
-  | { kind: 'REMOVED' }
+  | { kind: 'REMOVED'; sourceChannelId: string }
   | { kind: 'NOT_FOUND' }
   | { kind: 'NOT_AUTHORIZED' }
   | { kind: 'FAILED'; retryable: boolean };

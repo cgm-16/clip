@@ -13,7 +13,7 @@
  * their own errors and log safely instead of throwing.
  */
 
-import { createDiscordRestClient, DiscordApiError, type DiscordRestClient } from '@/lib/discord/rest-client';
+import { createDiscordRestClient, discordErrorCode, type DiscordRestClient } from '@/lib/discord/rest-client';
 import { logClipEvent } from '@/lib/logging/safe-log';
 
 // U+1F4CE (📎), percent-encoded as UTF-8 bytes -- the form Discord's
@@ -53,10 +53,7 @@ export function createArchiveMarker(options: CreateArchiveMarkerOptions): Archiv
       logClipEvent({
         event,
         sourceMessageId,
-        errorCode:
-          error instanceof DiscordApiError
-            ? String(error.code ?? error.status)
-            : 'unknown',
+        errorCode: discordErrorCode(error),
       });
     }
   }

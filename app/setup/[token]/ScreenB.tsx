@@ -60,9 +60,8 @@ export interface ScreenBProps {
   onCancel?: () => void;
   /**
    * Guild identity bar content (`docs/06_DESIGN_HANDOFF.md` Screen B). Both
-   * are optional and the bar is omitted without them: nothing in this task's
-   * data flow (`/setup/data` returns only `guildId` and `channels`) supplies
-   * a guild display name or the admin's Discord handle yet.
+   * are optional: the bar is omitted without `guildName`, and the admin
+   * identity is omitted without `adminHandle`.
    */
   guildName?: string;
   adminHandle?: string;

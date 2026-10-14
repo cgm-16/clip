@@ -29,7 +29,7 @@ const EPHEMERAL_FLAG = 64;
 
 function signedRequest(payload: unknown): Request {
   const body = JSON.stringify(payload);
-  const timestamp = '1700000000';
+  const timestamp = String(Math.floor(Date.now() / 1000));
   const signature = sign(null, Buffer.from(timestamp + body), privateKey).toString('hex');
 
   return new Request(`${REQUEST_ORIGIN}/api/discord/interactions`, {
@@ -171,7 +171,7 @@ describe('/setup interaction', () => {
     const response = await POST(
       unsignedRequest(setupInvocation(MANAGE_GUILD_ONLY), {
         'X-Signature-Ed25519': 'bad'.repeat(20),
-        'X-Signature-Timestamp': '1700000000',
+        'X-Signature-Timestamp': String(Math.floor(Date.now() / 1000)),
       }),
     );
 
