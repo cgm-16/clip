@@ -259,7 +259,7 @@ describe('POST /setup/save', () => {
     expect(discordRequest).toHaveBeenCalledTimes(3);
     expect(discordRequest).toHaveBeenNthCalledWith(3, 'DELETE', '/channels/222');
     expect(upsertGuildArchiveConfig).not.toHaveBeenCalled();
-    expect(logged).not.toHaveBeenCalledWith(expect.stringContaining('setup.archive-channel-cleanup-failed'));
+    expect(logged).not.toHaveBeenCalled();
   });
 
   test('a session revoked during an auto-create save deletes the new channel and returns 401', async () => {
@@ -272,7 +272,7 @@ describe('POST /setup/save', () => {
 
     expect(response.status).toBe(401);
     expect(discordRequest).toHaveBeenLastCalledWith('DELETE', '/channels/222');
-    expect(logged).not.toHaveBeenCalledWith(expect.stringContaining('setup.archive-channel-cleanup-failed'));
+    expect(logged).not.toHaveBeenCalled();
   });
 
   test('a session revoked during an existing-channel save returns 401 and deletes nothing', async () => {
