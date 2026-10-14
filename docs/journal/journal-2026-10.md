@@ -376,3 +376,19 @@ error: desired revision (12) is different from the running revision (13)
 - **Instrument gap:** inside a Claude Code shell, Vitest 4 picks a reporter that hides what passing tests print. `pnpm test` looked clean there, but `pnpm exec vitest run --reporter=default` printed 33 `logClipEvent` lines, and CI showed them too. Any earlier "output pristine" claim produced in that shell is unverified. Check with `--reporter=default`, or read the CI log.
 - **A real test defect behind the noise:** two `tests/setup/save-route.test.ts` tests say the auto-created channel is deleted, but the stub threw on `DELETE /channels/222`. The route took its cleanup-failure path, and the tests passed because they only checked that the call was made. The stub now answers the delete, and both tests assert that no `setup.archive-channel-cleanup-failed` line is logged. The failure path keeps its own test.
 - The other leaks now capture `console.log` like their neighbours do, and they assert the line where it is an expected error.
+
+## 2026-10-14 — Full-codebase review follow-up
+
+Fixed:
+
+1. The DM remove button now takes the source 📎 marker down: `RemoveResult`'s `REMOVED` carries the locked row's `sourceChannelId`, and `runRemoveButtonInteraction` calls `marker.remove` on it as `runRemoveCommand` does. The `custom_id` encoding is unchanged.
+2. `verifyInteractionRequest` rejects a validly signed request whose `X-Signature-Timestamp` is not an integer or is more than 300 seconds from now, so a captured request no longer replays forever.
+3. `/setup/save` and `/api/setup/exchange` use `rejectUnsafeMutation`, so a POST with no Origin must now be `application/json` (415 otherwise). Every real caller already sent it.
+4. One `discordErrorCode` helper in `lib/discord/rest-client.ts` replaces four copied snippets. The fallback is `UNKNOWN` (three of the five existing spellings, and the upper-case style the other codes use); no test asserted the old spellings.
+5. The first-archival DM's guild name goes through `createDiscordGuildLookup`'s `getGuildName`, which adds the 60s cache.
+6. Comments in `k8s/deployment.yaml`, `lib/discord/guild-lookup.ts` and `lib/discord/notifications.ts` no longer refer to a branch, a task or a future router.
+
+Not fixed:
+
+- **Unclip/re-clip race:** an Unclip whose `remaining === 0` removes the marker even if a concurrent Clip added a clipper during the delete window and `finalizeDeletion` rebuilt the archive (`ACTIVE`). A Clip adds the marker only on `CREATED`, not `CLIPPER_ADDED`. The result is an `ACTIVE` Clip with no marker. The marker is best-effort by design and the window is narrow; unverified by a test.
+- **`deleteArchiveMessage` treats any 404 as already gone.** Dropped: Unknown Channel (10003) arrives as HTTP 404, so it is already handled as gone, and a code-less 404 would have to come from Discord's own edge.
