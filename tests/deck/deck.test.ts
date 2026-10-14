@@ -199,3 +199,125 @@ test('left/right inside the positioning table stay native', () => {
   expect(visibleIndex()).toBe(0);
   expect(event.defaultPrevented).toBe(false);
 });
+
+// A language element counts as shown when nothing between it and its slide is hidden.
+function isShownInSlide(element: Element): boolean {
+  for (let node: Element | null = element; node && node.tagName !== 'SECTION'; node = node.parentElement) {
+    if ((node as HTMLElement).hidden) return false;
+  }
+  return true;
+}
+function shownIn(code: string): Element[] {
+  return Array.from(document.querySelectorAll(`main [lang="${code}"]`)).filter(isShownInSlide);
+}
+function toggle(): HTMLButtonElement {
+  return document.getElementById('lang') as HTMLButtonElement;
+}
+
+test('the language toggle shows only Korean, and again only English', () => {
+  expect(shownIn('ko')).toHaveLength(0);
+  expect(shownIn('en').length).toBeGreaterThan(0);
+  toggle().click();
+  expect(shownIn('en')).toHaveLength(0);
+  expect(shownIn('ko').length).toBeGreaterThan(0);
+  toggle().click();
+  expect(shownIn('ko')).toHaveLength(0);
+  expect(shownIn('en').length).toBeGreaterThan(0);
+});
+
+test('the toggle button names the other language and the controls switch with it', () => {
+  const shown = () =>
+    Array.from(document.querySelectorAll('.controls [lang]'))
+      .filter((el) => !(el as HTMLElement).hidden)
+      .map((el) => el.textContent);
+  expect(shown()).toEqual(['Previous', 'Next', '한국어']);
+  toggle().click();
+  expect(shown()).toEqual(['이전', '다음', 'English']);
+});
+
+test('the document language follows the toggle', () => {
+  toggle().click();
+  expect(document.documentElement.lang).toBe('ko');
+  toggle().click();
+  expect(document.documentElement.lang).toBe('en');
+});
+
+test('image alt text switches with the language', () => {
+  const images = Array.from(document.querySelectorAll<HTMLImageElement>('img'));
+  toggle().click();
+  for (const image of images) expect(image.alt).toBe(image.dataset.altKo);
+  toggle().click();
+  for (const image of images) expect(image.alt).toBe(image.dataset.altEn);
+});
+
+test('the nav and positioning table labels switch with the language', () => {
+  const nav = document.querySelector('nav.controls')!;
+  const tables = Array.from(document.querySelectorAll('.positioning'));
+  expect(tables).toHaveLength(2);
+  toggle().click();
+  expect(nav.getAttribute('aria-label')).toBe('슬라이드');
+  for (const table of tables) expect(table.getAttribute('aria-label')).toBe('포지셔닝 표');
+  toggle().click();
+  expect(nav.getAttribute('aria-label')).toBe('Slides');
+  for (const table of tables) expect(table.getAttribute('aria-label')).toBe('Positioning table');
+});
+
+test('toggling the language keeps the current slide and arrow keys still work from the button', () => {
+  press('ArrowRight');
+  press('ArrowRight');
+  expect(visibleIndex()).toBe(2);
+  toggle().click();
+  expect(slides()).toHaveLength(11);
+  expect(visibleIndex()).toBe(2);
+  expect(document.getElementById('counter')!.textContent).toBe('3 / 11');
+  toggle().focus();
+  toggle().dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
+  expect(visibleIndex()).toBe(3);
+});
+
+test('every slide carries both languages in its heading and body', () => {
+  slides().forEach((slide, index) => {
+    const heading = slide.querySelector('h1, h2')!;
+    if (index > 0) {
+      expect(heading.querySelector('[lang="en"]')).not.toBeNull();
+      expect(heading.querySelector('[lang="ko"]')).not.toBeNull();
+    }
+    const body = Array.from(slide.querySelectorAll<HTMLElement>('[lang]')).filter((el) => !heading.contains(el));
+    expect(body.some((el) => el.lang === 'en')).toBe(true);
+    expect(body.some((el) => el.lang === 'ko')).toBe(true);
+  });
+});
+
+test('every image has both alt texts', () => {
+  for (const image of Array.from(document.querySelectorAll<HTMLImageElement>('img'))) {
+    expect(image.dataset.altEn?.trim()).toBeTruthy();
+    expect(image.dataset.altKo?.trim()).toBeTruthy();
+  }
+});
+
+test('the source markup hides Korean content, and the toggle button shows Korean as its label', () => {
+  const source = new DOMParser().parseFromString(html, 'text/html');
+  const korean = Array.from(source.querySelectorAll('[lang="ko"]')).filter((el) => !el.closest('#lang'));
+  expect(korean.length).toBeGreaterThan(0);
+  for (const element of korean) expect(element.hasAttribute('hidden')).toBe(true);
+  expect(source.querySelector('#lang [lang="en"]')!.hasAttribute('hidden')).toBe(true);
+  expect(source.querySelector('#lang [lang="ko"]')!.hasAttribute('hidden')).toBe(false);
+});
+
+test('deck.js contains no Hangul', () => {
+  expect(script).not.toMatch(/[가-힯]/);
+});
+
+test('the slide 2 Korean heading is the approved copy', () => {
+  expect(document.querySelector('#s2 [lang="ko"]')!.textContent).toBe('핀은 영원한 기억을 위해 만든 것이 아닙니다');
+});
+
+test('deck.css keeps the slide controls from squishing on narrow phones', () => {
+  const css = readFileSync('docs/deck/deck.css', 'utf8');
+  const rule = (selector: string) => new RegExp(`(^|\\n)${selector} \\{([^}]*)\\}`).exec(css)?.[2] ?? '';
+  expect(rule('\\.controls')).toMatch(/gap:\s*8px/);
+  expect(rule('\\.controls')).toMatch(/flex-wrap:\s*wrap/);
+  expect(rule('\\.controls button')).toMatch(/padding:\s*8px 12px/);
+  expect(rule('\\.controls button')).toMatch(/white-space:\s*nowrap/);
+  expect(rule('#counter')).toMatch(/white-space:\s*nowrap/);
+});
