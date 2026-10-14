@@ -161,9 +161,9 @@ test('slides 4 and 6 note the tester consented to appear in the screenshots', ()
 });
 
 test('slide 10 attributes its figures to the shas they were measured on', () => {
-  const text = document.getElementById('s10')!.closest('section')!.textContent;
-  expect(text).toContain('sha-b845a59');
-  const testsTerm = Array.from(document.getElementById('s10')!.closest('section')!.querySelectorAll('dl.facts dt')).find(
+  const slide10 = document.getElementById('s10')!.closest('section')!;
+  expect(slide10.textContent).toContain('sha-b845a59');
+  const testsTerm = Array.from(slide10.querySelectorAll('dl.facts dt')).find(
     (dt) => dt.textContent === 'Tests',
   )!;
   expect(testsTerm.nextElementSibling!.textContent).toContain('3ed1d60');
