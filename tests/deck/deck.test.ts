@@ -97,6 +97,24 @@ test("moves focus to the shown slide's heading", () => {
   expect(document.activeElement).toBe(slides()[1].querySelector('h2'));
 });
 
+test("the buttons move focus to the shown slide's heading", () => {
+  (document.getElementById('next') as HTMLButtonElement).click();
+  expect(document.activeElement).toBe(slides()[1].querySelector('h2'));
+  (document.getElementById('prev') as HTMLButtonElement).click();
+  expect(document.activeElement).toBe(slides()[0].querySelector('h1'));
+});
+
+test('arrow, home and end keys with Alt, Ctrl or Meta are left to the browser', () => {
+  for (const modifier of ['altKey', 'ctrlKey', 'metaKey'] as const) {
+    for (const key of ['ArrowRight', 'End']) {
+      const event = new KeyboardEvent('keydown', { key, [modifier]: true, bubbles: true, cancelable: true });
+      document.dispatchEvent(event);
+      expect(visibleIndex()).toBe(0);
+      expect(event.defaultPrevented).toBe(false);
+    }
+  }
+});
+
 test('deck.css passes the design checker', () => {
   const css = readFileSync('docs/deck/deck.css', 'utf8');
   expect(findDesignViolations('docs/deck/deck.css', css)).toEqual([]);
@@ -143,9 +161,9 @@ test('slides 4 and 6 note the tester consented to appear in the screenshots', ()
 });
 
 test('slide 10 attributes its figures to the shas they were measured on', () => {
-  const text = document.getElementById('s10')!.closest('section')!.textContent;
-  expect(text).toContain('sha-b845a59');
-  const testsTerm = Array.from(document.querySelectorAll('dl.facts dt')).find(
+  const slide10 = document.getElementById('s10')!.closest('section')!;
+  expect(slide10.textContent).toContain('sha-b845a59');
+  const testsTerm = Array.from(slide10.querySelectorAll('dl.facts dt')).find(
     (dt) => dt.textContent === 'Tests',
   )!;
   expect(testsTerm.nextElementSibling!.textContent).toContain('3ed1d60');
@@ -189,15 +207,19 @@ test('pressing a key or button at either end does not scroll or move focus', () 
   expect(window.scrollTo).not.toHaveBeenCalled();
 });
 
-test('left/right inside the positioning table stay native', () => {
+test('left/right/home/end inside the positioning table stay native', () => {
   const table = document.querySelector('.positioning')!;
   expect(table.getAttribute('tabindex')).toBe('0');
   expect(table.getAttribute('role')).toBe('region');
   expect(table.getAttribute('aria-label')).toBe('Positioning table');
-  const event = new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true });
-  table.querySelector('table')!.dispatchEvent(event);
-  expect(visibleIndex()).toBe(0);
-  expect(event.defaultPrevented).toBe(false);
+  press('End');
+  const last = visibleIndex();
+  for (const key of ['ArrowRight', 'ArrowLeft', 'Home', 'End']) {
+    const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+    table.querySelector('table')!.dispatchEvent(event);
+    expect(visibleIndex()).toBe(last);
+    expect(event.defaultPrevented).toBe(false);
+  }
 });
 
 // A language element counts as shown when nothing between it and its slide is hidden.
