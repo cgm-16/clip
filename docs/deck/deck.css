@@ -32,6 +32,8 @@ section li {
   max-width: 68ch;
 }
 .muted { color: var(--muted); }
+a { color: var(--accent-text); text-decoration: underline; text-underline-offset: 2px; }
+a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 code { font-family: var(--font-mono); }
 .controls {
   position: fixed;

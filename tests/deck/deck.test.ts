@@ -140,3 +140,8 @@ test('every font url in deck.css names a published path whose source exists', ()
     expect(existsSync(`app/fonts/${url.slice('fonts/'.length)}`)).toBe(true);
   }
 });
+
+test('deck.css styles links with the accent token', () => {
+  const css = readFileSync('docs/deck/deck.css', 'utf8');
+  expect(css).toMatch(/(^|\n)a \{[^}]*color:\s*var\(--accent-text\)/);
+});
