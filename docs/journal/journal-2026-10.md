@@ -359,3 +359,9 @@ error: desired revision (12) is different from the running revision (13)
   - Message Content Intent off fails `forward_post` with `403`/`160014`, after a successful source read.
   - The README's permission table and the note under it now cite these runs.
 - The local test Postgres is recreated as `clip-pg` with `--tmpfs /var/lib/postgresql`, after Docker storage pressure removed the old container. It holds no data across restarts, so run `prisma migrate deploy` after each one.
+
+## 2026-10-14 — PENDING refusal copy (#83 follow-up)
+
+- **Defect:** a `PENDING` Clip blocked an archive-channel change like a live one, so Screen B told the admin to remove archived messages that did not exist. Worse, a `PENDING` row stranded by a crash is taken over only when someone re-clips the same message, so it could block the change forever.
+- **Rule:** `findArchiveChangeBlocker` replaces `hasLiveClips` and returns `'ARCHIVED' | 'IN_PROGRESS' | null`. An id-less `PENDING` row blocks (`IN_PROGRESS`) only while `updatedAt` is within `STALE_CONTROL_STATE_MS` (5 min, now exported from `lib/clip/repository.ts` and shared with the service's takeover). Any row holding an archive id, and every other non-tombstone non-`FAILED` status, is still `ARCHIVED`. The route answers 409 `CLIP_IN_PROGRESS` or `LIVE_CLIPS`; the #58 gone-channel exception covers both.
+- **Safety:** excluding a stale `PENDING` row is safe because a creator that is still alive and posts into the old channel is refused at publish. Both the first-clip and the takeover path reach the single `publishArchive` call, which passes `config.archiveChannelId` to `lockClip`, and `lockClip` discards the write when the configured channel changed. The caller then takes the pair down. `tests/clip/service.test.ts` ("a first clip that posted into a channel repointed after its lease lapsed...") proves it for a brand-new `PENDING` Clip; the existing FAILED re-clip test covers the other path.
