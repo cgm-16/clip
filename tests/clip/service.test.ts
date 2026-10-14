@@ -406,7 +406,7 @@ describe('clip service', () => {
         invokerHasManageGuild: false,
       });
 
-      expect(result).toEqual({ kind: 'REMOVED' });
+      expect(result).toEqual({ kind: 'REMOVED', sourceChannelId: fixture.sourceChannelId });
       expect((await readClip(fixture))?.status).toBe('REMOVED_BY_AUTHOR');
       expect(await findArchiveChangeBlocker(fixture.guildId)).toBeNull();
       expect(gateway.deleteCalls).toHaveLength(0);
@@ -425,7 +425,7 @@ describe('clip service', () => {
       invokerHasManageGuild: false,
     });
 
-    expect(result).toEqual({ kind: 'REMOVED' });
+    expect(result).toEqual({ kind: 'REMOVED', sourceChannelId: fixture.sourceChannelId });
     expect(gateway.deleteCalls).toEqual([
       {
         archiveChannelId: fixture.archiveChannelId,
@@ -459,7 +459,7 @@ describe('clip service', () => {
       invokerHasManageGuild: true,
     });
 
-    expect(result).toEqual({ kind: 'REMOVED' });
+    expect(result).toEqual({ kind: 'REMOVED', sourceChannelId: fixture.sourceChannelId });
     expect(gateway.deleteCalls).toHaveLength(1);
     const tombstone = await readClip(fixture);
     expect(tombstone?.status).toBe('REMOVED_BY_ADMIN');
@@ -503,13 +503,13 @@ describe('clip service', () => {
       invokerUserId: fixture.sourceAuthorUserId,
       invokerHasManageGuild: false,
     };
-    expect(await service.removeByAuthorOrAdmin(removeInput)).toEqual({ kind: 'REMOVED' });
+    expect(await service.removeByAuthorOrAdmin(removeInput)).toEqual({ kind: 'REMOVED', sourceChannelId: fixture.sourceChannelId });
     const stranded = await readClip(fixture);
     expect(stranded?.status).toBe('REMOVED_BY_AUTHOR');
     expect(stranded?.archiveProvenanceMessageId).toBe('provenance-1');
     expect(stranded?.archiveForwardMessageId).toBe('forward-1');
 
-    expect(await service.removeByAuthorOrAdmin(removeInput)).toEqual({ kind: 'REMOVED' });
+    expect(await service.removeByAuthorOrAdmin(removeInput)).toEqual({ kind: 'REMOVED', sourceChannelId: fixture.sourceChannelId });
 
     const expectedDelete = {
       archiveChannelId: fixture.archiveChannelId,
@@ -539,7 +539,7 @@ describe('clip service', () => {
       invokerUserId: fixture.sourceAuthorUserId,
       invokerHasManageGuild: false,
     };
-    expect(await service.removeByAuthorOrAdmin(removeInput)).toEqual({ kind: 'REMOVED' });
+    expect(await service.removeByAuthorOrAdmin(removeInput)).toEqual({ kind: 'REMOVED', sourceChannelId: fixture.sourceChannelId });
     expect(await readClip(fixture)).toMatchObject({
       status: 'REMOVED_BY_AUTHOR',
       archiveProvenanceMessageId: 'provenance-1',
@@ -560,7 +560,7 @@ describe('clip service', () => {
         .archiveChannelId,
     ).toBe(fixture.archiveChannelId);
 
-    expect(await service.removeByAuthorOrAdmin(removeInput)).toEqual({ kind: 'REMOVED' });
+    expect(await service.removeByAuthorOrAdmin(removeInput)).toEqual({ kind: 'REMOVED', sourceChannelId: fixture.sourceChannelId });
     expect(await readClip(fixture)).toMatchObject({
       status: 'REMOVED_BY_AUTHOR',
       archiveProvenanceMessageId: null,
@@ -1123,7 +1123,7 @@ describe('clip service', () => {
         invokerUserId: fixture.sourceAuthorUserId,
         invokerHasManageGuild: false,
       });
-      expect(removal).toEqual({ kind: 'REMOVED' });
+      expect(removal).toEqual({ kind: 'REMOVED', sourceChannelId: fixture.sourceChannelId });
     });
 
     const result = await service.unclip({

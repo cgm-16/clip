@@ -18,7 +18,7 @@ import {
   unclipResultCopy,
 } from '@/lib/discord/interaction-responses';
 import { createArchiveMarker } from '@/lib/discord/marker';
-import { handleRemoveButtonInteraction, notifyAuthorOfFirstArchival } from '@/lib/discord/notifications';
+import { handleRemoveButtonInteraction, notifyAuthorOfFirstArchival, parseRemoveFromArchiveCustomId } from '@/lib/discord/notifications';
 import { hasManageGuild } from '@/lib/discord/permissions';
 import { createDiscordRestClient, DiscordApiError } from '@/lib/discord/rest-client';
 import { verifyInteractionRequest } from '@/lib/discord/verify-interaction';
@@ -356,11 +356,9 @@ async function runRemoveCommand(ctx: ContextCommandContext, env: Env): Promise<v
 
 /**
  * Runs the DM's `아카이브에서 제거` button after its deferred reply has
- * already gone out. Mirrors `runRemoveCommand`, but there is no marker
- * reaction to retract here: `custom_id` carries only the guild and source
- * message id (never the source channel), so this path has no source channel
- * id to remove the marker with. That is an existing limitation of the DM
- * button's encoding, not something this handler can fix.
+ * already gone out. Mirrors `runRemoveCommand`. `custom_id` carries only the
+ * guild and source message id, so the source channel for the marker removal
+ * comes from the removed Clip row (`REMOVED.sourceChannelId`).
  */
 async function runRemoveButtonInteraction(
   interactionToken: string,
@@ -376,6 +374,13 @@ async function runRemoveButtonInteraction(
   );
 
   await sendFollowupSafely(env, interactionToken, removeButtonResultCopy(result));
+
+  // REMOVED implies the custom_id parsed, so `parsed` is non-null here.
+  const parsed = parseRemoveFromArchiveCustomId(customId);
+  if (result.kind === 'REMOVED' && parsed !== null) {
+    const marker = createArchiveMarker({ botToken: env.DISCORD_BOT_TOKEN, fetchImpl: fetch });
+    await marker.remove(result.sourceChannelId, parsed.sourceMessageId);
+  }
 }
 
 /**

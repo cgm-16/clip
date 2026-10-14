@@ -160,7 +160,7 @@ describe('removeButtonResultCopy', () => {
   // actually reaches every one of them, not just the ones the route tests
   // below happen to exercise.
   const cases: Array<[string, RemoveButtonInteractionResult, string]> = [
-    ['REMOVED', { kind: 'REMOVED' }, DISCORD_COPY.unclipped],
+    ['REMOVED', { kind: 'REMOVED', sourceChannelId: '1' }, DISCORD_COPY.unclipped],
     ['NOT_FOUND', { kind: 'NOT_FOUND' }, DISCORD_COPY.nothingToUnclip],
     ['NOT_AUTHORIZED', { kind: 'NOT_AUTHORIZED' }, DISCORD_COPY.noPermission],
     ['FAILED', { kind: 'FAILED', retryable: true }, DISCORD_COPY.transientFailure],
@@ -309,6 +309,12 @@ describe('POST /api/discord/interactions -- MESSAGE_COMPONENT (remove-from-archi
     const clip = await readClip(fixture);
     expect(clip?.status).toBe('REMOVED_BY_AUTHOR');
     await waitForCall(calls, (call) => call.method === 'DELETE');
+    await waitForCall(
+      calls,
+      (call) =>
+        call.method === 'DELETE' &&
+        call.url.includes(`/channels/${fixture.sourceChannelId}/messages/${fixture.sourceMessageId}/reactions/`),
+    );
   });
 
   // The custom_id is client-carried and re-verified server-side: this is the

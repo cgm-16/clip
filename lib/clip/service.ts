@@ -767,7 +767,7 @@ export function createClipService(gateway: DiscordArchiveGateway) {
         // no tombstone has, so ids here are the pair an earlier Discord delete
         // failed to take down. Returning them makes this call retry that
         // delete rather than report a cleanup that never happened.
-        return { kind: 'REMOVED' as const, archive: archiveOf(locked) };
+        return { kind: 'REMOVED' as const, archive: archiveOf(locked), sourceChannelId: locked.sourceChannelId };
       }
 
       const next = isAuthor ? 'REMOVED_BY_AUTHOR' : 'REMOVED_BY_ADMIN';
@@ -782,7 +782,7 @@ export function createClipService(gateway: DiscordArchiveGateway) {
       // let a later Unclip report a preservation that no longer means anything.
       await deleteClippers(tx, input.guildId, input.sourceMessageId);
       logTransition(key, locked.status, next);
-      return { kind: 'REMOVED' as const, archive: archiveOf(locked) };
+      return { kind: 'REMOVED' as const, archive: archiveOf(locked), sourceChannelId: locked.sourceChannelId };
     }, configurationOptions(config?.configurationId ?? null));
 
     if (outcome === null) {
@@ -807,7 +807,7 @@ export function createClipService(gateway: DiscordArchiveGateway) {
         );
       }
     }
-    return { kind: 'REMOVED' };
+    return { kind: 'REMOVED', sourceChannelId: outcome.sourceChannelId };
   }
 
   return { clip, unclip, removeByAuthorOrAdmin };

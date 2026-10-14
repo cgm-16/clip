@@ -199,7 +199,7 @@ describe('context command result copy mapping', () => {
   });
 
   const removeCases: Array<[string, RemoveResult, string]> = [
-    ['REMOVED', { kind: 'REMOVED' }, DISCORD_COPY.unclipped],
+    ['REMOVED', { kind: 'REMOVED', sourceChannelId: '1' }, DISCORD_COPY.unclipped],
     ['NOT_FOUND', { kind: 'NOT_FOUND' }, DISCORD_COPY.nothingToUnclip],
     ['NOT_AUTHORIZED', { kind: 'NOT_AUTHORIZED' }, DISCORD_COPY.noPermission],
     ['FAILED', { kind: 'FAILED', retryable: false }, DISCORD_COPY.transientFailure],
