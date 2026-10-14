@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { existsSync, readFileSync } from 'node:fs';
-import { beforeEach, expect, test } from 'vitest';
+import { beforeEach, expect, test, vi } from 'vitest';
 import { findDesignViolations } from '../../scripts/lint-design';
 
 const html = readFileSync('docs/deck/index.html', 'utf8');
@@ -12,11 +12,15 @@ function slides(): HTMLElement[] {
 function visibleIndex(): number {
   return slides().findIndex((slide) => !slide.hidden);
 }
-function press(key: string) {
-  document.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+function press(key: string): KeyboardEvent {
+  const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+  document.dispatchEvent(event);
+  return event;
 }
 
 beforeEach(() => {
+  vi.restoreAllMocks();
+  vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
   document.documentElement.innerHTML = new DOMParser().parseFromString(html, 'text/html').documentElement.innerHTML;
   new Function(script)();
 });
@@ -35,24 +39,36 @@ test('shows only the first slide and counts it', () => {
   expect((document.getElementById('prev') as HTMLButtonElement).disabled).toBe(true);
 });
 
-test('arrow, page and home/end keys move between slides and stop at the ends', () => {
+test('left/right/home/end move between slides and stop at the ends', () => {
   press('ArrowRight');
   expect(visibleIndex()).toBe(1);
-  press('PageDown');
+  press('ArrowRight');
   expect(visibleIndex()).toBe(2);
-  press('ArrowUp');
+  press('ArrowLeft');
   expect(visibleIndex()).toBe(1);
   press('End');
   expect(visibleIndex()).toBe(10);
-  press('ArrowDown');
+  press('ArrowRight');
   expect(visibleIndex()).toBe(10);
   expect((document.getElementById('next') as HTMLButtonElement).disabled).toBe(true);
   press('Home');
   expect(visibleIndex()).toBe(0);
   press('ArrowLeft');
   expect(visibleIndex()).toBe(0);
-  press('PageUp');
-  expect(visibleIndex()).toBe(0);
+});
+
+test('up/down/page keys are left to native scrolling', () => {
+  press('ArrowRight');
+  for (const key of ['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp']) {
+    const event = press(key);
+    expect(visibleIndex()).toBe(1);
+    expect(event.defaultPrevented).toBe(false);
+  }
+});
+
+test('changing slides scrolls the page back to the top', () => {
+  press('ArrowRight');
+  expect(window.scrollTo).toHaveBeenCalledWith(0, 0);
 });
 
 test('the buttons move between slides', () => {

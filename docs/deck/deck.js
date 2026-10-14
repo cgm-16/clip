@@ -1,6 +1,7 @@
-// Slide navigation: one slide visible at a time, moved by keys or buttons,
-// with focus on the shown slide's heading so a keyboard or screen-reader user
-// lands on the new content.
+// Slide navigation: one slide visible at a time, moved by left/right/home/end
+// or the buttons. Up/down/page keys stay native so tall slides can be scrolled.
+// A slide change scrolls to the top and focuses the shown slide's heading, so
+// a keyboard or screen-reader user lands on the new content.
 (function () {
   document.documentElement.lang = 'en';
   var slides = Array.prototype.slice.call(document.querySelectorAll('main > section'));
@@ -15,13 +16,13 @@
     counter.textContent = current + 1 + ' / ' + slides.length;
     prev.disabled = current === 0;
     next.disabled = current === slides.length - 1;
-    if (moveFocus) slides[current].querySelector('h1, h2').focus();
+    if (moveFocus) {
+      window.scrollTo(0, 0);
+      slides[current].querySelector('h1, h2').focus({ preventScroll: true });
+    }
   }
 
-  var KEYS = {
-    ArrowRight: 1, ArrowDown: 1, PageDown: 1,
-    ArrowLeft: -1, ArrowUp: -1, PageUp: -1,
-  };
+  var KEYS = { ArrowRight: 1, ArrowLeft: -1 };
   document.addEventListener('keydown', function (event) {
     if (event.altKey || event.ctrlKey || event.metaKey) return;
     if (event.key === 'Home') show(0, true);
