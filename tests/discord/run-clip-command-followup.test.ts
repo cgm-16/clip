@@ -102,6 +102,7 @@ describe('runClipCommand: nothing after the member is answered may overwrite tha
 
   afterEach(async () => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
     notifyAuthorOfFirstArchival.mockReset();
     await prisma.clipper.deleteMany({ where: { guildId: { in: cleanupGuildIds } } });
     await prisma.clip.deleteMany({ where: { guildId: { in: cleanupGuildIds } } });
@@ -131,6 +132,7 @@ describe('runClipCommand: nothing after the member is answered may overwrite tha
       new Error('simulated concurrent deletion between updateMany and findUniqueOrThrow'),
     );
 
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     const { fetchImpl, calls } = createFetchStub();
     vi.stubGlobal('fetch', fetchImpl);
 
@@ -187,5 +189,6 @@ describe('runClipCommand: nothing after the member is answered may overwrite tha
     const followupCalls = calls.filter((call) => call.url === followupUrl(token));
     expect(followupCalls).toHaveLength(1);
     expect(followupCalls[0]?.body).toEqual({ content: DISCORD_COPY.success });
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('clip.post_archival_step_failed'));
   });
 });

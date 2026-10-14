@@ -86,26 +86,32 @@ describe('createArchiveMarker', () => {
   });
 
   test('add() never throws, even when Discord rejects the call', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     const { fetchImpl } = stubFetch([json({ code: 50001, message: 'Missing Access' }, 403)]);
     const marker = createArchiveMarker({ botToken: BOT_TOKEN, fetchImpl });
 
     await expect(marker.add(SOURCE_CHANNEL_ID, SOURCE_MESSAGE_ID)).resolves.toBeUndefined();
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('archive_marker_add_failed'));
   });
 
   test('remove() never throws, even when Discord rejects the call', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     const { fetchImpl } = stubFetch([json({ code: 0, message: 'Internal Server Error' }, 500)]);
     const marker = createArchiveMarker({ botToken: BOT_TOKEN, fetchImpl });
 
     await expect(marker.remove(SOURCE_CHANNEL_ID, SOURCE_MESSAGE_ID)).resolves.toBeUndefined();
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('archive_marker_remove_failed'));
   });
 
   test('add() never throws even when fetch itself rejects (network failure)', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     const fetchImpl = (async () => {
       throw new Error('network unreachable');
     }) as unknown as typeof fetch;
     const marker = createArchiveMarker({ botToken: BOT_TOKEN, fetchImpl });
 
     await expect(marker.add(SOURCE_CHANNEL_ID, SOURCE_MESSAGE_ID)).resolves.toBeUndefined();
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('archive_marker_add_failed'));
   });
 
   test('a failure is logged with the identifiers and an error code, never a message body', async () => {

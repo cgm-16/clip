@@ -105,6 +105,9 @@ describe('POST /setup/save', () => {
       if (method === 'POST' && path === `/guilds/${GUILD_ID}/channels`) {
         return { id: '222', name: 'clip-archive', type: 0 };
       }
+      if (method === 'DELETE' && path === '/channels/222') {
+        return undefined;
+      }
       throw new Error(`unexpected Discord request: ${method} ${path}`);
     });
   });
@@ -247,6 +250,7 @@ describe('POST /setup/save', () => {
     findGuildArchiveConfig.mockResolvedValue({ archiveChannelId: '111', allowedRoleIds: [] });
     finalizeGuildArchiveConfig.mockResolvedValue({ kind: 'CONFLICT', blocker: 'ARCHIVED' });
     countArchivedClips.mockResolvedValue(0);
+    const logged = vi.spyOn(console, 'log').mockImplementation(() => {});
 
     const response = await POST(postJson({ destination: 'create', channelId: null, allowedRoleIds: [], guildId: GUILD_ID }));
 
@@ -254,17 +258,20 @@ describe('POST /setup/save', () => {
     expect(discordRequest).toHaveBeenCalledTimes(3);
     expect(discordRequest).toHaveBeenNthCalledWith(3, 'DELETE', '/channels/222');
     expect(upsertGuildArchiveConfig).not.toHaveBeenCalled();
+    expect(logged).not.toHaveBeenCalledWith(expect.stringContaining('setup.archive-channel-cleanup-failed'));
   });
 
   test('a session revoked during an auto-create save deletes the new channel and returns 401', async () => {
     stubEnv();
     authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
     finalizeGuildArchiveConfig.mockResolvedValue({ kind: 'SESSION_REVOKED' });
+    const logged = vi.spyOn(console, 'log').mockImplementation(() => {});
 
     const response = await POST(postJson({ destination: 'create', channelId: null, allowedRoleIds: [], guildId: GUILD_ID }));
 
     expect(response.status).toBe(401);
     expect(discordRequest).toHaveBeenLastCalledWith('DELETE', '/channels/222');
+    expect(logged).not.toHaveBeenCalledWith(expect.stringContaining('setup.archive-channel-cleanup-failed'));
   });
 
   test('a session revoked during an existing-channel save returns 401 and deletes nothing', async () => {
