@@ -575,6 +575,33 @@ export function upsertGuildArchiveConfig(input: UpsertGuildArchiveConfigInput): 
   return getPrismaClient().$transaction((tx) => upsertGuildArchiveConfigWithClient(tx, input));
 }
 
+export type ArchiveChangeBlocker = 'ARCHIVED' | 'IN_PROGRESS';
+
+async function findArchiveChangeBlockerWithClient(
+  client: Pick<TxClient, 'clip'>,
+  guildId: string,
+): Promise<ArchiveChangeBlocker | null> {
+  const archived = await client.clip.findFirst({
+    where: {
+      guildId,
+      OR: [
+        { status: { notIn: [...TOMBSTONE_STATUSES, 'FAILED', 'PENDING'] } },
+        { archiveProvenanceMessageId: { not: null } },
+        { archiveForwardMessageId: { not: null } },
+      ],
+    },
+    select: { guildId: true },
+  });
+  if (archived !== null) {
+    return 'ARCHIVED';
+  }
+  const inProgress = await client.clip.findFirst({
+    where: { guildId, status: 'PENDING', updatedAt: { gte: leaseExpiredBefore() } },
+    select: { guildId: true },
+  });
+  return inProgress === null ? null : 'IN_PROGRESS';
+}
+
 /**
  * What stops the guild's archive channel from being repointed: `'ARCHIVED'`
  * if any Clip is live or retains an archive id -- one whose workflow or Discord
@@ -612,33 +639,6 @@ export function upsertGuildArchiveConfig(input: UpsertGuildArchiveConfigInput): 
  * orphan an existing one at all, is the real long-term fix; it is out of
  * scope today.
  */
-export type ArchiveChangeBlocker = 'ARCHIVED' | 'IN_PROGRESS';
-
-async function findArchiveChangeBlockerWithClient(
-  client: Pick<TxClient, 'clip'>,
-  guildId: string,
-): Promise<ArchiveChangeBlocker | null> {
-  const archived = await client.clip.findFirst({
-    where: {
-      guildId,
-      OR: [
-        { status: { notIn: [...TOMBSTONE_STATUSES, 'FAILED', 'PENDING'] } },
-        { archiveProvenanceMessageId: { not: null } },
-        { archiveForwardMessageId: { not: null } },
-      ],
-    },
-    select: { guildId: true },
-  });
-  if (archived !== null) {
-    return 'ARCHIVED';
-  }
-  const inProgress = await client.clip.findFirst({
-    where: { guildId, status: 'PENDING', updatedAt: { gte: leaseExpiredBefore() } },
-    select: { guildId: true },
-  });
-  return inProgress === null ? null : 'IN_PROGRESS';
-}
-
 export function findArchiveChangeBlocker(guildId: string): Promise<ArchiveChangeBlocker | null> {
   return findArchiveChangeBlockerWithClient(getPrismaClient(), guildId);
 }
