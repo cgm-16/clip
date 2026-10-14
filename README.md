@@ -50,6 +50,10 @@ Clip은 무제한 핀 유틸리티도 아니고 Starboard도 아닙니다. 이�
   → 아카이브 삭제, 툼스톤 유지, 재생성 차단
 ```
 
+| 화면 B | `#clip-archive` | 화면 D |
+|---|---|---|
+| ![화면 B](docs/evidence/wave-6/p6-form.png) | ![#clip-archive](docs/evidence/wave-6/p2-archive.png) | ![화면 D](docs/evidence/wave-6/burst-screen-d.png) |
+
 ## 아키텍처
 
 상태 없는(stateless) Next.js 배포물 하나가 디스코드 인터랙션 엔드포인트와 관리자 웹 UI를 함께 서빙합니다. P0에는 상시 Gateway 워커가 없습니다 — 모든 제품 입력이 명시적인 명령이나 버튼이고, 그것은 HTTP 인터랙션으로 전달되기 때문입니다.
