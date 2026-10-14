@@ -11,7 +11,9 @@
   var current = 0;
 
   function show(index, moveFocus) {
-    current = Math.max(0, Math.min(slides.length - 1, index));
+    var target = Math.max(0, Math.min(slides.length - 1, index));
+    if (moveFocus && target === current) return;
+    current = target;
     slides.forEach(function (slide, i) { slide.hidden = i !== current; });
     counter.textContent = current + 1 + ' / ' + slides.length;
     prev.disabled = current === 0;
@@ -25,6 +27,7 @@
   var KEYS = { ArrowRight: 1, ArrowLeft: -1 };
   document.addEventListener('keydown', function (event) {
     if (event.altKey || event.ctrlKey || event.metaKey) return;
+    if (event.target && event.target.closest && event.target.closest('.positioning')) return;
     if (event.key === 'Home') show(0, true);
     else if (event.key === 'End') show(slides.length - 1, true);
     else if (KEYS[event.key]) show(current + KEYS[event.key], true);

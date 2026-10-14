@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { existsSync, readFileSync } from 'node:fs';
-import { beforeEach, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { findDesignViolations } from '../../scripts/lint-design';
 
 const html = readFileSync('docs/deck/index.html', 'utf8');
@@ -18,10 +18,23 @@ function press(key: string): KeyboardEvent {
   return event;
 }
 
+// deck.js registers a document-level keydown listener on every run; drop them
+// so earlier runs do not respond to later tests' key presses.
+const keydownListeners: EventListener[] = [];
+afterEach(() => {
+  for (const listener of keydownListeners.splice(0)) document.removeEventListener('keydown', listener);
+});
+
 beforeEach(() => {
   vi.restoreAllMocks();
   vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+  vi.mocked(window.scrollTo).mockClear();
   document.documentElement.innerHTML = new DOMParser().parseFromString(html, 'text/html').documentElement.innerHTML;
+  const add = document.addEventListener.bind(document);
+  vi.spyOn(document, 'addEventListener').mockImplementation((type: string, listener: any, options?: any) => {
+    if (type === 'keydown') keydownListeners.push(listener);
+    add(type, listener, options);
+  });
   new Function(script)();
 });
 
@@ -160,4 +173,29 @@ test('every font url in deck.css names a published path whose source exists', ()
 test('deck.css styles links with the accent token', () => {
   const css = readFileSync('docs/deck/deck.css', 'utf8');
   expect(css).toMatch(/(^|\n)a \{[^}]*color:\s*var\(--accent-text\)/);
+});
+
+test('pressing a key or button at either end does not scroll or move focus', () => {
+  const focused = document.activeElement;
+  const prevEvent = press('ArrowLeft');
+  (document.getElementById('prev') as HTMLButtonElement).click();
+  expect(window.scrollTo).not.toHaveBeenCalled();
+  expect(document.activeElement).toBe(focused);
+  expect(prevEvent.defaultPrevented).toBe(true);
+  press('End');
+  vi.mocked(window.scrollTo).mockClear();
+  press('ArrowRight');
+  (document.getElementById('next') as HTMLButtonElement).click();
+  expect(window.scrollTo).not.toHaveBeenCalled();
+});
+
+test('left/right inside the positioning table stay native', () => {
+  const table = document.querySelector('.positioning')!;
+  expect(table.getAttribute('tabindex')).toBe('0');
+  expect(table.getAttribute('role')).toBe('region');
+  expect(table.getAttribute('aria-label')).toBe('Positioning table');
+  const event = new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true });
+  table.querySelector('table')!.dispatchEvent(event);
+  expect(visibleIndex()).toBe(0);
+  expect(event.defaultPrevented).toBe(false);
 });

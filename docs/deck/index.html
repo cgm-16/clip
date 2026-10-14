@@ -12,7 +12,7 @@
     <section aria-labelledby="s1">
       <h1 id="s1" tabindex="-1">Clip</h1>
       <p class="lead">Deliberate community memory for Discord.</p>
-      <p class="muted">A Discord bot and admin web app, scoped, built, deployed and verified by <a href="https://github.com/cgm-16" target="_blank" rel="noopener noreferrer">cgm-16</a>. October 2026.</p>
+      <p class="muted">A Discord bot and admin web app, scoped, directed, deployed and verified by <a href="https://github.com/cgm-16" target="_blank" rel="noopener noreferrer">cgm-16</a>. October 2026.</p>
     </section>
     <section aria-labelledby="s2">
       <h2 id="s2" tabindex="-1">Pins were never meant to be memory</h2>
@@ -22,7 +22,7 @@
     </section>
     <section aria-labelledby="s3">
       <h2 id="s3" tabindex="-1">What Clip is, and is not</h2>
-      <div class="positioning">
+      <div class="positioning" tabindex="0" role="region" aria-label="Positioning table">
         <table>
           <thead><tr><th scope="col">Primitive</th><th scope="col">What it means</th></tr></thead>
           <tbody>
@@ -69,11 +69,11 @@
       <div class="shots">
         <figure>
           <img src="img/p6-form.png" alt="Clip's setup screen with the recommended option selected: create a new private archive channel.">
-          <figcaption>Setup (Screen B)</figcaption>
+          <figcaption>Setup</figcaption>
         </figure>
         <figure>
           <img src="img/burst-screen-d.png" alt="Clip's web archive listing clipped messages with author, source channel, time and a link to the original.">
-          <figcaption>Web archive (Screen D)</figcaption>
+          <figcaption>Web archive</figcaption>
         </figure>
       </div>
       <p class="muted">Screenshots from a dedicated test server; the tester shown consented to appear.</p>
@@ -85,7 +85,7 @@
         <li><strong>Removal wins.</strong> When the author or an admin removes a clip, that overrides every clipper and leaves a tombstone that blocks the message from being clipped again.</li>
         <li><strong>Never half-archived.</strong> A Clip never becomes active with a missing or partial archive.</li>
         <li><strong>Platform facts checked before they were built on</strong>, including <code>160011</code> (a forward cannot carry content), snapshots without <code>author</code>, and the four forwardable message types.</li>
-        <li><strong>One slipped through.</strong> A poll arrives as an ordinary message, so it passed the type check; reading the type check found it, and a live test confirmed it, and polls are now refused before any state is written (#84).</li>
+        <li><strong>One slipped through.</strong> A poll is an ordinary message (type 0) with a poll attached, so the type check let it through. Reading the check before the live run found the gap, the run confirmed it, and polls are now refused before any state is written (#84).</li>
       </ul>
     </section>
     <section aria-labelledby="s8">
@@ -97,7 +97,7 @@
     <section aria-labelledby="s9">
       <h2 id="s9" tabindex="-1">How I built it</h2>
       <p>Claude Code was the implementer. I held the product and architecture decisions. During the restoration, every PR got an independent review before it opened, and every code change started with a failing test, recorded before the fix.</p>
-      <p>The failures I recorded share one shape: <strong>rigorous checking aimed one step to the side of the claim it was meant to support.</strong> The two below were caught by something other than the work that produced them: a documentation check, and a production gate.</p>
+      <p>The failures I recorded share one shape: <strong>rigorous checking aimed one step to the side of the claim it was meant to support.</strong> Here are two, and what caught them.</p>
       <article>
         <h3>The forward that couldn't carry its own label</h3>
         <p><strong>What happened:</strong> an AI-written plan put provenance and the forward into one archive post.</p>
@@ -123,7 +123,7 @@
         <dt>Permissions</dt>
         <dd>measured one at a time on a fresh test server, <code>sha-cdcabaf</code> <span class="muted">(2026-10-13)</span>. The source-channel <code>50001</code> and Message Content <code>160014</code> refusals were confirmed from logs on <code>sha-3ed1d60</code> <span class="muted">(2026-10-14)</span>.</dd>
         <dt>Footprint</dt>
-        <dd>idle at 3m CPU and 88 MiB on <code>sha-b845a59</code> <span class="muted">(2026-10-14)</span>. Load was never measured.</dd>
+        <dd>idle at 3 millicores of CPU and 88 MiB on <code>sha-b845a59</code> <span class="muted">(2026-10-14)</span>. Load was never measured.</dd>
         <dt>Cost</dt>
         <dd>USD 8 a year for the domain. The existing home cluster absorbs electricity, hardware and operator time, and those are real costs.</dd>
       </dl>
