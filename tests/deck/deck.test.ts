@@ -311,3 +311,13 @@ test('deck.js contains no Hangul', () => {
 test('the slide 2 Korean heading is the approved copy', () => {
   expect(document.querySelector('#s2 [lang="ko"]')!.textContent).toBe('핀은 영원한 기억을 위해 만든 것이 아닙니다');
 });
+
+test('deck.css keeps the slide controls from squishing on narrow phones', () => {
+  const css = readFileSync('docs/deck/deck.css', 'utf8');
+  const rule = (selector: string) => new RegExp(`(^|\\n)${selector} \\{([^}]*)\\}`).exec(css)?.[2] ?? '';
+  expect(rule('\\.controls')).toMatch(/gap:\s*8px/);
+  expect(rule('\\.controls')).toMatch(/flex-wrap:\s*wrap/);
+  expect(rule('\\.controls button')).toMatch(/padding:\s*8px 12px/);
+  expect(rule('\\.controls button')).toMatch(/white-space:\s*nowrap/);
+  expect(rule('#counter')).toMatch(/white-space:\s*nowrap/);
+});

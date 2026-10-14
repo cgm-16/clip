@@ -44,7 +44,8 @@ code { font-family: var(--font-mono); }
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 16px;
+  flex-wrap: wrap;
+  gap: 8px;
   padding-block: 12px calc(12px + env(safe-area-inset-bottom, 0px));
   padding-inline: 16px;
   background: var(--raised);
@@ -56,7 +57,8 @@ code { font-family: var(--font-mono); }
   background: var(--sunken);
   border: 1px solid var(--control-border);
   border-radius: 2px;
-  padding: 8px 16px;
+  padding: 8px 12px;
+  white-space: nowrap;
   cursor: pointer;
 }
 .controls button:disabled {
@@ -69,7 +71,7 @@ section h2:focus-visible {
   outline: var(--focus-ring);
   outline-offset: var(--focus-offset);
 }
-#counter { font-family: var(--font-mono); color: var(--muted); }
+#counter { font-family: var(--font-mono); color: var(--muted); white-space: nowrap; }
 .lead { font-size: var(--fs-title); color: var(--text); }
 .positioning { overflow-x: auto; }
 .positioning table { border-collapse: collapse; }
