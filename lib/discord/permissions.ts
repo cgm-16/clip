@@ -37,6 +37,7 @@ export function hasManageGuild(permissions: string | undefined): boolean {
 /** The permission flags the archive-channel check reads. Same source as above. */
 export const PERMISSION = {
   ADMINISTRATOR: 1n << 3n,
+  MANAGE_CHANNELS: 1n << 4n,
   VIEW_CHANNEL: 1n << 10n,
   SEND_MESSAGES: 1n << 11n,
   READ_MESSAGE_HISTORY: 1n << 16n,
@@ -59,6 +60,25 @@ export type ChannelPermissionInput = {
 };
 
 /**
+ * A member's guild-level permissions: the `@everyone` role's permissions OR'd
+ * with each of the member's roles', and every permission under ADMINISTRATOR.
+ * No channel overwrites apply. Guild ownership is not modelled: the bot is
+ * never the owner.
+ */
+export function computeGuildPermissions(
+  input: Pick<ChannelPermissionInput, 'guildId' | 'memberRoleIds' | 'rolePermissions'>,
+): bigint {
+  let permissions = input.rolePermissions.get(input.guildId) ?? 0n;
+  for (const roleId of input.memberRoleIds) {
+    permissions |= input.rolePermissions.get(roleId) ?? 0n;
+  }
+  if ((permissions & PERMISSION.ADMINISTRATOR) === PERMISSION.ADMINISTRATOR) {
+    return ALL_PERMISSIONS;
+  }
+  return permissions;
+}
+
+/**
  * A member's effective permissions in one channel, following Discord's
  * documented order (developers.discord.com/docs/topics/permissions#permission-overwrites):
  * guild-level role permissions, ADMINISTRATOR short-circuit, the `@everyone`
@@ -67,11 +87,8 @@ export type ChannelPermissionInput = {
  * Guild ownership is not modelled: the bot is never the owner.
  */
 export function computeChannelPermissions(input: ChannelPermissionInput): bigint {
-  let permissions = input.rolePermissions.get(input.guildId) ?? 0n;
-  for (const roleId of input.memberRoleIds) {
-    permissions |= input.rolePermissions.get(roleId) ?? 0n;
-  }
-  if ((permissions & PERMISSION.ADMINISTRATOR) === PERMISSION.ADMINISTRATOR) {
+  let permissions = computeGuildPermissions(input);
+  if (permissions === ALL_PERMISSIONS) {
     return ALL_PERMISSIONS;
   }
 

@@ -1261,6 +1261,43 @@ describe('SetupFlow — session exchange and Screen A/B branching', () => {
     );
   });
 
+  it('names MANAGE_CHANNELS under its own copy when /setup/save refuses channel creation for it (#85)', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith('/api/setup/exchange')) {
+          return Response.json({ guildId: 'g1' });
+        }
+        if (url.endsWith('/setup/data')) {
+          return Response.json(setupDataBody());
+        }
+        if (url.endsWith('/setup/save')) {
+          return Response.json(
+            { reason: 'CREATE_CHANNEL_MISSING_PERMISSIONS', missingPermissions: ['MANAGE_CHANNELS'] },
+            { status: 422 },
+          );
+        }
+        throw new Error(`unexpected fetch: ${url}`);
+      }),
+    );
+
+    render(<SetupFlow token="fresh-token" />);
+    await waitFor(() =>
+      expect(screen.getByText(WEB_COPY.setup.destinationLegend)).toBeInTheDocument(),
+    );
+
+    await user.click(screen.getByRole('button', { name: WEB_COPY.setup.save }));
+
+    expect(
+      await screen.findByText('Clip에 채널 관리 권한이 없습니다. Discord에서 권한을 추가한 뒤 다시 시도해 주세요.'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('MANAGE_CHANNELS')).toBeInTheDocument();
+    expect(screen.queryByText(WEB_COPY_AUTHORED.destinationMissingPermissions)).not.toBeInTheDocument();
+    expect(screen.queryByText(/정보를 저장할 수 없습니다/)).not.toBeInTheDocument();
+  });
+
   it('keeps Screen B for a 200 save response with the wrong shape', async () => {
     const user = userEvent.setup();
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {

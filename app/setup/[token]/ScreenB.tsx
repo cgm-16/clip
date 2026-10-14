@@ -36,6 +36,7 @@ export type SetupSubmission = {
 export type SaveOutcome =
   | { kind: 'saved' }
   | { kind: 'missing-permissions'; missingPermissions: string[] }
+  | { kind: 'create-channel-missing-permissions'; missingPermissions: string[] }
   | { kind: 'live-clips' }
   | { kind: 'failed' };
 
@@ -292,9 +293,14 @@ export function ScreenB({
               {SAVE_FAILED_AFTER}
             </Callout>
           )}
-          {saveOutcome?.kind === 'missing-permissions' && (
+          {(saveOutcome?.kind === 'missing-permissions' ||
+            saveOutcome?.kind === 'create-channel-missing-permissions') && (
             <>
-              <Callout variant="error">{WEB_COPY_AUTHORED.destinationMissingPermissions}</Callout>
+              <Callout variant="error">
+                {saveOutcome.kind === 'missing-permissions'
+                  ? WEB_COPY_AUTHORED.destinationMissingPermissions
+                  : WEB_COPY_AUTHORED.createChannelMissingPermission}
+              </Callout>
               <div className={styles.missingPermissions}>
                 {saveOutcome.missingPermissions.map((permission) => (
                   <MonoChip key={permission}>{permission}</MonoChip>

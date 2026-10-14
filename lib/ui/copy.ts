@@ -219,6 +219,14 @@ export const WEB_COPY_AUTHORED = {
   destinationMissingPermissions:
     '이 채널에서 Clip에 필요한 권한이 없습니다. Discord에서 아래 권한을 확인한 뒤 다시 시도해 주세요.',
   /**
+   * Screen B refusal — Discord refused to create the new archive channel
+   * because Clip lacks Manage Channels; `MANAGE_CHANNELS` renders below as a
+   * mono chip. The handoff has no string for this condition. Supplied by Ori
+   * on 2026-10-14 (#85); see `docs/DESIGN_RATIONALE_APPEND.md` §19.
+   */
+  createChannelMissingPermission:
+    'Clip에 채널 관리 권한이 없습니다. Discord에서 권한을 추가한 뒤 다시 시도해 주세요.',
+  /**
    * Screen B refusal — `/setup/save` answered 409 because live Clips depend
    * on the current archive channel. Same provenance as above.
    */

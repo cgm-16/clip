@@ -16,10 +16,16 @@ import {
 import { getDiscordBotUserId } from '@/lib/discord/bot-user';
 import {
   computeChannelPermissions,
+  computeGuildPermissions,
   missingArchivePermissions,
   PERMISSION,
 } from '@/lib/discord/permissions';
-import { createDiscordRestClient, DiscordApiError } from '@/lib/discord/rest-client';
+import {
+  createDiscordRestClient,
+  describeDiscordFailure,
+  DISCORD_ERROR,
+  DiscordApiError,
+} from '@/lib/discord/rest-client';
 import { parseEnv } from '@/lib/env';
 import { logClipEvent } from '@/lib/logging/safe-log';
 
@@ -53,6 +59,11 @@ const ROLE_OVERWRITE_TYPE = 0;
 const MEMBER_OVERWRITE_TYPE = 1;
 
 const ARCHIVE_CHANNEL_NAME = 'clip-archive';
+
+// Stands in for the created channel when Discord refuses the create with
+// Missing Permissions, so that refusal alone is told apart from every other
+// failure of the same request.
+const CREATE_CHANNEL_MISSING_PERMISSIONS = Symbol('CREATE_CHANNEL_MISSING_PERMISSIONS');
 
 function parseCreatedChannel(body: unknown): { id: string; name: string } | null {
   if (typeof body !== 'object' || body === null) {
@@ -242,7 +253,43 @@ export async function POST(request: NextRequest) {
             ).toString(),
           },
         ],
+      }).catch((error: unknown) => {
+        // Logged here, not in the outer catch: the bot identity read above
+        // throws the same raw DiscordApiError, and only this request's
+        // failure (e.g. MANAGE_CHANNELS missing) is this event.
+        logClipEvent({
+          event: 'setup.archive_channel_create_failed',
+          guildId,
+          ...describeDiscordFailure(error),
+        });
+        // Only Discord's own Missing Permissions code can name the cause: a
+        // bare 403 can come from an edge proxy, and Missing Access (50001)
+        // means the bot cannot reach the guild at all.
+        if (error instanceof DiscordApiError && error.code === DISCORD_ERROR.MISSING_PERMISSIONS) {
+          return CREATE_CHANNEL_MISSING_PERMISSIONS;
+        }
+        throw error;
       });
+      // A 50013 alone does not prove MANAGE_CHANNELS is missing: Discord
+      // also refuses a create whose overwrites allow a permission the bot
+      // lacks guild-wide, and the overwrites above allow three. So the
+      // refusal names MANAGE_CHANNELS only when the bot's guild permissions
+      // confirm it is missing; anything else stays the generic failure, and a
+      // failed role read falls through to the outer catch's 502.
+      if (created === CREATE_CHANNEL_MISSING_PERMISSIONS) {
+        const guildPermissions = computeGuildPermissions({
+          guildId,
+          memberRoleIds: await lookup.getMemberRoleIds(guildId, botUserId),
+          rolePermissions: new Map(roles.map((role) => [role.id, role.permissions])),
+        });
+        if ((guildPermissions & PERMISSION.MANAGE_CHANNELS) === PERMISSION.MANAGE_CHANNELS) {
+          return new Response(null, { status: 502 });
+        }
+        return Response.json(
+          { reason: 'CREATE_CHANNEL_MISSING_PERMISSIONS', missingPermissions: ['MANAGE_CHANNELS'] },
+          { status: 422 },
+        );
+      }
       const parsedChannel = parseCreatedChannel(created);
       if (!parsedChannel) {
         return new Response(null, { status: 502 });
@@ -254,7 +301,7 @@ export async function POST(request: NextRequest) {
     // GuildUnavailableError: the bot can no longer see this guild (kicked,
     // guild deleted) -- same distinction `app/setup/data/route.ts` draws.
     // Anything else (a lookup failure, a DiscordApiError creating the
-    // channel -- e.g. MANAGE_CHANNELS was revoked) is a Discord-side failure,
+    // channel other than Missing Permissions) is a Discord-side failure,
     // not the session's.
     if (error instanceof GuildUnavailableError) {
       return new Response(null, { status: 404 });
