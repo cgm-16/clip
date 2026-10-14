@@ -39,7 +39,7 @@ function fakeSnowflake(): string {
 
 function signedRequest(payload: unknown): Request {
   const body = JSON.stringify(payload);
-  const timestamp = '1700000000';
+  const timestamp = String(Math.floor(Date.now() / 1000));
   const signature = sign(null, Buffer.from(timestamp + body), privateKey).toString('hex');
 
   return new Request(`${BASE_URL}/api/discord/interactions`, {

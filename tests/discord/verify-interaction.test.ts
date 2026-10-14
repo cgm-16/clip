@@ -18,10 +18,37 @@ describe('verifyInteractionRequest', () => {
     const timestamp = '1700000000';
     const signature = signBody(body, timestamp);
 
-    await expect(verifyInteractionRequest(body, signature, timestamp, publicKeyHex)).resolves.toBe(
-      true,
-    );
+    await expect(
+      verifyInteractionRequest(body, signature, timestamp, publicKeyHex, 1700000000),
+    ).resolves.toBe(true);
   });
+
+  test.each([
+    ['300 seconds old', 1700000000 - 300, true],
+    ['301 seconds old', 1700000000 - 301, false],
+    ['300 seconds in the future', 1700000000 + 300, true],
+    ['301 seconds in the future', 1700000000 + 301, false],
+  ])('a correctly signed timestamp %s', async (_name, signedAt, accepted) => {
+    const body = JSON.stringify({ type: 1 });
+    const timestamp = String(signedAt);
+    const signature = signBody(body, timestamp);
+
+    await expect(
+      verifyInteractionRequest(body, signature, timestamp, publicKeyHex, 1700000000),
+    ).resolves.toBe(accepted);
+  });
+
+  test.each(['abc', '1700000000.5', ' 1700000000', '1e9'])(
+    'rejects a correctly signed non-integer timestamp %j',
+    async (timestamp) => {
+      const body = JSON.stringify({ type: 1 });
+      const signature = signBody(body, timestamp);
+
+      await expect(
+        verifyInteractionRequest(body, signature, timestamp, publicKeyHex, 1700000000),
+      ).resolves.toBe(false);
+    },
+  );
 
   test('rejects a missing signature header', async () => {
     const body = JSON.stringify({ type: 1 });

@@ -41,7 +41,7 @@ describe('POST /api/discord/interactions', () => {
     const response = await POST(
       request(JSON.stringify({ type: 1 }), {
         'X-Signature-Ed25519': 'bad'.repeat(20),
-        'X-Signature-Timestamp': '1700000000',
+        'X-Signature-Timestamp': String(Math.floor(Date.now() / 1000)),
       }),
     );
 
@@ -50,7 +50,7 @@ describe('POST /api/discord/interactions', () => {
 
   test('responds to a validly signed PING with PONG', async () => {
     const body = JSON.stringify({ type: 1 });
-    const timestamp = '1700000000';
+    const timestamp = String(Math.floor(Date.now() / 1000));
     const signature = signBody(body, timestamp);
 
     const response = await POST(
@@ -69,7 +69,7 @@ describe('POST /api/discord/interactions', () => {
     // are later waves' work; a signed request for one should reach that gap
     // deliberately rather than be misrouted into PONG or a 401.
     const body = JSON.stringify({ type: 2 });
-    const timestamp = '1700000000';
+    const timestamp = String(Math.floor(Date.now() / 1000));
     const signature = signBody(body, timestamp);
 
     const response = await POST(

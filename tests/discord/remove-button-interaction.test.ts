@@ -43,7 +43,7 @@ function signBody(body: string, timestamp: string): { signature: string; timesta
 
 function signedRequest(payload: unknown): Request {
   const body = JSON.stringify(payload);
-  const { signature, timestamp } = signBody(body, '1700000000');
+  const { signature, timestamp } = signBody(body, String(Math.floor(Date.now() / 1000)));
   return new Request(`${BASE_URL}/api/discord/interactions`, {
     method: 'POST',
     headers: {
