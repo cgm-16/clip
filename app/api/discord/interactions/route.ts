@@ -20,7 +20,8 @@ import {
 import { createArchiveMarker } from '@/lib/discord/marker';
 import { handleRemoveButtonInteraction, notifyAuthorOfFirstArchival, parseRemoveFromArchiveCustomId } from '@/lib/discord/notifications';
 import { hasManageGuild } from '@/lib/discord/permissions';
-import { createDiscordRestClient, discordErrorCode } from '@/lib/discord/rest-client';
+import { createDiscordGuildLookup } from '@/lib/discord/guild-lookup';
+import { discordErrorCode } from '@/lib/discord/rest-client';
 import { verifyInteractionRequest } from '@/lib/discord/verify-interaction';
 import { createClipService } from '@/lib/clip/service';
 import type { Env } from '@/lib/env';
@@ -215,19 +216,8 @@ async function sendFollowupSafely(env: Env, interactionToken: string, content: s
  * can degrade without becoming a failure.
  */
 async function lookupGuildName(env: Env, guildId: string): Promise<string> {
-  const client = createDiscordRestClient({ botToken: env.DISCORD_BOT_TOKEN, fetchImpl: fetch });
-  try {
-    const body = await client.request('GET', `/guilds/${guildId}`);
-    if (typeof body === 'object' && body !== null && 'name' in body) {
-      const name = (body as { name: unknown }).name;
-      if (typeof name === 'string' && name.length > 0) {
-        return name;
-      }
-    }
-  } catch {
-    // Best-effort: fall through to the id.
-  }
-  return guildId;
+  const lookup = createDiscordGuildLookup({ botToken: env.DISCORD_BOT_TOKEN, fetchImpl: fetch });
+  return (await lookup.getGuildName(guildId)) ?? guildId;
 }
 
 /**
