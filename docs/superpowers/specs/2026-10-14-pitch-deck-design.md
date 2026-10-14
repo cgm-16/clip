@@ -38,7 +38,7 @@ Date: 2026-10-14. Approved in conversation by Ori on 2026-10-14. This spec repla
   - No shadows, gradients, blur, or animation beyond a 120ms hover colour transition.
   - 2px radius and 1px borders.
 - **`--faint` is for disabled controls only.** All readable text uses `--muted` or stronger, the same rule as the product.
-- **Navigation.** Arrow keys and Page Up/Down move between slides, and Home/End jump to the first and last. Each slide is a `<section>` with a heading. Visible previous/next buttons are real `<button>`s. A slide counter shows the position.
+- **Navigation.** ArrowLeft/ArrowRight move between slides, Home/End jump to the first and last, and ArrowUp/ArrowDown, Page Up/Down and Space are left to scroll a tall slide (amended 2026-10-14, Ori: tall slides must scroll). Each slide is a `<section>` with a heading. Visible previous/next buttons are real `<button>`s. A slide counter shows the position.
 - **Images.** Every screenshot has alt text, in both languages.
 - **Phone width.** The deck reads on a phone: slides reflow, with no horizontal scroll and a 16px gutter.
 - **Product copy.** None of the product's Korean UI strings are paraphrased. A screenshot shows them as they are.

@@ -23,7 +23,7 @@ The page has no build step. In the repo, `index.html` references its assets by t
 - Language: English first, with content locked before any Korean. Every Korean line goes to Ori for review. Both languages end up in one file behind a toggle (Phase 2).
 - Look: `tokens.css` variables only, with no hex colours outside `tokens.css`. Dark theme. Monospace is for machine values only. No shadows, gradients, blur, or animation beyond a 120ms hover colour transition. Radius is 2px and borders are 1px. Spacing is on the 4px scale.
 - `--faint` is for disabled controls only. All readable text uses `--muted` or stronger.
-- Navigation: ArrowLeft/ArrowRight, ArrowUp/ArrowDown, PageUp/PageDown, Home and End. Real `<button>` previous/next controls. A slide counter.
+- Navigation: ArrowLeft/ArrowRight move between slides, Home/End jump to the first and last, and ArrowUp/ArrowDown, PageUp/PageDown and Space are left to scroll a tall slide (amended 2026-10-14, Ori: tall slides must scroll). Real `<button>` previous/next controls. A slide counter.
 - Every `<img>` has non-empty alt text.
 - Phone width: no horizontal page scroll, with a 16px side gutter.
 - Every number carries its date and commit. Every claim traces to a source listed in the spec.
