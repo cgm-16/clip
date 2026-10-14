@@ -283,6 +283,13 @@ export function createClipService(gateway: DiscordArchiveGateway) {
       return { applied, clip: locked };
     }, { configurationId });
     if (swap?.applied) {
+      logClipEvent({
+        event: 'clip.reposted',
+        guildId: key.guildId,
+        sourceMessageId: key.sourceMessageId,
+        archiveProvenanceMessageId: reposted.provenanceMessageId,
+        archiveForwardMessageId: reposted.forwardMessageId,
+      });
       await deleteArchiveQuietly(key, archiveChannelId, archive);
       return signalReply(added, reposted);
     }
