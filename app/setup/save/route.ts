@@ -16,6 +16,7 @@ import {
 import { getDiscordBotUserId } from '@/lib/discord/bot-user';
 import {
   computeChannelPermissions,
+  computeGuildPermissions,
   missingArchivePermissions,
   PERMISSION,
 } from '@/lib/discord/permissions';
@@ -59,8 +60,9 @@ const MEMBER_OVERWRITE_TYPE = 1;
 
 const ARCHIVE_CHANNEL_NAME = 'clip-archive';
 
-// Stands in for the created channel when Discord refuses the create for a
-// missing permission, so the refusal is answered from that request alone.
+// Stands in for the created channel when Discord refuses the create with
+// Missing Permissions, so that refusal alone is told apart from every other
+// failure of the same request.
 const CREATE_CHANNEL_MISSING_PERMISSIONS = Symbol('CREATE_CHANNEL_MISSING_PERMISSIONS');
 
 function parseCreatedChannel(body: unknown): { id: string; name: string } | null {
@@ -260,7 +262,7 @@ export async function POST(request: NextRequest) {
           guildId,
           ...describeDiscordFailure(error),
         });
-        // Only Discord's own Missing Permissions code names the cause: a
+        // Only Discord's own Missing Permissions code can name the cause: a
         // bare 403 can come from an edge proxy, and Missing Access (50001)
         // means the bot cannot reach the guild at all.
         if (error instanceof DiscordApiError && error.code === DISCORD_ERROR.MISSING_PERMISSIONS) {
@@ -268,7 +270,21 @@ export async function POST(request: NextRequest) {
         }
         throw error;
       });
+      // A 50013 alone does not prove MANAGE_CHANNELS is missing: Discord
+      // also refuses a create whose overwrites allow a permission the bot
+      // lacks guild-wide, and the overwrites above allow three. So the
+      // refusal names MANAGE_CHANNELS only when the bot's guild permissions
+      // confirm it is missing; anything else stays the generic failure, and a
+      // failed role read falls through to the outer catch's 502.
       if (created === CREATE_CHANNEL_MISSING_PERMISSIONS) {
+        const guildPermissions = computeGuildPermissions({
+          guildId,
+          memberRoleIds: await lookup.getMemberRoleIds(guildId, botUserId),
+          rolePermissions: new Map(roles.map((role) => [role.id, role.permissions])),
+        });
+        if ((guildPermissions & PERMISSION.MANAGE_CHANNELS) === PERMISSION.MANAGE_CHANNELS) {
+          return new Response(null, { status: 502 });
+        }
         return Response.json(
           { reason: 'CREATE_CHANNEL_MISSING_PERMISSIONS', missingPermissions: ['MANAGE_CHANNELS'] },
           { status: 422 },

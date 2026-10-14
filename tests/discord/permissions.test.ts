@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import {
   computeChannelPermissions,
+  computeGuildPermissions,
   hasManageGuild,
   missingArchivePermissions,
   PERMISSION,
@@ -168,6 +169,36 @@ describe('computeChannelPermissions', () => {
     } else {
       expect(result).toBe(expected);
     }
+  });
+});
+
+describe('computeGuildPermissions', () => {
+  const rolePermissions = new Map([
+    [GUILD, PERMISSION.VIEW_CHANNEL],
+    [ROLE_A, PERMISSION.MANAGE_CHANNELS],
+    [ROLE_B, PERMISSION.SEND_MESSAGES],
+  ]);
+
+  test('ORs @everyone with each of the member\'s roles', () => {
+    expect(computeGuildPermissions({ guildId: GUILD, memberRoleIds: [ROLE_A], rolePermissions })).toBe(
+      PERMISSION.VIEW_CHANNEL | PERMISSION.MANAGE_CHANNELS,
+    );
+  });
+
+  test('keeps the other bits when VIEW_CHANNEL is missing', () => {
+    expect(
+      computeGuildPermissions({ guildId: GUILD, memberRoleIds: [ROLE_A], rolePermissions: new Map([[ROLE_A, PERMISSION.MANAGE_CHANNELS]]) }),
+    ).toBe(PERMISSION.MANAGE_CHANNELS);
+  });
+
+  test('ADMINISTRATOR grants everything', () => {
+    const permissions = computeGuildPermissions({
+      guildId: GUILD,
+      memberRoleIds: [ROLE_B],
+      rolePermissions: new Map([[ROLE_B, PERMISSION.ADMINISTRATOR]]),
+    });
+    expect(permissions).toBe((1n << 64n) - 1n);
+    expect(permissions & PERMISSION.MANAGE_CHANNELS).toBe(PERMISSION.MANAGE_CHANNELS);
   });
 });
 

@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { ADMIN_SESSION_COOKIE_NAME } from '@/lib/admin-session/tokens';
-import { GuildUnavailableError } from '@/lib/discord/guild-lookup';
+import { GuildLookupFailedError, GuildUnavailableError } from '@/lib/discord/guild-lookup';
 import { PERMISSION } from '@/lib/discord/permissions';
 import { DiscordApiError } from '@/lib/discord/rest-client';
 
@@ -410,6 +410,8 @@ describe('POST /setup/save', () => {
       reason: 'CREATE_CHANNEL_MISSING_PERMISSIONS',
       missingPermissions: ['MANAGE_CHANNELS'],
     });
+    // The default bot role holds the archive permissions but not MANAGE_CHANNELS.
+    expect(getMemberRoleIds).toHaveBeenCalledWith(GUILD_ID, BOT_USER_ID);
     const lines = logged.mock.calls.map(([line]) => JSON.parse(line as string));
     expect(lines).toEqual([
       {
@@ -449,6 +451,59 @@ describe('POST /setup/save', () => {
       'setup.archive_channel_create_failed',
     ]);
     expect(finalizeGuildArchiveConfig).not.toHaveBeenCalled();
+  });
+
+  // Discord also answers 50013 when the create's overwrites allow a
+  // permission the bot lacks guild-wide, so 50013 alone does not prove
+  // MANAGE_CHANNELS is the missing one.
+  test('a Missing Permissions create refusal is a bare 502 when the bot does hold MANAGE_CHANNELS', async () => {
+    stubEnv();
+    authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
+    getGuildRoles.mockResolvedValue([
+      { id: GUILD_ID, name: '@everyone', permissions: 0n, managed: false },
+      {
+        id: BOT_ROLE_ID,
+        name: 'Clip',
+        permissions: PERMISSION.MANAGE_CHANNELS | PERMISSION.VIEW_CHANNEL | PERMISSION.READ_MESSAGE_HISTORY,
+        managed: true,
+      },
+    ]);
+    discordRequest.mockImplementation(async (method: string) => {
+      if (method === 'GET') {
+        return { id: BOT_USER_ID };
+      }
+      throw new DiscordApiError('Missing Permissions', { status: 403, code: 50013 });
+    });
+    const logged = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const response = await POST(postJson({ destination: 'create', channelId: null, allowedRoleIds: [], guildId: GUILD_ID }));
+
+    expect(response.status).toBe(502);
+    expect(await response.text()).toBe('');
+    expect(logged.mock.calls.map(([line]) => JSON.parse(line as string).event)).toEqual([
+      'setup.archive_channel_create_failed',
+    ]);
+  });
+
+  test('a Missing Permissions create refusal is a bare 502 when the bot\'s roles cannot be read', async () => {
+    stubEnv();
+    authenticateAdminSession.mockResolvedValue({ guildId: GUILD_ID, userId: USER_ID });
+    getMemberRoleIds.mockRejectedValue(new GuildLookupFailedError('member read failed', { retryable: true }));
+    discordRequest.mockImplementation(async (method: string) => {
+      if (method === 'GET') {
+        return { id: BOT_USER_ID };
+      }
+      throw new DiscordApiError('Missing Permissions', { status: 403, code: 50013 });
+    });
+    const logged = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const response = await POST(postJson({ destination: 'create', channelId: null, allowedRoleIds: [], guildId: GUILD_ID }));
+
+    expect(response.status).toBe(502);
+    expect(await response.text()).toBe('');
+    expect(logged.mock.calls.map(([line]) => JSON.parse(line as string).event)).toEqual([
+      'setup.archive_channel_create_failed',
+    ]);
   });
 
   test('a Missing Permissions refusal of the bot identity lookup is a bare 502, not the create refusal', async () => {
