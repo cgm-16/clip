@@ -1,0 +1,92 @@
+/* Clip pitch deck. Visual values come from tokens.css only. */
+@font-face { font-family: "JetBrains Mono"; src: url("fonts/JetBrainsMono-latin.woff2") format("woff2"); font-weight: 400 500; font-display: swap; }
+:root { color-scheme: dark; }
+:root[data-theme="light"] { color-scheme: light; }
+body {
+  margin: 0;
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-subtitle);
+  line-height: var(--lh-body);
+}
+main {
+  box-sizing: border-box;
+  max-width: 960px;
+  margin: 0 auto;
+  padding-block: 48px 96px;
+  padding-inline: 16px;
+}
+section h1,
+section h2 {
+  margin: 0 0 24px;
+  color: var(--text);
+  outline: none;
+  font-size: var(--fs-display);
+  line-height: var(--lh-display);
+  text-wrap: balance;
+  font-weight: 600;
+}
+section p,
+section li {
+  color: var(--text-2);
+  max-width: 68ch;
+}
+.muted { color: var(--muted); }
+a { color: var(--accent-text); text-decoration: underline; text-underline-offset: 2px; }
+a:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+code { font-family: var(--font-mono); }
+.controls {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  padding-block: 12px calc(12px + env(safe-area-inset-bottom, 0px));
+  padding-inline: 16px;
+  background: var(--raised);
+  border-top: 1px solid var(--border);
+}
+.controls button {
+  font: inherit;
+  color: var(--text);
+  background: var(--sunken);
+  border: 1px solid var(--control-border);
+  border-radius: 2px;
+  padding: 8px 16px;
+  cursor: pointer;
+}
+.controls button:disabled {
+  color: var(--faint);
+  cursor: default;
+}
+.controls button:focus-visible,
+section h1:focus-visible,
+section h2:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset);
+}
+#counter { font-family: var(--font-mono); color: var(--muted); }
+.lead { font-size: var(--fs-title); color: var(--text); }
+.positioning { overflow-x: auto; }
+.positioning table { border-collapse: collapse; }
+.positioning th,
+.positioning td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; vertical-align: top; }
+.diagram { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.diagram > div { border: 1px solid var(--border); border-radius: 2px; padding: 16px; }
+.diagram > div,
+.shots figure { min-width: 0; }
+.shots { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.shots img,
+section > img { max-width: 100%; height: auto; border: 1px solid var(--border); border-radius: 2px; }
+figure { margin: 0; }
+figcaption { color: var(--muted); }
+.facts dt { color: var(--text); font-weight: 600; }
+.facts dd { margin: 0 0 12px; color: var(--text-2); }
+@media (max-width: 640px) {
+  .diagram,
+  .shots { grid-template-columns: 1fr; }
+}

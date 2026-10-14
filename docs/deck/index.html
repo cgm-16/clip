@@ -1,0 +1,142 @@
+  <title>Clip Pitch Deck</title>
+  <!--
+    Asset names are the Artifact's published paths, not repo paths:
+      tokens.css -> /tokens.css
+      deck.css, deck.js -> docs/deck/
+      img/<file>.png -> docs/evidence/wave-6/<file>.png
+      fonts/JetBrainsMono-latin.woff2 -> app/fonts/JetBrainsMono-latin.woff2
+  -->
+  <link rel="stylesheet" href="tokens.css">
+  <link rel="stylesheet" href="deck.css">
+  <main>
+    <section aria-labelledby="s1">
+      <h1 id="s1" tabindex="-1">Clip</h1>
+      <p class="lead">Deliberate community memory for Discord.</p>
+      <p class="muted">A Discord bot and admin web app, scoped, directed, deployed and verified by <a href="https://github.com/cgm-16" target="_blank" rel="noopener noreferrer">cgm-16</a>. October 2026.</p>
+    </section>
+    <section aria-labelledby="s2">
+      <h2 id="s2" tabindex="-1">Pins were never meant to be memory</h2>
+      <p>Discord pins are a short list, locked to one channel and managed by moderators. The current limit is 250 per channel.</p>
+      <p>The starting point was concrete: a community had to delete old pins to make room for new ones.</p>
+      <p>Pin count is the symptom. The gap is that a community has no low-friction way to say <em>"this is worth keeping for us."</em></p>
+    </section>
+    <section aria-labelledby="s3">
+      <h2 id="s3" tabindex="-1">What Clip is, and is not</h2>
+      <div class="positioning" tabindex="0" role="region" aria-label="Positioning table">
+        <table>
+          <thead><tr><th scope="col">Primitive</th><th scope="col">What it means</th></tr></thead>
+          <tbody>
+            <tr><td>Discord pin</td><td>a moderator says this matters <strong>in this channel</strong></td></tr>
+            <tr><td>Personal bookmark</td><td><strong>I</strong> want to see this later</td></tr>
+            <tr><td>Starboard</td><td><strong>enough people</strong> liked it</td></tr>
+            <tr><td>Pin archiver</td><td>it <strong>was already pinned</strong>, and overflowed</td></tr>
+            <tr><td>Bulk logger</td><td>keep <strong>everything</strong>, filter later</td></tr>
+            <tr><td><strong>Clip</strong></td><td><strong>a member with permission says this is worth preserving for the community</strong></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Clip is deliberate memory: one visible message, preserved on purpose, with no pin first, no popularity threshold and no transcript.</p>
+    </section>
+    <section aria-labelledby="s4">
+      <h2 id="s4" tabindex="-1">How it works</h2>
+      <ol>
+        <li>A member right-clicks a message and picks Apps → <strong>Clip</strong>.</li>
+        <li>The archive channel gets two messages: a provenance line (author, source channel, time), then a forward of the message.</li>
+        <li>The original gets a 📎 marker, and its author gets a DM with a remove button. Both are best-effort: a clip still succeeds without them.</li>
+      </ol>
+      <p class="muted">Why two messages: Discord rejects a forward that carries any content of its own (error <code>160011</code>), and a forward's snapshot omits its author. So provenance has to come from Clip's own records, posted alongside.</p>
+      <img src="img/p2-archive.png" alt="The #clip-archive channel showing a provenance line from Clip (author, channel, time) followed by the forwarded message.">
+      <p class="muted">Screenshots from a dedicated test server; the tester shown consented to appear.</p>
+    </section>
+    <section aria-labelledby="s5">
+      <h2 id="s5" tabindex="-1">Discord keeps the content</h2>
+      <p>The central architecture decision is an ownership boundary.</p>
+      <div class="diagram">
+        <div>
+          <h3>Discord</h3>
+          <p>message bodies · embeds, attachments, media · rendered snapshots · user and channel display names</p>
+        </div>
+        <div>
+          <h3>PostgreSQL</h3>
+          <p>guild configuration and allowed roles · Clip identity and state machine · per-member preservation signals · removal tombstones · setup tokens and admin sessions</p>
+        </div>
+      </div>
+      <p>Clip stores no message bodies, attachments, embed payloads, avatars, search index or embeddings. Deleting a server's Clip data erases only Clip's control state. The archive channel and every message in it stay in Discord.</p>
+    </section>
+    <section aria-labelledby="s6">
+      <h2 id="s6" tabindex="-1">Setup and the web archive</h2>
+      <p>An admin runs <code>/setup</code> in Discord and gets a one-time link valid for 15 minutes. On the web, they choose the archive channel and the roles allowed to clip. Admins also get a read-only web archive of the server's clips.</p>
+      <div class="shots">
+        <figure>
+          <img src="img/p6-form.png" alt="Clip's setup screen with the recommended option selected: create a new private archive channel.">
+          <figcaption>Setup</figcaption>
+        </figure>
+        <figure>
+          <img src="img/burst-screen-d.png" alt="Clip's web archive listing clipped messages with author, source channel, time and a link to the original.">
+          <figcaption>Web archive</figcaption>
+        </figure>
+      </div>
+      <p class="muted">Screenshots from a dedicated test server; the tester shown consented to appear.</p>
+    </section>
+    <section aria-labelledby="s7">
+      <h2 id="s7" tabindex="-1">The hard parts</h2>
+      <ul>
+        <li><strong>One canonical Clip per message, under concurrency.</strong> Uniqueness is enforced by the database, and anything that depends on the clipper count takes a row lock. There is no check-then-insert. Tested against real PostgreSQL.</li>
+        <li><strong>Removal wins.</strong> When the author or an admin removes a clip, that overrides every clipper and leaves a tombstone that blocks the message from being clipped again.</li>
+        <li><strong>Never half-archived.</strong> A Clip never becomes active with a missing or partial archive.</li>
+        <li><strong>Platform facts checked before they were built on</strong>, including <code>160011</code> (a forward cannot carry content), snapshots without <code>author</code>, and the four forwardable message types.</li>
+        <li><strong>One slipped through.</strong> A poll is an ordinary message (type 0) with a poll attached, so the type check let it through. Reading the check before the live run found the gap, the run confirmed it, and polls are now refused before any state is written (#84).</li>
+      </ul>
+    </section>
+    <section aria-labelledby="s8">
+      <h2 id="s8" tabindex="-1">A cut was a decision</h2>
+      <p>On 2026-08-20, 23 hours before the assignment deadline, Claude Code measured the remaining work against the project's own velocity (Wave 1 ≈ 6 h, Wave 2 ≈ 10 h) and put the arithmetic to me instead of absorbing it. It wasn't going to fit, so I cut the web archive and kept the Discord path and minimal setup.</p>
+      <p>I recorded the cut as a real reduction of approved scope, not as drift.</p>
+      <p>Afterwards, I restored it with evidence. The web archive shipped on 2026-10-09 (PR #61). On 2026-10-14 the restoration's browser end-to-end gate passed 8/8 against production on <code>sha-b845a59</code>, and again on <code>sha-3ed1d60</code>.</p>
+    </section>
+    <section aria-labelledby="s9">
+      <h2 id="s9" tabindex="-1">How I built it</h2>
+      <p>Claude Code was the implementer. I held the product and architecture decisions. During the restoration, every PR got an independent review before it opened, and every code change started with a failing test, recorded before the fix.</p>
+      <p>The failures I recorded share one shape: <strong>rigorous checking aimed one step to the side of the claim it was meant to support.</strong> Here are two, and what caught them.</p>
+      <article>
+        <h3>The forward that couldn't carry its own label</h3>
+        <p><strong>What happened:</strong> an AI-written plan put provenance and the forward into one archive post.</p>
+        <p><strong>Caught by:</strong> a documentation check before any code. Discord returns <code>160011</code> for a forward with content, and snapshots have no author.</p>
+        <p><strong>What changed:</strong> every archive entry is two messages, and provenance comes from Clip's own records.</p>
+      </article>
+      <article>
+        <h3>A reviewed fix that failed its first real run</h3>
+        <p><strong>What happened:</strong> <code>deploy.sh</code> pinned its rollout check to a revision number. Under the <code>Recreate</code> strategy, Kubernetes bumps that number only after the rollout starts, so the script read the old one and failed with <code>desired revision (12) is different from the running revision (13)</code>. The deploy itself was healthy.</p>
+        <p><strong>Caught by:</strong> the script's own verification gate, on production.</p>
+        <p><strong>What changed:</strong> the script now verifies by generation, and a regression test reproduces the exact error (PR #97).</p>
+      </article>
+    </section>
+    <section aria-labelledby="s10">
+      <h2 id="s10" tabindex="-1">Proof it ships</h2>
+      <dl class="facts">
+        <dt>Running</dt>
+        <dd>self-hosted on k3s behind Traefik, image <code>sha-3ed1d60</code> <span class="muted">(2026-10-14)</span></dd>
+        <dt>Tests</dt>
+        <dd>718 tests in 49 files; the database tests run against real PostgreSQL. <code>main</code> at <code>3ed1d60</code> <span class="muted">(2026-10-14)</span></dd>
+        <dt>End to end</dt>
+        <dd>Playwright 8/8 against production, <code>sha-3ed1d60</code> <span class="muted">(2026-10-14)</span></dd>
+        <dt>Permissions</dt>
+        <dd>measured one at a time on a fresh test server, <code>sha-cdcabaf</code> <span class="muted">(2026-10-13)</span>. The source-channel <code>50001</code> and Message Content <code>160014</code> refusals were confirmed from logs on <code>sha-3ed1d60</code> <span class="muted">(2026-10-14)</span>.</dd>
+        <dt>Footprint</dt>
+        <dd>idle at 3 millicores of CPU and 88 MiB on <code>sha-b845a59</code> <span class="muted">(2026-10-14)</span>. Load was never measured.</dd>
+        <dt>Cost</dt>
+        <dd>USD 8 a year for the domain. The existing home cluster absorbs electricity, hardware and operator time, and those are real costs.</dd>
+      </dl>
+    </section>
+    <section aria-labelledby="s11">
+      <h2 id="s11" tabindex="-1">Try it</h2>
+      <p><a href="https://discord.com/oauth2/authorize?client_id=1539212298600718416&amp;scope=bot+applications.commands&amp;permissions=68688&amp;integration_type=0" target="_blank" rel="noopener noreferrer">Add Clip to a test server</a>. It's a demo hosted on my home server: use a test server, and expect no uptime guarantee.</p>
+      <p>Source code: <a href="https://github.com/cgm-16/clip" target="_blank" rel="noopener noreferrer">github.com/cgm-16/clip</a>. MIT licence.</p>
+    </section>
+  </main>
+  <nav class="controls" aria-label="Slides">
+    <button type="button" id="prev">Previous</button>
+    <span id="counter" aria-live="polite"></span>
+    <button type="button" id="next">Next</button>
+  </nav>
+  <script src="deck.js"></script>
