@@ -436,7 +436,7 @@ Not fixed:
 
 ## 2026-10-15 — #87 log polish
 
-- A refused re-clip of a tombstone (`REMOVED_BY_AUTHOR` / `REMOVED_BY_ADMIN`) now logs `clip.rejected` with the tombstone status as `errorCode`, at the claim and at the joined lock; the four `clip.rejected` call sites share `logClipRejected`. The joined-lock path has no race seam in `tests/clip/service.test.ts`, so only the claim path is tested.
+- A refused re-clip of a tombstone (`REMOVED_BY_AUTHOR` / `REMOVED_BY_ADMIN`) now logs `clip.rejected` with the tombstone status as `errorCode`, at the claim and at the joined lock; the four `clip.rejected` call sites share `logClipRejected`. The claim path is tested in `tests/clip/service.test.ts`; the joined-lock path, where a removal lands between the claim and the lock, uses the `lockClip` seam in `tests/clip/takeover-repoint.test.ts`.
 - The marker failure events are `clip.marker_add_failed` and `clip.marker_remove_failed`; they were the only event names without a `domain.` prefix.
 - A successful repost logs `clip.reposted` with the new archive pair, before the old pair is deleted.
 - The R5 note in `docs/evidence/wave-6/RESULTS.md` ("Marker failure logs nothing (ArchiveMarker.add is silent by contract)") misread the contract: `marker.ts` has logged `archive_marker_add_failed` since `cf3d4c5` (2026-08-20). The R5 log read listed only `clip.*` lines, and the un-prefixed name is the likely reason it was missed. Not verifiable now: the 2026-10-13 pod's logs are gone. RESULTS.md is evidence and is left as written.
