@@ -60,10 +60,10 @@ export function createArchiveMarker(options: CreateArchiveMarkerOptions): Archiv
 
   return {
     add(sourceChannelId, sourceMessageId) {
-      return call('PUT', sourceChannelId, sourceMessageId, 'archive_marker_add_failed');
+      return call('PUT', sourceChannelId, sourceMessageId, 'clip.marker_add_failed');
     },
     remove(sourceChannelId, sourceMessageId) {
-      return call('DELETE', sourceChannelId, sourceMessageId, 'archive_marker_remove_failed');
+      return call('DELETE', sourceChannelId, sourceMessageId, 'clip.marker_remove_failed');
     },
   };
 }

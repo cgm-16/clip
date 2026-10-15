@@ -191,4 +191,61 @@ describe('stale PENDING takeover', () => {
     expect(gateway.createCalls.map((call) => call.archiveChannelId)).toEqual([newChannelId]);
     expect((await prisma.clip.findUnique({ where: key }))?.status).toBe('ACTIVE');
   });
+
+  // A removal can commit between a re-clip's claim and its lock. The refusal
+  // is the same tombstone refusal, so it is logged like the claim-time one.
+  test('a removal between the claim and the lock refuses the re-clip and logs the tombstone', async () => {
+    const guildId = fakeSnowflake();
+    const allowedRoleId = fakeSnowflake();
+    const sourceMessageId = fakeSnowflake();
+    const sourceAuthorUserId = fakeSnowflake();
+    cleanupGuildIds.push(guildId);
+    await prisma.guildConfig.create({
+      data: {
+        guildId,
+        archiveChannelId: fakeSnowflake(),
+        configuredByUserId: fakeSnowflake(),
+        allowedRoles: { create: [{ roleId: allowedRoleId }] },
+      },
+    });
+    const clipInput = (clipperUserId: string) => ({
+      guildId,
+      sourceChannelId: fakeSnowflake(),
+      sourceMessageId,
+      sourceAuthorUserId,
+      clipperUserId,
+      clipperRoleIds: [allowedRoleId],
+      clipperHasManageGuild: false,
+    });
+    expect((await service.clip(clipInput(fakeSnowflake()))).kind).toBe('CREATED');
+
+    let removal: Awaited<ReturnType<typeof service.removeByAuthorOrAdmin>> | undefined;
+    seam.beforeNextLockClip = async () => {
+      removal = await service.removeByAuthorOrAdmin({
+        guildId,
+        sourceMessageId,
+        invokerUserId: sourceAuthorUserId,
+        invokerHasManageGuild: false,
+      });
+    };
+    const clipper = fakeSnowflake();
+    const raced = await service.clip(clipInput(clipper));
+
+    expect(seam.beforeNextLockClip).toBeNull();
+    expect(removal?.kind).toBe('REMOVED');
+    expect(raced).toEqual({ kind: 'REMOVED_BY_AUTHOR_OR_ADMIN' });
+    const lines = vi
+      .mocked(console.log)
+      .mock.calls.map(([line]) => JSON.parse(String(line)) as Record<string, string>)
+      .filter((line) => line.event === 'clip.rejected');
+    expect(lines).toEqual([
+      {
+        event: 'clip.rejected',
+        guildId,
+        sourceMessageId,
+        userId: clipper,
+        errorCode: 'REMOVED_BY_AUTHOR',
+      },
+    ]);
+  });
 });

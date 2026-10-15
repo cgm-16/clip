@@ -448,6 +448,33 @@ describe('clip service', () => {
     expect((await readClip(fixture))?.status).toBe('REMOVED_BY_AUTHOR');
   });
 
+  test.each([
+    ['REMOVED_BY_AUTHOR', false],
+    ['REMOVED_BY_ADMIN', true],
+  ])('a re-clip of a %s tombstone logs one rejection naming it', async (status, hasManageGuild) => {
+    const fixture = await seedConfiguredGuild();
+    await service.clip(clipInput(fixture, fakeSnowflake()));
+    await service.removeByAuthorOrAdmin({
+      guildId: fixture.guildId,
+      sourceMessageId: fixture.sourceMessageId,
+      invokerUserId: hasManageGuild ? fakeSnowflake() : fixture.sourceAuthorUserId,
+      invokerHasManageGuild: hasManageGuild,
+    });
+    const clipper = fakeSnowflake();
+
+    await service.clip(clipInput(fixture, clipper));
+
+    const lines = rawLogLines('clip.rejected');
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0])).toEqual({
+      event: 'clip.rejected',
+      guildId: fixture.guildId,
+      sourceMessageId: fixture.sourceMessageId,
+      userId: clipper,
+      errorCode: status,
+    });
+  });
+
   test('admin removal leaves a REMOVED_BY_ADMIN tombstone with the same override', async () => {
     const fixture = await seedConfiguredGuild();
     await service.clip(clipInput(fixture, fakeSnowflake()));
@@ -905,6 +932,15 @@ describe('clip service', () => {
       expect(clip?.archiveProvenanceMessageId).toBe('provenance-2');
       expect(clip?.archiveForwardMessageId).toBe('forward-2');
       expect(await countClipperRows(fixture)).toBe(2);
+      const lines = rawLogLines('clip.reposted');
+      expect(lines).toHaveLength(1);
+      expect(JSON.parse(lines[0])).toEqual({
+        event: 'clip.reposted',
+        guildId: fixture.guildId,
+        sourceMessageId: fixture.sourceMessageId,
+        archiveProvenanceMessageId: PAIR_2.provenanceMessageId,
+        archiveForwardMessageId: PAIR_2.forwardMessageId,
+      });
     });
 
     test('is reposted when the same member clips again, who is told it is already clipped', async () => {
@@ -983,6 +1019,7 @@ describe('clip service', () => {
         ...facts,
       });
       expect(rawLogLines('clip.archive_failed')).toHaveLength(0);
+      expect(rawLogLines('clip.reposted')).toHaveLength(0);
     });
 
     test('a repost the last unclip overtakes is taken down and never published', async () => {
@@ -1024,6 +1061,7 @@ describe('clip service', () => {
       expect(tombstone?.archiveProvenanceMessageId).toBeNull();
       expect(tombstone?.archiveForwardMessageId).toBeNull();
       expect(await countClipperRows(fixture)).toBe(0);
+      expect(rawLogLines('clip.reposted')).toHaveLength(0);
     });
 
     test('a repost that straddles deletion and re-setup is taken down, not applied', async () => {

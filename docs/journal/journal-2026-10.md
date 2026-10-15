@@ -433,3 +433,10 @@ Not fixed:
 - **Deploy:** Ori pulled main to `f661507` after its release run succeeded and ran `bash scripts/deploy.sh`, which printed `deployed ghcr.io/cgm-16/clip:sha-f661507`. Ori read the image back: `ghcr.io/cgm-16/clip:sha-f661507`.
 - **e2e:** `bash scripts/e2e-prod.sh 1559501336641404960`: 8 of 8 in 10.5s. The archive list took 2.5s and setup with a save 3.6s.
 - **Setup timing:** 3.6s is back in line with the 3.7s and 4.1s of the `sha-9b9d0eb` runs. The 5.6s on `sha-55602c3` stays unexplained but did not repeat; treat it as a one-off unless it returns.
+
+## 2026-10-15 — #87 log polish
+
+- A refused re-clip of a tombstone (`REMOVED_BY_AUTHOR` / `REMOVED_BY_ADMIN`) now logs `clip.rejected` with the tombstone status as `errorCode`, at the claim and at the joined lock; the four `clip.rejected` call sites share `logClipRejected`. The claim path is tested in `tests/clip/service.test.ts`; the joined-lock path, where a removal lands between the claim and the lock, uses the `lockClip` seam in `tests/clip/takeover-repoint.test.ts`.
+- The marker failure events are `clip.marker_add_failed` and `clip.marker_remove_failed`; they were the only event names without a `domain.` prefix.
+- A successful repost logs `clip.reposted` with the new archive pair, before the old pair is deleted.
+- The R5 note in `docs/evidence/wave-6/RESULTS.md` ("Marker failure logs nothing (ArchiveMarker.add is silent by contract)") misread the contract: `marker.ts` has logged `archive_marker_add_failed` since `cf3d4c5` (2026-08-20). The R5 log read listed only `clip.*` lines, and the un-prefixed name is the likely reason it was missed. Not verifiable now: the 2026-10-13 pod's logs are gone. RESULTS.md is evidence and is left as written.
