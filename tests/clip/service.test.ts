@@ -1285,6 +1285,82 @@ describe('clip service', () => {
     expect(clip?.archiveForwardMessageId).toBe('forward-9');
   });
 
+  test('a revival whose archive channel was repointed during the delete fails the Clip instead of posting into the old channel', async () => {
+    // The repoint commits inside the Discord delete window, with the old
+    // channel confirmed gone (`goneArchiveChannelId`), because a DELETING row
+    // holding ids would otherwise refuse it. Reviving would post a pair into
+    // the old channel, `publishArchive` would decline it, and the loop would
+    // post and delete there again for as long as a clipper remained.
+    const fixture = await seedConfiguredGuild();
+    const first = fakeSnowflake();
+    const reviver = fakeSnowflake();
+    const newChannelId = fakeSnowflake();
+    await service.clip(clipInput(fixture, first));
+    // Bounds the RED run: an unguarded finalizer would loop, so the second
+    // create into any channel throws and ends it through `recordArchiveFailure`.
+    const realCreate = gateway.createArchiveMessage.bind(gateway);
+    let creates = 0;
+    gateway.createArchiveMessage = async (input) => {
+      creates += 1;
+      if (creates > 2) throw new Error('loop bound');
+      return realCreate(input);
+    };
+    const logSpyCallsBefore = vi.mocked(console.log).mock.calls.length;
+    gateway.onNextDelete(async () => {
+      expect((await service.clip(clipInput(fixture, reviver))).kind).toBe('CLIPPER_ADDED');
+      expect(
+        await finalizeGuildArchiveConfig({
+          guildId: fixture.guildId,
+          sessionTokenHash: await liveSession(fixture.guildId),
+          archiveChannelId: newChannelId,
+          configuredByUserId: fakeSnowflake(),
+          allowedRoleIds: [fixture.allowedRoleId],
+          goneArchiveChannelId: fixture.archiveChannelId,
+        }),
+      ).toEqual({ kind: 'SAVED' });
+    });
+
+    const result = await service.unclip({
+      guildId: fixture.guildId,
+      sourceMessageId: fixture.sourceMessageId,
+      clipperUserId: first,
+    });
+
+    expect(result).toEqual({ kind: 'UNCLIPPED', remaining: 0 });
+    const clip = await readClip(fixture);
+    expect(clip?.status).toBe('FAILED');
+    expect(clip?.archiveProvenanceMessageId).toBeNull();
+    expect(clip?.archiveForwardMessageId).toBeNull();
+    expect(await countClipperRows(fixture)).toBe(1);
+    // Only the original pair was ever created; nothing was posted afterwards.
+    expect(gateway.createCalls).toHaveLength(1);
+    expect(gateway.deleteCalls).toHaveLength(1);
+    const toFailed = vi
+      .mocked(console.log)
+      .mock.calls.slice(logSpyCallsBefore)
+      .map(([line]) => JSON.parse(line as string))
+      .filter((line) => line.event === 'clip.state_changed' && line.stateTo === 'FAILED');
+    expect(toFailed).toEqual([
+      {
+        event: 'clip.state_changed',
+        guildId: fixture.guildId,
+        sourceMessageId: fixture.sourceMessageId,
+        stateFrom: 'DELETING',
+        stateTo: 'FAILED',
+      },
+    ]);
+
+    expect(await service.clip(clipInput(fixture, reviver))).toEqual({
+      kind: 'CREATED',
+      archive: { provenanceMessageId: 'provenance-2', forwardMessageId: 'forward-2' },
+    });
+    expect(gateway.createCalls.map((call) => call.archiveChannelId)).toEqual([
+      fixture.archiveChannelId,
+      newChannelId,
+    ]);
+    expect((await readClip(fixture))?.status).toBe('ACTIVE');
+  });
+
   test('a revival whose archive cannot be rebuilt keeps no ids for the pair it deleted', async () => {
     // The one surviving state that exposes the finalizer's id clear. Every
     // other outcome hides it: a tombstone clears the ids on its own path, a

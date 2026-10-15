@@ -200,6 +200,19 @@ export function lockClip<T>(
 }
 
 /**
+ * The guild's configured archive channel, or null when it has none. Read on the
+ * transaction client, so under the guild lock it is the value no repoint can
+ * change before the transaction ends.
+ */
+export async function readArchiveChannelId(tx: TxClient, guildId: string): Promise<string | null> {
+  const config = await tx.guildConfig.findUnique({
+    where: { guildId },
+    select: { archiveChannelId: true },
+  });
+  return config?.archiveChannelId ?? null;
+}
+
+/**
  * Runs `fn` with the guild's archive configuration locked `FOR UPDATE`.
  * Resolves to null without calling `fn` when setup has not created a row yet.
  *
