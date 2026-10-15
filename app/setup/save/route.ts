@@ -362,8 +362,8 @@ export async function POST(request: NextRequest) {
 
 /**
  * The current archive channel cannot change yet (finding C3): live Clips depend
- * on it (`LIVE_CLIPS`), or a Clip is still being posted into it
- * (`CLIP_IN_PROGRESS`).
+ * on it (`LIVE_CLIPS`), or a Clip is still being posted into it or removed
+ * from it (`CLIP_IN_PROGRESS`).
  */
 function archiveChangeConflict(blocker: ArchiveChangeBlocker): Response {
   const reason = blocker === 'ARCHIVED' ? 'LIVE_CLIPS' : 'CLIP_IN_PROGRESS';

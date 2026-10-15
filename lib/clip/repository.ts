@@ -200,6 +200,19 @@ export function lockClip<T>(
 }
 
 /**
+ * The guild's configured archive channel, or null when it has none. Read on the
+ * transaction client, so under the guild lock it is the value no repoint can
+ * change before the transaction ends.
+ */
+export async function readArchiveChannelId(tx: TxClient, guildId: string): Promise<string | null> {
+  const config = await tx.guildConfig.findUnique({
+    where: { guildId },
+    select: { archiveChannelId: true },
+  });
+  return config?.archiveChannelId ?? null;
+}
+
+/**
  * Runs `fn` with the guild's archive configuration locked `FOR UPDATE`.
  * Resolves to null without calling `fn` when setup has not created a row yet.
  *
@@ -585,7 +598,7 @@ async function findArchiveChangeBlockerWithClient(
     where: {
       guildId,
       OR: [
-        { status: { notIn: [...TOMBSTONE_STATUSES, 'FAILED', 'PENDING'] } },
+        { status: { notIn: [...TOMBSTONE_STATUSES, 'FAILED', 'PENDING', 'DELETING'] } },
         { archiveProvenanceMessageId: { not: null } },
         { archiveForwardMessageId: { not: null } },
       ],
@@ -596,7 +609,11 @@ async function findArchiveChangeBlockerWithClient(
     return 'ARCHIVED';
   }
   const inProgress = await client.clip.findFirst({
-    where: { guildId, status: 'PENDING', updatedAt: { gte: leaseExpiredBefore() } },
+    where: {
+      guildId,
+      status: { in: ['PENDING', 'DELETING'] },
+      updatedAt: { gte: leaseExpiredBefore() },
+    },
     select: { guildId: true },
   });
   return inProgress === null ? null : 'IN_PROGRESS';
@@ -630,6 +647,12 @@ async function findArchiveChangeBlockerWithClient(
  * message would take it over), so it does not block; a creator that is merely
  * slow is refused at publish like a FAILED re-clip, below. A PENDING Clip
  * holding either archive id blocks through the id conditions, as ARCHIVED.
+ * A DELETING Clip holding no archive id follows the same lease rule: its
+ * finalizer may still be about to revive it into the old channel. Past the
+ * lease the row does not block: a finalizer that already decided to revive
+ * may post one pair that publish declines and takes down, and the next pass
+ * finds the guild repointed and fails the Clip instead of reviving. A
+ * DELETING Clip holding either archive id blocks through the id conditions.
  * A FAILED Clip holding neither id does not block: it has nothing in the old
  * channel to strand, and a re-clip that posted into the old channel while a
  * repoint committed is refused at publish, where the channel it posted into
