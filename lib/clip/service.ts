@@ -343,8 +343,8 @@ export function createClipService(gateway: DiscordArchiveGateway) {
    * ACTIVE state §17 case 7 forbids.
    *
    * `archiveChannelId` is the channel the pair was posted into. A FAILED Clip
-   * holding no ids, or a PENDING one past its lease, does not block a repoint
-   * (`findArchiveChangeBlocker`), so the guild may have moved off that channel
+   * holding no ids, or a PENDING or DELETING one holding no ids past its lease,
+   * does not block a repoint (`findArchiveChangeBlocker`), so the guild may have moved off that channel
    * during the post; the publish is then declined.
    */
   async function publishArchive(
@@ -629,10 +629,14 @@ export function createClipService(gateway: DiscordArchiveGateway) {
           // would post into a channel it has left, where the publish is
           // declined and the pair taken down again, for as long as a clipper
           // remains. FAILED lets their next clip rebuild in the current channel.
-          assertTransition(locked.status, 'FAILED');
-          const { applied } = await markFailed(tx, key.guildId, key.sourceMessageId);
-          if (applied) {
-            logTransition(key, locked.status, 'FAILED');
+          // Only a DELETING row is this finalizer's to fail: a slow one can find
+          // the row already FAILED by a takeover, or re-claimed PENDING.
+          if (locked.status === 'DELETING') {
+            assertTransition(locked.status, 'FAILED');
+            const { applied } = await markFailed(tx, key.guildId, key.sourceMessageId);
+            if (applied) {
+              logTransition(key, locked.status, 'FAILED');
+            }
           }
           return { revived: false as const };
         }
