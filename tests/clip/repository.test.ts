@@ -908,11 +908,53 @@ describe('clip repository', () => {
       'ARCHIVED when a %s Clip exists',
       async (status) => {
         const guildId = trackedGuildId();
-        await makeClip(guildId, status);
+        await makeClip(
+          guildId,
+          status,
+          status === 'DELETING' ? { archiveForwardMessageId: fakeSnowflake() } : {},
+        );
 
         expect(await findArchiveChangeBlocker(guildId)).toBe('ARCHIVED');
       },
     );
+
+    test('IN_PROGRESS for a DELETING Clip holding no archive id inside the lease', async () => {
+      const guildId = trackedGuildId();
+      await makeClip(guildId, 'DELETING');
+
+      expect(await findArchiveChangeBlocker(guildId)).toBe('IN_PROGRESS');
+    });
+
+    test('null for a DELETING Clip holding no archive id past the lease', async () => {
+      const guildId = trackedGuildId();
+      await makeClip(guildId, 'DELETING', {}, PAST_LEASE);
+
+      expect(await findArchiveChangeBlocker(guildId)).toBeNull();
+    });
+
+    test.each([
+      ['provenance', { archiveProvenanceMessageId: 'p' }],
+      ['forward', { archiveForwardMessageId: 'f' }],
+    ])('ARCHIVED for a DELETING Clip past the lease holding the %s id', async (_name, ids) => {
+      const guildId = trackedGuildId();
+      await makeClip(guildId, 'DELETING', ids, PAST_LEASE);
+
+      expect(await findArchiveChangeBlocker(guildId)).toBe('ARCHIVED');
+    });
+
+    test('repointing is refused with IN_PROGRESS while an id-less DELETING Clip is inside the lease', async () => {
+      const guildId = await configuredGuildId();
+      await makeClip(guildId, 'DELETING');
+
+      expect(await repoint(guildId)).toEqual({ kind: 'CONFLICT', blocker: 'IN_PROGRESS' });
+    });
+
+    test('repointing is allowed past the lease of an id-less DELETING Clip', async () => {
+      const guildId = await configuredGuildId();
+      await makeClip(guildId, 'DELETING', {}, PAST_LEASE);
+
+      expect(await repoint(guildId)).toEqual({ kind: 'SAVED' });
+    });
 
     test('null when the only Clip is FAILED and holds no archive id', async () => {
       const guildId = trackedGuildId();
