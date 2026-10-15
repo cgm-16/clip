@@ -1412,6 +1412,74 @@ describe('clip service', () => {
     ]);
   });
 
+  test('a repoint past an id-less DELETING lease under a live finalizer posts one stray pair, not a loop', async () => {
+    // The finalizer has cleared the deleted pair's ids and decided to revive.
+    // The row then holds no id and is DELETING past its lease, so a repoint
+    // without `goneArchiveChannelId` is allowed. The revival's pair lands in the
+    // old channel, is declined at publish, and the next pass fails the Clip.
+    const fixture = await seedConfiguredGuild();
+    const first = fakeSnowflake();
+    const reviver = fakeSnowflake();
+    const newChannelId = fakeSnowflake();
+    await service.clip(clipInput(fixture, first));
+    gateway.onNextDelete(async () => {
+      expect((await service.clip(clipInput(fixture, reviver))).kind).toBe('CLIPPER_ADDED');
+      gateway.onNextCreate(async () => {
+        await prisma.clip.update({
+          where: {
+            guildId_sourceMessageId: {
+              guildId: fixture.guildId,
+              sourceMessageId: fixture.sourceMessageId,
+            },
+          },
+          data: { updatedAt: new Date(Date.now() - 6 * 60_000) },
+        });
+        expect(
+          await finalizeGuildArchiveConfig({
+            guildId: fixture.guildId,
+            sessionTokenHash: await liveSession(fixture.guildId),
+            archiveChannelId: newChannelId,
+            configuredByUserId: fakeSnowflake(),
+            allowedRoleIds: [fixture.allowedRoleId],
+          }),
+        ).toEqual({ kind: 'SAVED' });
+      });
+    });
+
+    const result = await service.unclip({
+      guildId: fixture.guildId,
+      sourceMessageId: fixture.sourceMessageId,
+      clipperUserId: first,
+    });
+
+    expect(result).toEqual({ kind: 'UNCLIPPED', remaining: 0 });
+    const clip = await readClip(fixture);
+    expect(clip?.status).toBe('FAILED');
+    expect(clip?.archiveProvenanceMessageId).toBeNull();
+    expect(clip?.archiveForwardMessageId).toBeNull();
+    // The original pair plus the one stray revival pair.
+    expect(gateway.createCalls).toHaveLength(2);
+    expect(gateway.deleteCalls.map((call) => call.ids.provenanceMessageId)).toEqual([
+      'provenance-1',
+      'provenance-2',
+    ]);
+    expect(gateway.deleteCalls.map((call) => call.archiveChannelId)).toEqual([
+      fixture.archiveChannelId,
+      fixture.archiveChannelId,
+    ]);
+
+    expect(await service.clip(clipInput(fixture, reviver))).toEqual({
+      kind: 'CREATED',
+      archive: { provenanceMessageId: 'provenance-3', forwardMessageId: 'forward-3' },
+    });
+    expect(gateway.createCalls.map((call) => call.archiveChannelId)).toEqual([
+      fixture.archiveChannelId,
+      fixture.archiveChannelId,
+      newChannelId,
+    ]);
+    expect((await readClip(fixture))?.status).toBe('ACTIVE');
+  });
+
   test('a revival whose archive cannot be rebuilt keeps no ids for the pair it deleted', async () => {
     // The one surviving state that exposes the finalizer's id clear. Every
     // other outcome hides it: a tombstone clears the ids on its own path, a
