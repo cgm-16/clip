@@ -179,7 +179,8 @@ export function createClipService(gateway: DiscordArchiveGateway) {
    * Every call site has already committed the control-plane outcome the user
    * asked for; the Discord messages are the part that may be left behind. A
    * throw here would replace a recoverable orphan with an unrecoverable lie
-   * about what happened.
+   * about what happened. The failure log names the pair so an orphan can be
+   * found and deleted by hand.
    */
   async function deleteArchiveQuietly(
     key: ClipKey,
@@ -194,6 +195,8 @@ export function createClipService(gateway: DiscordArchiveGateway) {
         event: 'clip.archive_delete_failed',
         guildId: key.guildId,
         sourceMessageId: key.sourceMessageId,
+        archiveProvenanceMessageId: archive.provenanceMessageId,
+        archiveForwardMessageId: archive.forwardMessageId,
         errorCode: errorCodeOf(error),
       });
       return false;

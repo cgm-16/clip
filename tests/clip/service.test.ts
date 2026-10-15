@@ -704,6 +704,42 @@ describe('clip service', () => {
     });
   });
 
+  test('a failed cleanup delete logs the archive pair it left behind', async () => {
+    const fixture = await seedConfiguredGuild();
+    const clipperUserId = fakeSnowflake();
+    gateway.failNextCreate(
+      new ArchiveCreationFailedError('discord rate limited the post', {
+        retryable: true,
+        orphanedProvenanceMessageId: null,
+        step: 'provenance_post',
+        failure: { failure: 'http', httpStatus: '429', discordCode: '0' },
+      }),
+    );
+    await service.clip(clipInput(fixture, clipperUserId));
+    gateway.onNextCreate(async () => {
+      await finalizeGuildArchiveConfig({
+        guildId: fixture.guildId,
+        sessionTokenHash: await liveSession(fixture.guildId),
+        archiveChannelId: fakeSnowflake(),
+        configuredByUserId: fakeSnowflake(),
+        allowedRoleIds: [fixture.allowedRoleId],
+      });
+    });
+    gateway.failNextDelete(new Error('discord unavailable'));
+
+    await service.clip(clipInput(fixture, clipperUserId));
+
+    const lines = rawLogLines('clip.archive_delete_failed');
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0])).toMatchObject({
+      guildId: fixture.guildId,
+      sourceMessageId: fixture.sourceMessageId,
+      archiveProvenanceMessageId: 'provenance-1',
+      archiveForwardMessageId: 'forward-1',
+      errorCode: expect.any(String),
+    });
+  });
+
   // A PENDING Clip past the lease no longer blocks a repoint, so a creator that
   // is merely slow can post into the old channel while the repoint commits. Its
   // publish must be refused, the same as a re-clip's, or the Clip would go

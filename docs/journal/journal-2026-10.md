@@ -447,3 +447,10 @@ Not fixed:
 - **Check:** Ori re-clipped a removed message in `test2` (source `1559533420751618190`). `kubectl -n clip logs deploy/clip -c clip --since=5m | grep clip.rejected` returned one line, with `"errorCode":"REMOVED_BY_AUTHOR"` and the clipper's user id. The bot's reply was not reported.
 - **Instrument note:** an earlier grep, run before the re-clip, matched no log line and printed only kubectl's `Defaulted container` notice. That was expected and not a failure. The notice appears without `-c clip` because the pod also has the `migrate` init container.
 - **Not exercised live:** `clip.reposted` and the renamed `clip.marker_add_failed` and `clip.marker_remove_failed` events. Their tests cover them.
+
+## 2026-10-15 — Orphaned archive pairs are findable from the log
+
+- `deleteArchiveQuietly` has six callers, and any failed delete leaves the pair in the channel. `clip.archive_delete_failed` now carries both archive message ids so an orphan can be found and removed by hand.
+- The REST client retries a short rate limit up to three attempts. What strands a pair is a 5xx, a timeout, a network error, a rate limit longer than the client waits or still limited after three attempts, or a 403 after the bot lost access to the channel; a gone channel's 404 already counts as deleted.
+- Chosen by Ori over an inline retry (B) and an orphan table with deferred retry (C). C is architectural: a schema change plus a trigger, since P0 has no background worker.
+- The log has no archive channel key. The channel is the guild's configured one at the time of the line, or the old one on a declined publish after a repoint.
