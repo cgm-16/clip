@@ -451,6 +451,6 @@ Not fixed:
 ## 2026-10-15 — Orphaned archive pairs are findable from the log
 
 - `deleteArchiveQuietly` has six callers, and any failed delete leaves the pair in the channel. `clip.archive_delete_failed` now carries both archive message ids so an orphan can be found and removed by hand.
-- Rate limits are retried by the REST client. What strands a pair is a 5xx, a timeout or a network error, or a 403 after the bot lost access to the channel; a gone channel's 404 already counts as deleted.
+- The REST client retries a short rate limit up to three attempts. What strands a pair is a 5xx, a timeout, a network error, a rate limit longer than the client waits or still limited after three attempts, or a 403 after the bot lost access to the channel; a gone channel's 404 already counts as deleted.
 - Chosen by Ori over an inline retry (B) and an orphan table with deferred retry (C). C is architectural: a schema change plus a trigger, since P0 has no background worker.
 - The log has no archive channel key. The channel is the guild's configured one at the time of the line, or the old one on a declined publish after a repoint.
