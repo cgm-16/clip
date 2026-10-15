@@ -440,3 +440,10 @@ Not fixed:
 - The marker failure events are `clip.marker_add_failed` and `clip.marker_remove_failed`; they were the only event names without a `domain.` prefix.
 - A successful repost logs `clip.reposted` with the new archive pair, before the old pair is deleted.
 - The R5 note in `docs/evidence/wave-6/RESULTS.md` ("Marker failure logs nothing (ArchiveMarker.add is silent by contract)") misread the contract: `marker.ts` has logged `archive_marker_add_failed` since `cf3d4c5` (2026-08-20). The R5 log read listed only `clip.*` lines, and the un-prefixed name is the likely reason it was missed. Not verifiable now: the 2026-10-13 pod's logs are gone. RESULTS.md is evidence and is left as written.
+
+## 2026-10-15 — #87 verified live on `sha-93fdca4`
+
+- **Deploy:** Ori deployed #114 with `bash scripts/deploy.sh`, which printed `deployed ghcr.io/cgm-16/clip:sha-93fdca4`.
+- **Check:** Ori re-clipped a removed message in `test2` (source `1559533420751618190`). `kubectl -n clip logs deploy/clip -c clip --since=5m | grep clip.rejected` returned one line, with `"errorCode":"REMOVED_BY_AUTHOR"` and the clipper's user id. The bot's reply was not reported.
+- **Instrument note:** an earlier grep, run before the re-clip, matched no log line and printed only kubectl's `Defaulted container` notice. That was expected and not a failure. The notice appears without `-c clip` because the pod also has the `migrate` init container.
+- **Not exercised live:** `clip.reposted` and the renamed `clip.marker_add_failed` and `clip.marker_remove_failed` events. Their tests cover them.
