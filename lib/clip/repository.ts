@@ -648,9 +648,10 @@ async function findArchiveChangeBlockerWithClient(
  * slow is refused at publish like a FAILED re-clip, below. A PENDING Clip
  * holding either archive id blocks through the id conditions, as ARCHIVED.
  * A DELETING Clip holding no archive id follows the same lease rule: its
- * finalizer may still be about to revive it into the old channel, but a
- * finalizer that outlives the lease and finds the guild repointed fails the
- * Clip instead of reviving, so past the lease the row does not block. A
+ * finalizer may still be about to revive it into the old channel. Past the
+ * lease the row does not block: a finalizer that already decided to revive
+ * may post one pair that publish declines and takes down, and the next pass
+ * finds the guild repointed and fails the Clip instead of reviving. A
  * DELETING Clip holding either archive id blocks through the id conditions.
  * A FAILED Clip holding neither id does not block: it has nothing in the old
  * channel to strand, and a re-clip that posted into the old channel while a
