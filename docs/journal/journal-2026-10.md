@@ -454,3 +454,11 @@ Not fixed:
 - The REST client retries a short rate limit up to three attempts. What strands a pair is a 5xx, a timeout, a network error, a rate limit longer than the client waits or still limited after three attempts, or a 403 after the bot lost access to the channel; a gone channel's 404 already counts as deleted.
 - Chosen by Ori over an inline retry (B) and an orphan table with deferred retry (C). C is architectural: a schema change plus a trigger, since P0 has no background worker.
 - The log has no archive channel key. The channel is the guild's configured one at the time of the line, or the old one on a declined publish after a repoint.
+
+## 2026-10-15 — Blocker queries left as they are
+
+The #106 deep review's performance note, that `findArchiveChangeBlocker` runs two sequential queries twice per save, was looked at and left unchanged by Ori's decision.
+- **Rare path:** both calls run only on a repoint (`app/setup/save/route.ts` before any Discord work, and `finalizeGuildArchiveConfig` under the guild lock). Clip and Unclip never reach them.
+- **Cheap queries:** each is a `findFirst` on `guildId`, which leads both the primary key and `clips_guild_status_created_idx`, and stops at the first match.
+- **Both calls are needed:** the first refuses before the route creates a channel; the second, under the lock, is the guarantee.
+- **One query would cost correctness work:** `ARCHIVED` must win over an in-lease `PENDING` row, which one `findFirst` cannot express without raw SQL (`bool_or`) or an ordering trick, in code #106 and #112 just made correct. Revisit only if a repoint is measured slow.
